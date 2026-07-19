@@ -1,0 +1,54 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
+
+name: Maven Build and Test
+
+on:
+  push:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Test validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Run the tests
+        run: mvn -ntp -B test -Pheadless-tests
+
+  build:
+    name: Build validation
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Build with Maven and install for the JavaDoc validation
+        run: mvn -ntp -B -Dmaven.test.skip=true -B install
+
+      - name: Validate JavaDoc
+        run: mvn -ntp -B javadoc:javadoc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lottie4j
+          retention-days: 30
+          path: |
+            core/target/*.jar
+            fxviewer/target/*.jar
