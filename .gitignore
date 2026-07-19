@@ -1,3 +1,6 @@
 /.idea/
+/.theia/
 /core/target/
+/engraving/target/
+/fxdemo/target/
 /fxviewer/target/

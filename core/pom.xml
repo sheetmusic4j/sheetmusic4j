@@ -7,13 +7,13 @@
     <parent>
         <groupId>com.sheet4j</groupId>
         <artifactId>sheet4j-parent</artifactId>
-        <version>0.1.0-SNAPSHOT</version>
+        <version>1.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>core</artifactId>
     <packaging>jar</packaging>
 
-    <name>Sheet4j :: Model</name>
+    <name>Sheet4J :: Model</name>
     <description>Core music data model: Score, Part, Measure, Note, Chord, Rest, Clef, KeySignature, TimeSignature. No JavaFX dependency.</description>
 
     <dependencies>

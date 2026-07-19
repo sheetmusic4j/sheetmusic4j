@@ -10,11 +10,15 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>fxviewer</artifactId>
+    <artifactId>fxdemo</artifactId>
     <packaging>jar</packaging>
 
-    <name>Sheet4J :: Render FX</name>
-    <description>JavaFX Canvas rendering of a LayoutResult using a SMuFL-compliant music font.</description>
+    <name>Sheet4j :: FX Demo</name>
+    <description>Standalone JavaFX demo application to test the fxviewer: load MusicXML/MIDI files, inspect the score, and view debug information.</description>
+
+    <properties>
+        <exec.mainClass>com.sheet4j.fxdemo.SheetDemoApp</exec.mainClass>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -26,6 +30,18 @@
             <artifactId>engraving</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.sheet4j</groupId>
+            <artifactId>fxviewer</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dlsc.pdfviewfx</groupId>
+            <artifactId>pdfviewfx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-graphics</artifactId>
         </dependency>
@@ -35,4 +51,16 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>${exec.mainClass}</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

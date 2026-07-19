@@ -26,6 +26,7 @@
 
         <!-- Dependencies -->
         <javafx.version>21.0.4</javafx.version>
+        <pdfviewfx.version>3.4.2</pdfviewfx.version>
 
         <!-- Test dependencies -->
         <junit.version>5.11.0</junit.version>
@@ -37,7 +38,9 @@
 
     <modules>
         <module>core</module>
+        <module>engraving</module>
         <module>fxviewer</module>
+        <module>fxdemo</module>
     </modules>
 
     <dependencyManagement>
@@ -50,8 +53,25 @@
             </dependency>
             <dependency>
                 <groupId>com.sheet4j</groupId>
+                <artifactId>engraving</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sheet4j</groupId>
                 <artifactId>fxviewer</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sheet4j</groupId>
+                <artifactId>fxdemo</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- PDF viewing -->
+            <dependency>
+                <groupId>com.dlsc.pdfviewfx</groupId>
+                <artifactId>pdfviewfx</artifactId>
+                <version>${pdfviewfx.version}</version>
             </dependency>
 
             <!-- JavaFX -->

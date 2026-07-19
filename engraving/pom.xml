@@ -10,24 +10,16 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>fxviewer</artifactId>
+    <artifactId>engraving</artifactId>
     <packaging>jar</packaging>
 
-    <name>Sheet4J :: Render FX</name>
-    <description>JavaFX Canvas rendering of a LayoutResult using a SMuFL-compliant music font.</description>
+    <name>Sheet4J :: Engraving</name>
+    <description>Framework-agnostic layout engine that turns a Score into positioned, renderer-agnostic geometry (LayoutResult). No JavaFX dependency.</description>
 
     <dependencies>
         <dependency>
             <groupId>com.sheet4j</groupId>
             <artifactId>core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.sheet4j</groupId>
-            <artifactId>engraving</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-graphics</artifactId>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
