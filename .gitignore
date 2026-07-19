@@ -1,5 +1,6 @@
 /.idea/
 /.theia/
+/.vscode/
 /core/target/
 /engraving/target/
 /fxdemo/target/
