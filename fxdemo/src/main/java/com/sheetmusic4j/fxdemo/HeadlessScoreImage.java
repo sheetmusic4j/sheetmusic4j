@@ -22,6 +22,15 @@ public final class HeadlessScoreImage {
     private HeadlessScoreImage() {
     }
 
+    /**
+     * Render a score into an off-screen image using the production engraving and
+     * painting pipeline.
+     *
+     * @param score  score to render
+     * @param width  target image width in pixels
+     * @param height target image height in pixels
+     * @return rendered score image
+     */
     public static BufferedImage render(Score score, int width, int height) {
         LayoutOptions defaults = LayoutOptions.defaults();
         LayoutOptions options = new LayoutOptions(

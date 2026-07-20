@@ -30,9 +30,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>This class is intentionally tolerant: if JavaFX-web is missing, the
  * OSMD bundle is not committed, or a headless display cannot be opened, it
  * returns a {@link Result#missing()} / {@link Result#error(String)} rather than
- * throwing. Callers - both tests and the demo Diff tab - can then
- * {@link org.junit.jupiter.api.Assumptions#assumeTrue(boolean, String) assume}
- * a real result before comparing.
+ * throwing. Callers - both tests and the demo Diff tab - can then require
+ * a real result before comparing, for example with JUnit's
+ * {@code Assumptions.assumeTrue(...)} in tests.
  */
 public final class WebViewReferenceRenderer {
 
@@ -54,18 +54,40 @@ public final class WebViewReferenceRenderer {
      * @param errorMsg human-readable error message, or {@code null} on success
      */
     public record Result(BufferedImage image, boolean missing, String errorMsg) {
+        /**
+         * Returns whether the render produced an image successfully.
+         *
+         * @return {@code true} when an image is available and no error was reported
+         */
         public boolean isSuccess() {
             return image != null && errorMsg == null && !missing;
         }
 
+        /**
+         * Creates a successful render result.
+         *
+         * @param image rendered image
+         * @return success result carrying the rendered image
+         */
         public static Result success(BufferedImage image) {
             return new Result(image, false, null);
         }
 
+        /**
+         * Creates a result indicating OSMD or JavaFX-web is unavailable.
+         *
+         * @return unavailable result
+         */
         public static Result unavailable() {
             return new Result(null, true, "OSMD bundle not present or JavaFX-web unavailable");
         }
 
+        /**
+         * Creates a failed render result with a message.
+         *
+         * @param message human-readable error description
+         * @return error result
+         */
         public static Result error(String message) {
             return new Result(null, false, message);
         }
@@ -73,10 +95,18 @@ public final class WebViewReferenceRenderer {
 
     private final long timeoutMillis;
 
+    /**
+     * Creates a renderer with the default timeout.
+     */
     public WebViewReferenceRenderer() {
         this(20_000L);
     }
 
+    /**
+     * Creates a renderer with a custom timeout.
+     *
+     * @param timeoutMillis maximum time to wait for OSMD rendering
+     */
     public WebViewReferenceRenderer(long timeoutMillis) {
         this.timeoutMillis = timeoutMillis;
     }
@@ -85,6 +115,11 @@ public final class WebViewReferenceRenderer {
      * Render the given MusicXML string in an off-screen WebView + OSMD and snapshot
      * the result. Blocks up to the configured timeout waiting for OSMD to signal
      * completion via {@code document.title}.
+     *
+     * @param musicXml MusicXML content to render
+     * @param widthPx  target render width in pixels
+     * @param heightPx target render height in pixels
+     * @return successful, unavailable, or failed render result
      */
     public Result render(String musicXml, int widthPx, int heightPx) {
         URL page = getClass().getResource("/reference/osmd/index.html");

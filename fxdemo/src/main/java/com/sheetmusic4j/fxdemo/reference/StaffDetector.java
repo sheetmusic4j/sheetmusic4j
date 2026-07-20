@@ -40,6 +40,9 @@ public final class StaffDetector {
 
     /**
      * Detect staff bounding boxes in the given image.
+     *
+     * @param image image to inspect
+     * @return detected staff bounding boxes
      */
     public static List<Rectangle> detect(BufferedImage image) {
         int width = image.getWidth();

@@ -19,6 +19,9 @@ public final class PdfSibling {
     /**
      * Compute the sibling PDF path for the given score file by replacing its
      * extension with {@code .pdf}. Returns empty if the input already is a PDF.
+     *
+     * @param scoreFile score file path to transform
+     * @return sibling PDF path, if applicable
      */
     public static Optional<Path> pathFor(Path scoreFile) {
         if (scoreFile == null) {
@@ -37,6 +40,9 @@ public final class PdfSibling {
 
     /**
      * Resolve the sibling PDF only if it exists as a regular file.
+     *
+     * @param scoreFile score file whose sibling PDF should be resolved
+     * @return existing sibling PDF path, if present
      */
     public static Optional<Path> existingPathFor(Path scoreFile) {
         return pathFor(scoreFile).filter(Files::isRegularFile);

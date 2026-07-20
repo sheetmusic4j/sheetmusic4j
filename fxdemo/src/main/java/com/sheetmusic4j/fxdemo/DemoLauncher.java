@@ -13,6 +13,11 @@ public final class DemoLauncher {
     private DemoLauncher() {
     }
 
+    /**
+     * Starts the JavaFX demo through an indirection classpath launchers can use.
+     *
+     * @param args command-line arguments forwarded to {@link SheetDemoApp}
+     */
     public static void main(String[] args) {
         SheetDemoApp.main(args);
     }

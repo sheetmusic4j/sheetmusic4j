@@ -21,6 +21,10 @@ public final class ImageSimilarity {
 
     /**
      * Structural similarity of two images as a value in {@code [0, 1]}.
+     *
+     * @param a first image
+     * @param b second image
+     * @return similarity score where {@code 1.0} means identical
      */
     public static double similarity(BufferedImage a, BufferedImage b) {
         int[] ga = grayGrid(a);
@@ -36,6 +40,9 @@ public final class ImageSimilarity {
     /**
      * Fraction of non-white ("ink") pixels, useful to assert that a rendering is
      * not blank.
+     *
+     * @param image image to analyze
+     * @return ratio of non-white pixels in the normalized image grid
      */
     public static double inkRatio(BufferedImage image) {
         int[] gray = grayGrid(image);

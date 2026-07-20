@@ -29,10 +29,22 @@ public final class ReferenceCache {
     private final Path referencesDir;
     private final WebViewReferenceRenderer renderer;
 
+    /**
+     * Creates a cache backed by the given references directory using the default
+     * {@link WebViewReferenceRenderer}.
+     *
+     * @param referencesDir directory containing reference PNG files
+     */
     public ReferenceCache(Path referencesDir) {
         this(referencesDir, new WebViewReferenceRenderer());
     }
 
+    /**
+     * Creates a cache backed by the given references directory.
+     *
+     * @param referencesDir directory containing reference PNG files
+     * @param renderer      renderer used when a reference must be generated
+     */
     public ReferenceCache(Path referencesDir, WebViewReferenceRenderer renderer) {
         this.referencesDir = referencesDir;
         this.renderer = renderer;
@@ -40,6 +52,9 @@ public final class ReferenceCache {
 
     /**
      * Path where the reference PNG for the given sample should live.
+     *
+     * @param sampleName sample base name without extension
+     * @return expected reference PNG path
      */
     public Path referencePath(String sampleName) {
         return referencesDir.resolve(sampleName + ".png");
@@ -47,6 +62,9 @@ public final class ReferenceCache {
 
     /**
      * True when a committed reference PNG is already present.
+     *
+     * @param sampleName sample base name without extension
+     * @return {@code true} when a reference PNG already exists
      */
     public boolean hasReference(String sampleName) {
         return Files.isRegularFile(referencePath(sampleName));
@@ -54,6 +72,9 @@ public final class ReferenceCache {
 
     /**
      * Load the reference PNG if present.
+     *
+     * @param sampleName sample base name without extension
+     * @return loaded reference image, if available and readable
      */
     public Optional<BufferedImage> load(String sampleName) {
         Path path = referencePath(sampleName);
@@ -78,6 +99,7 @@ public final class ReferenceCache {
      * @param widthPx    render width
      * @param heightPx   render height
      * @return the reference image, or a missing/error {@link WebViewReferenceRenderer.Result}
+     * @throws IOException if reference output directories or files cannot be written
      */
     public WebViewReferenceRenderer.Result getOrGenerate(String sampleName, Path xmlSource, String musicXml,
                                                          int widthPx, int heightPx) throws IOException {

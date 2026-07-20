@@ -18,6 +18,11 @@ public final class AwtRenderSurface implements RenderSurface {
     private Color stroke = Color.BLACK;
     private Color fill = Color.BLACK;
 
+    /**
+     * Creates an AWT-backed render surface.
+     *
+     * @param g graphics context to draw into
+     */
     public AwtRenderSurface(Graphics2D g) {
         this.g = g;
     }

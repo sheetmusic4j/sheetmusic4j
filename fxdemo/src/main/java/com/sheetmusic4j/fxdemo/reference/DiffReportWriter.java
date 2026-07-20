@@ -30,6 +30,8 @@ public final class DiffReportWriter {
      * @param rendered   the Sheet4j-rendered image
      * @param reference  the reference image
      * @param diagnostic the diagnostic to summarize in the report
+     * @return path to the generated {@code report.html} file
+     * @throws IOException if the output directory or report files cannot be written
      */
     public static Path write(Path outputDir, String name, BufferedImage rendered, BufferedImage reference,
                              DiagnosticComparator.Diagnostic diagnostic) throws IOException {

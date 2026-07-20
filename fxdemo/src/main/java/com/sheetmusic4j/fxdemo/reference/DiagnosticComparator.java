@@ -28,7 +28,20 @@ import java.util.List;
 public final class DiagnosticComparator {
 
     /**
+     * Sample window size (in pixels) used to check whether a glyph position has
+     * ink in the reference image.
+     */
+    private static final int GLYPH_WINDOW = 12;
+
+    /**
      * A per-measure similarity entry.
+     *
+     * @param staffIndex    zero-based staff index
+     * @param measureIndex  zero-based measure index within the staff
+     * @param measureNumber score measure number
+     * @param renderedRect  clipped measure bounds in the rendered image
+     * @param referenceRect mapped measure bounds in the reference image
+     * @param similarity    similarity ratio for the measure window
      */
     public record MeasureDiff(int staffIndex, int measureIndex, int measureNumber,
                               Rectangle renderedRect, Rectangle referenceRect,
@@ -37,6 +50,12 @@ public final class DiagnosticComparator {
 
     /**
      * A per-glyph presence entry.
+     *
+     * @param staffIndex          zero-based staff index
+     * @param glyphIndex          zero-based glyph index within the staff
+     * @param placement           engraved glyph placement
+     * @param presentInReference  whether reference ink was detected near the glyph anchor
+     * @param localInk            measured reference ink ratio in the sample window
      */
     public record GlyphPresence(int staffIndex, int glyphIndex, GlyphPlacement placement,
                                 boolean presentInReference, double localInk) {
@@ -44,6 +63,14 @@ public final class DiagnosticComparator {
 
     /**
      * Aggregated diagnostic result.
+     *
+     * @param overallSimilarity overall image similarity ratio
+     * @param renderedInkRatio  ink ratio in the Sheet4j rendering
+     * @param referenceInkRatio ink ratio in the reference image
+     * @param renderedStaves    detected or inferred staff boxes in the rendering
+     * @param referenceStaves   detected or inferred staff boxes in the reference image
+     * @param measures          per-measure similarity entries
+     * @param glyphs            per-glyph presence entries
      */
     public record Diagnostic(
             double overallSimilarity,
@@ -54,6 +81,10 @@ public final class DiagnosticComparator {
             List<MeasureDiff> measures,
             List<GlyphPresence> glyphs) {
 
+        /**
+         * Creates an immutable diagnostic snapshot with defensive copies of its
+         * collection components.
+         */
         public Diagnostic {
             renderedStaves = List.copyOf(renderedStaves);
             referenceStaves = List.copyOf(referenceStaves);
@@ -63,6 +94,9 @@ public final class DiagnosticComparator {
 
         /**
          * Returns the worst-performing measures for logging in failure messages.
+         *
+         * @param limit maximum number of measure entries to return
+         * @return the lowest-similarity measures, ordered from worst to best
          */
         public List<MeasureDiff> worstMeasures(int limit) {
             return measures.stream()
@@ -73,11 +107,14 @@ public final class DiagnosticComparator {
     }
 
     /**
-     * Sample window size (in pixels) used to check whether a glyph position has
-     * ink in the reference image.
+     * Compare a rendered score image with its reference image using the supplied
+     * layout metadata.
+     *
+     * @param rendered  Sheet4j-rendered score image
+     * @param reference reference image to compare against
+     * @param layout    layout result corresponding to the rendered image
+     * @return localized diagnostic data for the comparison
      */
-    private static final int GLYPH_WINDOW = 12;
-
     public Diagnostic compare(BufferedImage rendered, BufferedImage reference, LayoutResult layout) {
         double overall = ImageSimilarity.similarity(rendered, reference);
         double renderedInk = ImageSimilarity.inkRatio(rendered);

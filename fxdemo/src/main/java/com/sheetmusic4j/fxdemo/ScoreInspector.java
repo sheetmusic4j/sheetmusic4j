@@ -21,14 +21,31 @@ public final class ScoreInspector {
 
     /**
      * Aggregate counts for a whole score.
+     *
+     * @param parts    number of parts in the score
+     * @param measures number of measures across all parts
+     * @param notes    number of note elements
+     * @param rests    number of rest elements
+     * @param chords   number of chord elements
      */
     public record Stats(int parts, int measures, int notes, int rests, int chords) {
 
+        /**
+         * Returns the total number of musical elements counted in this summary.
+         *
+         * @return combined note, rest, and chord count
+         */
         public int elements() {
             return notes + rests + chords;
         }
     }
 
+    /**
+     * Count major score structures and musical element types.
+     *
+     * @param score score to summarize
+     * @return aggregate counts for the score contents
+     */
     public static Stats stats(Score score) {
         int parts = score.parts().size();
         int measures = 0;
@@ -54,6 +71,9 @@ public final class ScoreInspector {
 
     /**
      * Build a multi-line debug description of the score.
+     *
+     * @param score score to describe, or {@code null}
+     * @return human-readable multi-line debug text
      */
     public static String describe(Score score) {
         if (score == null) {
