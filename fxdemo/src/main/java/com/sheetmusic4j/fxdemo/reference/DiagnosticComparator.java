@@ -28,12 +28,6 @@ import java.util.List;
 public final class DiagnosticComparator {
 
     /**
-     * Creates a comparator instance for rendered/reference diagnostic analysis.
-     */
-    public DiagnosticComparator() {
-    }
-
-    /**
      * Sample window size (in pixels) used to check whether a glyph position has
      * ink in the reference image.
      */

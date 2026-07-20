@@ -72,12 +72,6 @@ public final class SheetDemoApp extends Application {
     private Path currentFile;
     private Score currentScore;
 
-    /**
-     * Creates the demo application.
-     */
-    public SheetDemoApp() {
-    }
-
     @Override
     public void start(Stage stage) {
         this.stage = stage;
