@@ -5,20 +5,20 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.sheet4j</groupId>
-        <artifactId>sheet4j-parent</artifactId>
+        <groupId>com.sheetmusic4j</groupId>
+        <artifactId>parent</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>engraving</artifactId>
     <packaging>jar</packaging>
 
-    <name>Sheet4J :: Engraving</name>
+    <name>Sheetmusic4J :: Engraving</name>
     <description>Framework-agnostic layout engine that turns a Score into positioned, renderer-agnostic geometry (LayoutResult). No JavaFX dependency.</description>
 
     <dependencies>
         <dependency>
-            <groupId>com.sheet4j</groupId>
+            <groupId>com.sheetmusic4j</groupId>
             <artifactId>core</artifactId>
         </dependency>
         <dependency>

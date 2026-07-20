@@ -5,8 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.sheet4j</groupId>
-        <artifactId>sheet4j-parent</artifactId>
+        <groupId>com.sheetmusic4j</groupId>
+        <artifactId>parent</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
@@ -17,20 +17,20 @@
     <description>Standalone JavaFX demo application to test the fxviewer: load MusicXML/MIDI files, inspect the score, and view debug information.</description>
 
     <properties>
-        <exec.mainClass>com.sheet4j.fxdemo.SheetDemoApp</exec.mainClass>
+        <exec.mainClass>com.sheetmusic4j.fxdemo.SheetDemoApp</exec.mainClass>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>com.sheet4j</groupId>
+            <groupId>com.sheetmusic4j</groupId>
             <artifactId>core</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.sheet4j</groupId>
+            <groupId>com.sheetmusic4j</groupId>
             <artifactId>engraving</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.sheet4j</groupId>
+            <groupId>com.sheetmusic4j</groupId>
             <artifactId>fxviewer</artifactId>
         </dependency>
         <dependency>
