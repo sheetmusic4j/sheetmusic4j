@@ -28,10 +28,16 @@ import java.util.List;
 public final class DiagnosticComparator {
 
     /**
-     * Creates a comparator for rendered and reference images.
+     * Creates a comparator instance for rendered/reference diagnostic analysis.
      */
     public DiagnosticComparator() {
     }
+
+    /**
+     * Sample window size (in pixels) used to check whether a glyph position has
+     * ink in the reference image.
+     */
+    private static final int GLYPH_WINDOW = 12;
 
     /**
      * A per-measure similarity entry.
@@ -155,12 +161,6 @@ public final class DiagnosticComparator {
         return new Diagnostic(overall, renderedInk, referenceInk,
                 renderedStaves, referenceStaves, measureDiffs, glyphPresences);
     }
-
-    /**
-     * Sample window size (in pixels) used to check whether a glyph position has
-     * ink in the reference image.
-     */
-    private static final int GLYPH_WINDOW = 12;
 
     private static List<Rectangle> detectRenderedStaves(LayoutResult layout, int width, int height) {
         List<Rectangle> boxes = new ArrayList<>();

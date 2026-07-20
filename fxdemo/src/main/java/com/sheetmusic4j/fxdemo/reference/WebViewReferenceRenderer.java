@@ -30,8 +30,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>This class is intentionally tolerant: if JavaFX-web is missing, the
  * OSMD bundle is not committed, or a headless display cannot be opened, it
  * returns a {@link Result#missing()} / {@link Result#error(String)} rather than
- * throwing. Callers - both tests and the demo Diff tab - can then assume
- * a real result before comparing.
+ * throwing. Callers - both tests and the demo Diff tab - can then require
+ * a real result before comparing, for example with JUnit's
+ * {@code Assumptions.assumeTrue(...)} in tests.
  */
 public final class WebViewReferenceRenderer {
 
