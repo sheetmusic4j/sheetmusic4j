@@ -1,0 +1,33 @@
+# OpenSheetMusicDisplay bundle
+
+This directory expects a pinned OpenSheetMusicDisplay (OSMD) UMD build at:
+
+```
+opensheetmusicdisplay.min.js
+```
+
+The file is **not** committed to git by default because the build has to be
+downloaded and reviewed. Fetch it once (per intended OSMD version) and commit
+it alongside `index.html`:
+
+```bash
+curl -L -o opensheetmusicdisplay.min.js \
+  https://github.com/opensheetmusicdisplay/opensheetmusicdisplay/releases/download/1.8.7/opensheetmusicdisplay.min.js
+```
+
+Then verify a `NOTICE` file exists (OSMD is BSD-3-Clause).
+
+When the file is absent, the `WebViewReferenceRenderer` in
+`fxdemo/src/test/java/.../reference/` reports the bundle as missing and every
+downstream test is skipped via `Assumptions.assumeTrue`. The default
+`mvn test` therefore keeps working on a fresh checkout without any network
+access.
+
+## Refreshing references
+
+```
+mvn -pl fxdemo -Prefresh-references test
+```
+
+That runs only the JUnit tests tagged `reference-generation` and writes PNGs
+under `fxdemo/src/test/resources/reference/generated/`.

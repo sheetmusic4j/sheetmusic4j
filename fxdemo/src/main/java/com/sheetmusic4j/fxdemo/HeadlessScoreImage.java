@@ -14,14 +14,15 @@ import java.awt.image.BufferedImage;
 /**
  * Renders a {@link Score} to a {@link BufferedImage} entirely headlessly, using the
  * production {@link Engraver} and {@link ScorePainter}. This mirrors what the JavaFX
- * {@link com.sheetmusic4j.fxviewer.SheetView} draws, allowing pixel comparisons in tests.
+ * {@link com.sheetmusic4j.fxviewer.SheetView} draws, allowing pixel comparisons in tests
+ * <em>and</em> in the demo's Diff tab.
  */
-final class HeadlessScoreImage {
+public final class HeadlessScoreImage {
 
     private HeadlessScoreImage() {
     }
 
-    static BufferedImage render(Score score, int width, int height) {
+    public static BufferedImage render(Score score, int width, int height) {
         LayoutOptions defaults = LayoutOptions.defaults();
         LayoutOptions options = new LayoutOptions(
                 defaults.staffLineGap(),

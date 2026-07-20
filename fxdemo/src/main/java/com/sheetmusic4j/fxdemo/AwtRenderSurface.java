@@ -8,17 +8,17 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 
 /**
- * A headless {@link RenderSurface} backed by AWT {@link Graphics2D}. Used by tests
- * to render the score with the exact same {@link com.sheetmusic4j.fxviewer.ScorePainter}
- * logic as the on-screen JavaFX view, but into a {@link java.awt.image.BufferedImage}.
+ * A headless {@link RenderSurface} backed by AWT {@link Graphics2D}. Used to render
+ * the score with the exact same {@link com.sheetmusic4j.fxviewer.ScorePainter} logic
+ * as the on-screen JavaFX view, but into a {@link java.awt.image.BufferedImage}.
  */
-final class AwtRenderSurface implements RenderSurface {
+public final class AwtRenderSurface implements RenderSurface {
 
     private final Graphics2D g;
     private Color stroke = Color.BLACK;
     private Color fill = Color.BLACK;
 
-    AwtRenderSurface(Graphics2D g) {
+    public AwtRenderSurface(Graphics2D g) {
         this.g = g;
     }
 

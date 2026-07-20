@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>sheet4j reference renderer</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            font-family: sans-serif;
+        }
+        #osmd-container {
+            width: 100%;
+            min-height: 100vh;
+            background: #ffffff;
+        }
+        #status {
+            font-size: 11px;
+            color: #666;
+            padding: 4px 8px;
+        }
+    </style>
+    <!--
+        OpenSheetMusicDisplay bundle. Committed in-repo so tests never touch the
+        network. If the file is missing, `renderMusicXml` reports an "osmd:missing"
+        status and the JavaFX-side driver skips the reference generation gracefully.
+    -->
+    <script src="opensheetmusicdisplay.min.js"></script>
+</head>
+<body>
+<div id="status">idle</div>
+<div id="osmd-container"></div>
+<script>
+    // The Java side polls document.title for one of the sentinel values below.
+    //   "sheet4j:idle"    – no render in progress
+    //   "sheet4j:done"    – render completed successfully
+    //   "sheet4j:error:.."– render failed
+    //   "sheet4j:missing" – OSMD is not bundled on the classpath
+    function setStatus(text) {
+        document.title = "sheet4j:" + text;
+        var s = document.getElementById("status");
+        if (s) { s.textContent = text; }
+    }
+    setStatus("idle");
+
+    var osmdInstance = null;
+
+    function ensureContainerWidth(widthPx) {
+        var container = document.getElementById("osmd-container");
+        container.style.width = widthPx + "px";
+    }
+
+    window.renderMusicXml = function (xmlString, widthPx) {
+        try {
+            if (typeof opensheetmusicdisplay === "undefined") {
+                setStatus("missing");
+                return;
+            }
+            ensureContainerWidth(widthPx);
+            if (osmdInstance === null) {
+                osmdInstance = new opensheetmusicdisplay.OpenSheetMusicDisplay(
+                    "osmd-container",
+                    {
+                        autoResize: false,
+                        drawTitle: false,
+                        drawSubtitle: false,
+                        drawComposer: false,
+                        drawLyricist: false,
+                        drawPartNames: false,
+                        pageBackgroundColor: "#FFFFFF"
+                    }
+                );
+            }
+            var promise = osmdInstance.load(xmlString);
+            promise.then(function () {
+                try {
+                    osmdInstance.render();
+                    // Give the DOM a tick to lay out before we snapshot.
+                    setTimeout(function () { setStatus("done"); }, 50);
+                } catch (renderErr) {
+                    setStatus("error:render:" + renderErr);
+                }
+            }).catch(function (loadErr) {
+                setStatus("error:load:" + loadErr);
+            });
+        } catch (e) {
+            setStatus("error:exception:" + e);
+        }
+    };
+</script>
+</body>
+</html>

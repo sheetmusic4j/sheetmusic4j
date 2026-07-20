@@ -1,0 +1,41 @@
+name: Refresh reference images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  refresh-references:
+    name: Regenerate reference PNGs via headless WebView + OSMD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 26
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 26
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Regenerate reference PNGs
+        run: mvn -B -ntp -pl fxdemo -am -Prefresh-references test
+
+      - name: Open PR with regenerated references
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/refresh-references
+          commit-message: "chore(refs): regenerate OSMD reference images"
+          title: "chore(refs): regenerate OSMD reference images"
+          body: |
+            Automated regeneration of the OSMD reference PNGs used by
+            `CompareFxViewWithReferenceTest`. Please review the visual diff
+            before merging.
+          add-paths: |
+            fxdemo/src/test/resources/reference/generated/*.png

@@ -46,8 +46,21 @@
             <artifactId>javafx-graphics</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testfx</groupId>
+            <artifactId>openjfx-monocle</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -61,6 +74,49 @@
                     <mainClass>${exec.mainClass}</mainClass>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                        The default test run must not open a WebView: the "reference-generation"
+                        tag identifies tests that boot a headless JavaFX WebView + OSMD to
+                        regenerate expected images. Those are triggered explicitly via the
+                        "refresh-references" profile.
+                    -->
+                    <excludedGroups>reference-generation</excludedGroups>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <!--
+                Regenerate the reference PNGs used by the diagnostic comparator.
+                Activate with:  mvn -pl fxdemo -Prefresh-references test
+            -->
+            <id>refresh-references</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <excludedGroups></excludedGroups>
+                            <groups>reference-generation</groups>
+                            <systemPropertyVariables>
+                                <sheetmusic4j.reference.regenerate>true</sheetmusic4j.reference.regenerate>
+                                <glass.platform>Monocle</glass.platform>
+                                <monocle.platform>Headless</monocle.platform>
+                                <prism.order>sw</prism.order>
+                                <prism.text>t2k</prism.text>
+                                <java.awt.headless>true</java.awt.headless>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

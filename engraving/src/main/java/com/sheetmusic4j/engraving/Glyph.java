@@ -10,13 +10,80 @@ public enum Glyph {
     NOTEHEAD_WHOLE,
     NOTEHEAD_HALF,
     NOTEHEAD_BLACK,
+    /**
+     * Stem going up (from the right side of the notehead).
+     */
+    STEM_UP,
+    /**
+     * Stem going down (from the left side of the notehead).
+     */
+    STEM_DOWN,
+    /**
+     * @deprecated use {@link #STEM_UP} or {@link #STEM_DOWN}. Kept for source compatibility.
+     */
+    @Deprecated
     STEM,
     CLEF_G,
     CLEF_F,
     CLEF_C,
+    /**
+     * @deprecated use {@link #TIME_DIGIT_0}..{@link #TIME_DIGIT_9}. Kept for source compatibility.
+     */
+    @Deprecated
     TIME_DIGIT,
+    TIME_DIGIT_0,
+    TIME_DIGIT_1,
+    TIME_DIGIT_2,
+    TIME_DIGIT_3,
+    TIME_DIGIT_4,
+    TIME_DIGIT_5,
+    TIME_DIGIT_6,
+    TIME_DIGIT_7,
+    TIME_DIGIT_8,
+    TIME_DIGIT_9,
     REST_WHOLE,
     REST_HALF,
     REST_QUARTER,
-    REST_EIGHTH
+    REST_EIGHTH;
+
+    /**
+     * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.
+     *
+     * @throws IllegalArgumentException if {@code digit} is out of range
+     */
+    public static Glyph timeDigit(int digit) {
+        return switch (digit) {
+            case 0 -> TIME_DIGIT_0;
+            case 1 -> TIME_DIGIT_1;
+            case 2 -> TIME_DIGIT_2;
+            case 3 -> TIME_DIGIT_3;
+            case 4 -> TIME_DIGIT_4;
+            case 5 -> TIME_DIGIT_5;
+            case 6 -> TIME_DIGIT_6;
+            case 7 -> TIME_DIGIT_7;
+            case 8 -> TIME_DIGIT_8;
+            case 9 -> TIME_DIGIT_9;
+            default -> throw new IllegalArgumentException("digit must be 0..9, got " + digit);
+        };
+    }
+
+    /**
+     * If this glyph is a {@code TIME_DIGIT_N} return the corresponding digit character,
+     * otherwise {@code null}.
+     */
+    public Character timeDigitChar() {
+        return switch (this) {
+            case TIME_DIGIT_0 -> '0';
+            case TIME_DIGIT_1 -> '1';
+            case TIME_DIGIT_2 -> '2';
+            case TIME_DIGIT_3 -> '3';
+            case TIME_DIGIT_4 -> '4';
+            case TIME_DIGIT_5 -> '5';
+            case TIME_DIGIT_6 -> '6';
+            case TIME_DIGIT_7 -> '7';
+            case TIME_DIGIT_8 -> '8';
+            case TIME_DIGIT_9 -> '9';
+            default -> null;
+        };
+    }
 }
