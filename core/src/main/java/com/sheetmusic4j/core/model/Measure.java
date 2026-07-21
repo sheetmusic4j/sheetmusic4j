@@ -20,22 +20,28 @@ public final class Measure {
         this.elements = List.copyOf(builder.elements);
     }
 
+    /** Returns the 1-based measure number. */
     public int number() {
         return number;
     }
 
+    /** Returns the attributes if set at this measure. */
     public Optional<Attributes> attributes() {
         return Optional.ofNullable(attributes);
     }
 
+    /** Returns the list of musical elements in this measure. */
     public List<MusicElement> elements() {
         return elements;
     }
 
+    /** Creates a new builder for a measure with the given number. */
     public static Builder builder(int number) {
         return new Builder(number);
     }
 
+    /** Builder for constructing {@link Measure} instances. */
+    /** Builder for constructing {@link Measure} instances. */
     public static final class Builder {
         private final int number;
         private Attributes attributes;
@@ -45,22 +51,26 @@ public final class Measure {
             this.number = number;
         }
 
+        /** Sets the attributes for this measure. */
         public Builder attributes(Attributes attributes) {
             this.attributes = attributes;
             return this;
         }
 
+        /** Adds an element to this measure. */
         public Builder addElement(MusicElement element) {
             this.elements.add(element);
             return this;
         }
 
+        /** Sets all elements for this measure. */
         public Builder elements(List<MusicElement> elements) {
             this.elements.clear();
             this.elements.addAll(elements);
             return this;
         }
 
+        /** Builds and returns the {@link Measure} instance. */
         public Measure build() {
             return new Measure(this);
         }

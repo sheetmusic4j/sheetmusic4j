@@ -17,12 +17,15 @@ public record TimeSignature(int beats, int beatType) {
         }
     }
 
+    /** Creates a 4/4 time signature. */
     public static TimeSignature fourFour() {
         return new TimeSignature(4, 4);
     }
 
     /**
      * Length of one measure in quarter notes.
+     *
+     * @return the measure length as a quarter note value
      */
     public double measureLengthInQuarters() {
         return beats * (4.0 / beatType);

@@ -241,6 +241,8 @@ public final class MusicXmlWriter {
                 writeMetronome(w, metronome);
             } else if (type instanceof DirectionType.Dynamic dynamic) {
                 writeDynamics(w, dynamic);
+            } else if (type instanceof DirectionType.Rehearsal rehearsal) {
+                writeRehearsal(w, rehearsal);
             }
             w.end("direction-type");
             w.end("direction");
@@ -276,6 +278,14 @@ public final class MusicXmlWriter {
         w.start("dynamics");
         w.emptyElement(dynamic.mark().xmlValue());
         w.end("dynamics");
+    }
+
+    /**
+     * Emit a {@code <rehearsal>label</rehearsal>} element. Font styling is
+     * an engraving convention and not persisted at the model level.
+     */
+    private void writeRehearsal(IndentingWriter w, DirectionType.Rehearsal rehearsal) throws XMLStreamException {
+        w.textElement("rehearsal", rehearsal.label());
     }
 
     private void writeRest(IndentingWriter w, Rest rest) {

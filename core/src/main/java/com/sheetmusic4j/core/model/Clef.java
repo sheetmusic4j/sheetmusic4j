@@ -14,10 +14,12 @@ public record Clef(ClefSign sign, int line) {
         }
     }
 
+    /** Creates a treble clef. */
     public static Clef treble() {
         return new Clef(ClefSign.G, 2);
     }
 
+    /** Creates a bass clef. */
     public static Clef bass() {
         return new Clef(ClefSign.F, 4);
     }

@@ -12,15 +12,28 @@ package com.sheetmusic4j.engraving;
  * @param align    horizontal alignment relative to {@code x}
  * @param category semantic classification of this text; used by viewers to
  *                 toggle categories of text on and off
+ * @param boxed    whether the renderer should stroke a rectangle around the
+ *                 text (e.g. for rehearsal marks)
  */
-public record TextPlacement(String text, double x, double y, double fontSize, Align align, MarkingCategory category) {
+public record TextPlacement(String text, double x, double y, double fontSize, Align align,
+                            MarkingCategory category, boolean boxed) {
+
+    /**
+     * Convenience constructor: same as the primary one with {@code boxed=false}.
+     * Used by all pre-existing callers that never needed boxing.
+     */
+    public TextPlacement(String text, double x, double y, double fontSize, Align align,
+                         MarkingCategory category) {
+        this(text, x, y, fontSize, align, category, false);
+    }
 
     /**
      * Backwards-compatible constructor for callers that did not yet classify
-     * their placements. Defaults to {@link MarkingCategory#TITLE}.
+     * their placements. Defaults to {@link MarkingCategory#TITLE} and
+     * {@code boxed=false}.
      */
     public TextPlacement(String text, double x, double y, double fontSize, Align align) {
-        this(text, x, y, fontSize, align, MarkingCategory.TITLE);
+        this(text, x, y, fontSize, align, MarkingCategory.TITLE, false);
     }
 
     /**

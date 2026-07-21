@@ -100,6 +100,13 @@ public final class Engraver {
     private static final double DIRECTION_FONT_SIZE_GAPS = 1.6;
 
     /**
+     * Multiplier applied to the staff-line gap to derive the rehearsal-mark
+     * font size. Slightly larger than words to stand out visually alongside
+     * the box outline.
+     */
+    private static final double REHEARSAL_FONT_SIZE_GAPS = 1.8;
+
+    /**
      * Multiplier applied to the staff-line gap to derive the lyric font size.
      */
     private static final double LYRIC_FONT_SIZE_GAPS = 1.4;
@@ -934,8 +941,18 @@ public final class Engraver {
             // never engages for the dynamic glyph.
             int staffStep = side == Placement.ABOVE ? -6 : 12;
             glyphs.add(new GlyphPlacement(x, y, glyph, staffStep, MarkingCategory.DYNAMIC));
+        } else if (type instanceof DirectionType.Rehearsal rehearsal) {
+            double fontSize = gap * REHEARSAL_FONT_SIZE_GAPS;
+            // Rehearsal marks conventionally sit above the staff. If the
+            // source explicitly forces BELOW we still honour that, but the
+            // default from {@link #resolvedPlacement} yields ABOVE.
+            double y = side == Placement.BELOW
+                    ? staffY + options.staffHeight() + gap * DIRECTION_OFFSET_GAPS + fontSize
+                    : staffY - gap * DIRECTION_OFFSET_GAPS - fontSize;
+            texts.add(new TextPlacement(rehearsal.label(), x, y, fontSize,
+                    TextPlacement.Align.LEFT, MarkingCategory.REHEARSAL, true));
         }
-    }
+        }
 
     /**
      * Resolve a {@link Direction}'s effective placement. Explicit ABOVE/BELOW

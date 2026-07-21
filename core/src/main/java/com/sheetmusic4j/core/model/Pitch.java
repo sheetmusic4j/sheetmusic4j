@@ -3,6 +3,10 @@ package com.sheetmusic4j.core.model;
 /**
  * A concrete pitch: a diatonic {@link Step}, an octave, and a chromatic alteration
  * ({@code alter}: -1 = flat, +1 = sharp, etc.).
+ *
+ * @param step the diatonic scale step
+ * @param octave the octave number (middle C = octave 4)
+ * @param alter the chromatic alteration (-1 = flat, 0 = natural, +1 = sharp, etc.)
  */
 public record Pitch(Step step, int octave, int alter) {
 
@@ -16,12 +20,17 @@ public record Pitch(Step step, int octave, int alter) {
         this(step, octave, 0);
     }
 
+    /**
+     * Returns the accidental corresponding to this pitch's alteration.
+     */
     public Accidental accidental() {
         return Accidental.fromAlter(alter);
     }
 
     /**
      * Convert this pitch to a MIDI note number (middle C = C4 = 60).
+     *
+     * @return the MIDI note number (0-127)
      */
     public int toMidiNumber() {
         return (octave + 1) * 12 + step.semitonesFromC() + alter;
@@ -29,6 +38,9 @@ public record Pitch(Step step, int octave, int alter) {
 
     /**
      * Build a {@link Pitch} from a MIDI note number, preferring sharps for black keys.
+     *
+     * @param midi the MIDI note number (0-127)
+     * @return a Pitch representing the given note number
      */
     public static Pitch fromMidiNumber(int midi) {
         int octave = midi / 12 - 1;
@@ -52,6 +64,8 @@ public record Pitch(Step step, int octave, int alter) {
 
     /**
      * Diatonic staff step index used for vertical positioning: C0 = 0, D0 = 1, ...
+     *
+     * @return the diatonic step number for use in engraving layout
      */
     public int diatonicStepNumber() {
         return octave * 7 + step.ordinal();

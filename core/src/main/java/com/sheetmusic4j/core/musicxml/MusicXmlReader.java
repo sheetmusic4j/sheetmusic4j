@@ -431,7 +431,7 @@ public final class MusicXmlReader {
     /**
      * Parse a MusicXML {@code <direction>} block. Returns {@code null} when
      * the block contains no recognised {@code <direction-type>} child (wedges,
-     * segno/coda, octave shifts, rehearsal marks — all deferred). The
+     * segno/coda, octave shifts — still deferred). The
      * {@code placement} attribute drives {@link Placement}; when a
      * {@code <direction>} carries multiple {@code <direction-type>} children
      * only the first recognised one wins.
@@ -499,6 +499,12 @@ public final class MusicXmlReader {
                         DirectionType dynamic = readDynamics(reader);
                         if (dynamic != null && result == null) {
                             result = dynamic;
+                        }
+                    }
+                    case "rehearsal" -> {
+                        String label = readText(reader);
+                        if (label != null && !label.isEmpty() && result == null) {
+                            result = new DirectionType.Rehearsal(label);
                         }
                     }
                     default -> skipElement(reader);

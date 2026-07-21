@@ -8,14 +8,17 @@ package com.sheetmusic4j.core.model;
  */
 public record KeySignature(int fifths) {
 
+    /** Creates a C major key signature (no sharps or flats). */
     public static KeySignature cMajor() {
         return new KeySignature(0);
     }
 
+    /** Returns the number of sharps in this key signature. */
     public int sharps() {
         return Math.max(fifths, 0);
     }
 
+    /** Returns the number of flats in this key signature. */
     public int flats() {
         return Math.max(-fifths, 0);
     }

@@ -26,6 +26,8 @@ public record Duration(int value, int divisions) {
 
     /**
      * Duration expressed in quarter notes.
+     *
+     * @return the duration as a quarter note value
      */
     public double inQuarters() {
         return (double) value / divisions;
@@ -33,6 +35,8 @@ public record Duration(int value, int divisions) {
 
     /**
      * Whether this duration occupies zero time on the timeline.
+     *
+     * @return true if the duration is zero
      */
     public boolean isZero() {
         return value == 0;
@@ -40,6 +44,10 @@ public record Duration(int value, int divisions) {
 
     /**
      * Create a duration from a number of quarter notes.
+     *
+     * @param quarters the duration in quarter notes
+     * @param divisions divisions per quarter note
+     * @return a new Duration
      */
     public static Duration ofQuarters(double quarters, int divisions) {
         return new Duration((int) Math.round(quarters * divisions), divisions);

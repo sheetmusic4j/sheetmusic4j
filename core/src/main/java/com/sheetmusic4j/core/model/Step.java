@@ -4,10 +4,18 @@ package com.sheetmusic4j.core.model;
  * Diatonic pitch step (the letter name of a note).
  */
 public enum Step {
-    C, D, E, F, G, A, B;
+    /** C. */ C,
+    /** D. */ D,
+    /** E. */ E,
+    /** F. */ F,
+    /** G. */ G,
+    /** A. */ A,
+    /** B. */ B;
 
     /**
      * Semitone offset of this step from C within an octave.
+     *
+     * @return the number of semitones from C (0-11)
      */
     public int semitonesFromC() {
         return switch (this) {

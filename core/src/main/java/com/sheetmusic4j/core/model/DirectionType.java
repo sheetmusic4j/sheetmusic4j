@@ -3,9 +3,10 @@ package com.sheetmusic4j.core.model;
 /**
  * The concrete payload of a {@link Direction}. Sealed to the subset of
  * MusicXML {@code <direction-type>} children currently modelled:
- * {@link Words}, {@link Metronome}, and {@link Dynamic}.
+ * {@link Words}, {@link Metronome}, {@link Dynamic}, and {@link Rehearsal}.
  */
-public sealed interface DirectionType permits DirectionType.Words, DirectionType.Metronome, DirectionType.Dynamic {
+public sealed interface DirectionType
+        permits DirectionType.Words, DirectionType.Metronome, DirectionType.Dynamic, DirectionType.Rehearsal {
 
     /**
      * Free-form text direction (MusicXML {@code <words>}). Font style is
@@ -51,4 +52,24 @@ public sealed interface DirectionType permits DirectionType.Words, DirectionType
             }
         }
     }
-}
+
+    /**
+     * A rehearsal mark (MusicXML {@code <rehearsal>}), typically rendered as a
+     * boxed, bold, uppercase label above the staff at the start of the
+     * associated measure.
+     *
+     * <p>The {@code label} is the trimmed inner text of the source element
+     * (e.g. {@code "A"}, {@code "12"}, {@code "Verse 2"}). MusicXML lets the
+     * source choose the exact spelling; the engraver applies boxing and font
+     * conventions on top.
+     *
+     * @param label the label text to display (never {@code null})
+     */
+    record Rehearsal(String label) implements DirectionType {
+        public Rehearsal {
+            if (label == null) {
+                label = "";
+            }
+        }
+    }
+    }
