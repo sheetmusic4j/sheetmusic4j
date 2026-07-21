@@ -12,6 +12,11 @@ public final class ScoreRenderer {
 
     private final ScorePainter painter = new ScorePainter();
 
+    /** Creates a renderer that delegates all drawing to {@link ScorePainter}. */
+    public ScoreRenderer() {
+    }
+
+    /** Renders the given layout into the supplied JavaFX graphics context. */
     public void render(GraphicsContext gc, LayoutResult layout) {
         RenderSurface surface = new FxRenderSurface(gc);
         painter.paint(surface, layout, gc.getCanvas().getWidth(), gc.getCanvas().getHeight());

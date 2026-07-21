@@ -26,6 +26,18 @@ public final class ScorePainter {
     private static final int STAFF_LINES = 5;
     private static final double STEM_LENGTH_GAPS = 3.5;
 
+    /** Creates a painter for rendering a layout onto any {@link RenderSurface}. */
+    public ScorePainter() {
+    }
+
+    /**
+     * Paints the given layout onto the provided surface.
+     *
+     * @param surface surface abstraction to draw on
+     * @param layout engraved score layout to paint
+     * @param surfaceWidth available surface width
+     * @param surfaceHeight available surface height
+     */
     public void paint(RenderSurface surface, LayoutResult layout, double surfaceWidth, double surfaceHeight) {
         surface.setFill(RenderColor.WHITE);
         surface.fillRect(0, 0, Math.max(layout.width(), surfaceWidth), Math.max(layout.height(), surfaceHeight));

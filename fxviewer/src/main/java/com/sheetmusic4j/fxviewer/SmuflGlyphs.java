@@ -39,6 +39,10 @@ public final class SmuflGlyphs {
      * Return the SMuFL codepoint (as a one-char string) for the given glyph,
      * or {@code null} if it has no font representation (staff lines, ledger
      * lines, stems - all drawn as primitives).
+     *
+     * @param glyph glyph to map
+     * @return SMuFL codepoint string, or {@code null} if the glyph is not
+     *         backed by a SMuFL character
      */
     public static String codepoint(Glyph glyph) {
         return switch (glyph) {

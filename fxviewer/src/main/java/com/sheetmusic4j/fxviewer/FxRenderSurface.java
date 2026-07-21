@@ -21,6 +21,7 @@ public final class FxRenderSurface implements RenderSurface {
 
     private final GraphicsContext gc;
 
+    /** Creates a surface that draws into the given JavaFX graphics context. */
     public FxRenderSurface(GraphicsContext gc) {
         this.gc = gc;
     }

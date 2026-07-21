@@ -17,8 +17,8 @@ import javafx.scene.layout.Region;
  * <p>The view is <em>content-sized</em>: after each engrave, the underlying
  * canvas and the region's preferred/min/max sizes track {@link LayoutResult}'s
  * width and height. That way, when the view is wrapped in a
- * {@link javafx.scene.control.ScrollPane}, the pane sees the real content size
- * and shows scrollbars whenever the content is larger than the viewport.
+ * {@code ScrollPane}, the pane sees the real content size and shows scrollbars
+ * whenever the content is larger than the viewport.
  *
  * <p>Callers can override the engraving width via {@link #setSystemWidth(double)}
  * (or the {@link #systemWidthProperty()} JavaFX property, e.g. by binding it to
@@ -39,6 +39,7 @@ public final class SheetView extends Region {
 
     private Score score;
 
+    /** Creates an empty score view at the default engraving width. */
     public SheetView() {
         getChildren().add(canvas);
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
@@ -49,11 +50,13 @@ public final class SheetView extends Region {
         setPrefSize(canvas.getWidth(), canvas.getHeight());
     }
 
+    /** Sets the score to display and rebuilds the engraved layout. */
     public void setScore(Score score) {
         this.score = score;
         rebuild();
     }
 
+    /** Returns the score currently displayed by this view, or {@code null}. */
     public Score getScore() {
         return score;
     }
@@ -63,15 +66,19 @@ public final class SheetView extends Region {
      * Callers can bind this to a container's width (e.g., the ScrollPane
      * viewport) to make the score reflow while still relying on the layout
      * to report the actual content size.
+     *
+     * @return the writable width property used by the engraver
      */
     public DoubleProperty systemWidthProperty() {
         return systemWidth;
     }
 
+    /** Returns the current system width used by the engraver. */
     public double getSystemWidth() {
         return systemWidth.get();
     }
 
+    /** Updates the system width used by the engraver, if the width is positive. */
     public void setSystemWidth(double width) {
         if (width > 0) {
             systemWidth.set(width);

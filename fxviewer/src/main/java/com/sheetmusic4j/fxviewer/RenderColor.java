@@ -3,6 +3,10 @@ package com.sheetmusic4j.fxviewer;
 /**
  * A simple, framework-agnostic RGB color (channels 0-255). Keeps
  * {@link RenderSurface} free of any UI-toolkit types.
+ *
+ * @param red red channel, 0-255
+ * @param green green channel, 0-255
+ * @param blue blue channel, 0-255
  */
 public record RenderColor(int red, int green, int blue) {
 

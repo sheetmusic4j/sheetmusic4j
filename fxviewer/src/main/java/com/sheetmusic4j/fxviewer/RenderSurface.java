@@ -10,20 +10,28 @@ package com.sheetmusic4j.fxviewer;
  */
 public interface RenderSurface {
 
+    /** Sets the stroke color for subsequent outline drawing. */
     void setStroke(RenderColor color);
 
+    /** Sets the fill color for subsequent filled drawing. */
     void setFill(RenderColor color);
 
+    /** Sets the line width for subsequent stroke operations. */
     void setLineWidth(double width);
 
+    /** Fills an axis-aligned rectangle. */
     void fillRect(double x, double y, double width, double height);
 
+    /** Draws a straight line segment. */
     void strokeLine(double x1, double y1, double x2, double y2);
 
+    /** Fills an axis-aligned oval. */
     void fillOval(double x, double y, double width, double height);
 
+    /** Strokes the outline of an axis-aligned oval. */
     void strokeOval(double x, double y, double width, double height);
 
+    /** Draws text with the current stroke/fill settings. */
     void strokeText(String text, double x, double y);
 
     /**
