@@ -27,7 +27,10 @@ import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
 import com.sheetmusic4j.core.model.Creator;
+import com.sheetmusic4j.core.model.Direction;
+import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Duration;
+import com.sheetmusic4j.core.model.DynamicMark;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
@@ -35,6 +38,7 @@ import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Pitch;
+import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Step;
@@ -327,6 +331,13 @@ public final class MusicXmlReader {
                             }
                         }
                     }
+                    case "direction" -> {
+                        Direction direction = readDirection(reader);
+                        if (direction != null) {
+                            flushChord(measure, pendingChord);
+                            measure.addElement(direction);
+                        }
+                    }
                     default -> { /* backup/forward/other ignored */ }
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT && "measure".equals(reader.getLocalName())) {
@@ -415,6 +426,151 @@ public final class MusicXmlReader {
             default -> 2;
         };
         return new Clef(clefSign, clefLine != null ? clefLine : defaultLine);
+    }
+
+    /**
+     * Parse a MusicXML {@code <direction>} block. Returns {@code null} when
+     * the block contains no recognised {@code <direction-type>} child (wedges,
+     * segno/coda, octave shifts, rehearsal marks — all deferred). The
+     * {@code placement} attribute drives {@link Placement}; when a
+     * {@code <direction>} carries multiple {@code <direction-type>} children
+     * only the first recognised one wins.
+     */
+    private Direction readDirection(XMLStreamReader reader) throws XMLStreamException {
+        Placement placement = Placement.fromXml(reader.getAttributeValue(null, "placement"));
+        DirectionType type = null;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                if ("direction-type".equals(reader.getLocalName())) {
+                    DirectionType parsed = readDirectionType(reader);
+                    if (type == null && parsed != null) {
+                        type = parsed;
+                    }
+                } else {
+                    // <sound>, <offset>, <staff>, <voice>, ... — skip for MVP.
+                    skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT && "direction".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        if (type == null) {
+            return null;
+        }
+        return new Direction(type, placement);
+    }
+
+    private DirectionType readDirectionType(XMLStreamReader reader) throws XMLStreamException {
+        DirectionType result = null;
+        StringBuilder wordsText = null;
+        boolean italic = false;
+        boolean bold = false;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                switch (reader.getLocalName()) {
+                    case "words" -> {
+                        String fontStyle = reader.getAttributeValue(null, "font-style");
+                        String fontWeight = reader.getAttributeValue(null, "font-weight");
+                        if ("italic".equalsIgnoreCase(fontStyle)) {
+                            italic = true;
+                        }
+                        if ("bold".equalsIgnoreCase(fontWeight)) {
+                            bold = true;
+                        }
+                        String chunk = readText(reader);
+                        if (chunk != null) {
+                            if (wordsText == null) {
+                                wordsText = new StringBuilder();
+                            } else if (wordsText.length() > 0 && !chunk.isEmpty()) {
+                                wordsText.append(' ');
+                            }
+                            wordsText.append(chunk);
+                        }
+                    }
+                    case "metronome" -> {
+                        DirectionType metronome = readMetronome(reader);
+                        if (metronome != null && result == null) {
+                            result = metronome;
+                        }
+                    }
+                    case "dynamics" -> {
+                        DirectionType dynamic = readDynamics(reader);
+                        if (dynamic != null && result == null) {
+                            result = dynamic;
+                        }
+                    }
+                    default -> skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT
+                    && "direction-type".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        if (result != null) {
+            return result;
+        }
+        if (wordsText != null && wordsText.length() > 0) {
+            return new DirectionType.Words(wordsText.toString(), italic, bold);
+        }
+        return null;
+    }
+
+    private DirectionType readMetronome(XMLStreamReader reader) throws XMLStreamException {
+        NoteType beatUnit = null;
+        boolean dotted = false;
+        Integer perMinute = null;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                switch (reader.getLocalName()) {
+                    case "beat-unit" -> {
+                        try {
+                            beatUnit = NoteType.fromXml(readText(reader));
+                        } catch (IllegalArgumentException e) {
+                            beatUnit = null;
+                        }
+                    }
+                    case "beat-unit-dot" -> {
+                        dotted = true;
+                        skipElement(reader);
+                    }
+                    case "per-minute" -> perMinute = parseIntOr(readText(reader), 0);
+                    default -> skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT
+                    && "metronome".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        if (beatUnit == null || perMinute == null || perMinute <= 0) {
+            return null;
+        }
+        return new DirectionType.Metronome(beatUnit, dotted, perMinute);
+    }
+
+    private DirectionType readDynamics(XMLStreamReader reader) throws XMLStreamException {
+        DynamicMark mark = null;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                if (mark == null) {
+                    DynamicMark candidate = DynamicMark.fromXml(reader.getLocalName());
+                    if (candidate != null) {
+                        mark = candidate;
+                    }
+                }
+                skipElement(reader);
+            } else if (event == XMLStreamConstants.END_ELEMENT
+                    && "dynamics".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        if (mark == null) {
+            return null;
+        }
+        return new DirectionType.Dynamic(mark);
     }
 
     private ParsedNote readNote(XMLStreamReader reader, int divisions) throws XMLStreamException {

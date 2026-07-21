@@ -75,7 +75,23 @@ public enum Glyph {
     REST_WHOLE,
     REST_HALF,
     REST_QUARTER,
-    REST_EIGHTH;
+    REST_EIGHTH,
+    /* -- Dynamics (SMuFL Private Use Area U+E5xx). -------------------- */
+    DYNAMIC_PPP,
+    DYNAMIC_PP,
+    DYNAMIC_P,
+    DYNAMIC_MP,
+    DYNAMIC_MF,
+    DYNAMIC_F,
+    DYNAMIC_FF,
+    DYNAMIC_FFF,
+    DYNAMIC_SF,
+    DYNAMIC_SFZ,
+    DYNAMIC_FZ,
+    DYNAMIC_FP,
+    DYNAMIC_RF,
+    DYNAMIC_RFZ,
+    DYNAMIC_NIENTE;
 
     /**
      * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.

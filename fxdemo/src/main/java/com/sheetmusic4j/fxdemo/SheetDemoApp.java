@@ -16,7 +16,7 @@ import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.LayoutOptions;
 import com.sheetmusic4j.engraving.LayoutResult;
-import com.sheetmusic4j.engraving.TextPlacement;
+import com.sheetmusic4j.engraving.MarkingCategory;
 import com.sheetmusic4j.fxdemo.reference.DiagnosticComparator;
 import com.sheetmusic4j.fxdemo.reference.DiffReportWriter;
 import com.sheetmusic4j.fxdemo.reference.ImageStack;
@@ -132,16 +132,29 @@ public final class SheetDemoApp extends Application {
         CheckMenuItem showTitles = new CheckMenuItem("Show titles");
         showTitles.setSelected(true);
         showTitles.setOnAction(e -> toggleTextCategories(showTitles.isSelected(),
-                TextPlacement.Category.TITLE, TextPlacement.Category.SUBTITLE));
+                MarkingCategory.TITLE, MarkingCategory.SUBTITLE));
         CheckMenuItem showCreators = new CheckMenuItem("Show composer / lyricist");
         showCreators.setSelected(true);
         showCreators.setOnAction(e -> toggleTextCategories(showCreators.isSelected(),
-                TextPlacement.Category.CREATOR));
+                MarkingCategory.CREATOR));
         CheckMenuItem showLyrics = new CheckMenuItem("Show lyrics");
         showLyrics.setSelected(true);
         showLyrics.setOnAction(e -> toggleTextCategories(showLyrics.isSelected(),
-                TextPlacement.Category.LYRIC));
-        textMenu.getItems().addAll(showTitles, showCreators, showLyrics);
+                MarkingCategory.LYRIC));
+        CheckMenuItem showTempo = new CheckMenuItem("Show tempo");
+        showTempo.setSelected(true);
+        showTempo.setOnAction(e -> toggleTextCategories(showTempo.isSelected(),
+                MarkingCategory.TEMPO));
+        CheckMenuItem showDirections = new CheckMenuItem("Show directions");
+        showDirections.setSelected(true);
+        showDirections.setOnAction(e -> toggleTextCategories(showDirections.isSelected(),
+                MarkingCategory.DIRECTION));
+        CheckMenuItem showDynamics = new CheckMenuItem("Show dynamics");
+        showDynamics.setSelected(true);
+        showDynamics.setOnAction(e -> toggleTextCategories(showDynamics.isSelected(),
+                MarkingCategory.DYNAMIC));
+        textMenu.getItems().addAll(showTitles, showCreators, showLyrics,
+                showTempo, showDirections, showDynamics);
         viewMenu.getItems().add(textMenu);
 
         Menu helpMenu = new Menu("Help");
@@ -277,9 +290,9 @@ public final class SheetDemoApp extends Application {
      * based on whether their menu item is checked. Ticked = visible = remove
      * from hidden set; unticked = hidden = add to hidden set.
      */
-    private void toggleTextCategories(boolean visible, TextPlacement.Category... categories) {
+    private void toggleTextCategories(boolean visible, MarkingCategory... categories) {
         var hidden = sheetView.hiddenTextCategoriesProperty();
-        for (TextPlacement.Category category : categories) {
+        for (MarkingCategory category : categories) {
             if (visible) {
                 hidden.remove(category);
             } else {

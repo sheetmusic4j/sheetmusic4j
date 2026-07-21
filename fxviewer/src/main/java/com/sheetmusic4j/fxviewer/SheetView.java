@@ -6,7 +6,7 @@ import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.LayoutOptions;
 import com.sheetmusic4j.engraving.LayoutResult;
-import com.sheetmusic4j.engraving.TextPlacement;
+import com.sheetmusic4j.engraving.MarkingCategory;
 
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.SimpleDoubleProperty;
@@ -43,8 +43,8 @@ public final class SheetView extends Region {
     private final DoubleProperty systemWidth =
             new SimpleDoubleProperty(this, "systemWidth", LayoutOptions.defaults().systemWidth());
 
-    private final ObservableSet<TextPlacement.Category> hiddenTextCategories =
-            FXCollections.observableSet(EnumSet.noneOf(TextPlacement.Category.class));
+    private final ObservableSet<MarkingCategory> hiddenTextCategories =
+            FXCollections.observableSet(EnumSet.noneOf(MarkingCategory.class));
 
     private Score score;
 
@@ -52,7 +52,7 @@ public final class SheetView extends Region {
     public SheetView() {
         getChildren().add(canvas);
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
-        hiddenTextCategories.addListener((SetChangeListener<TextPlacement.Category>) change -> rebuild());
+        hiddenTextCategories.addListener((SetChangeListener<MarkingCategory>) change -> rebuild());
         // Initial empty canvas at the default width; setScore replaces it.
         canvas.setWidth(systemWidth.get());
         canvas.setHeight(FALLBACK_HEIGHT);
@@ -96,12 +96,12 @@ public final class SheetView extends Region {
     }
 
     /**
-     * Live-observable set of {@link TextPlacement.Category text categories}
-     * that this view should hide. Mutations trigger a rebuild.
+     * Live-observable set of {@link MarkingCategory categories} that this
+     * view should hide. Mutations trigger a rebuild.
      *
      * @return the observable set (never {@code null})
      */
-    public ObservableSet<TextPlacement.Category> hiddenTextCategoriesProperty() {
+    public ObservableSet<MarkingCategory> hiddenTextCategoriesProperty() {
         return hiddenTextCategories;
     }
 

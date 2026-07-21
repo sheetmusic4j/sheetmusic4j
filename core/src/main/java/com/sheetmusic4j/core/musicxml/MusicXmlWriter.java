@@ -19,6 +19,8 @@ import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Creator;
+import com.sheetmusic4j.core.model.Direction;
+import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
@@ -122,6 +124,8 @@ public final class MusicXmlWriter {
                 for (int i = 0; i < notes.size(); i++) {
                     writeNote(w, notes.get(i), i > 0);
                 }
+            } else if (element instanceof Direction direction) {
+                writeDirection(w, direction);
             }
         }
         w.end("measure");
@@ -221,6 +225,59 @@ public final class MusicXmlWriter {
         }
     }
 
+    private void writeDirection(IndentingWriter w, Direction direction) {
+        try {
+            String placementAttr = direction.placement() != null ? direction.placement().xmlValue() : null;
+            if (placementAttr != null) {
+                w.start("direction", "placement", placementAttr);
+            } else {
+                w.start("direction");
+            }
+            w.start("direction-type");
+            DirectionType type = direction.type();
+            if (type instanceof DirectionType.Words words) {
+                writeWords(w, words);
+            } else if (type instanceof DirectionType.Metronome metronome) {
+                writeMetronome(w, metronome);
+            } else if (type instanceof DirectionType.Dynamic dynamic) {
+                writeDynamics(w, dynamic);
+            }
+            w.end("direction-type");
+            w.end("direction");
+        } catch (XMLStreamException e) {
+            throw new MusicXmlException("Failed to write direction", e);
+        }
+    }
+
+    private void writeWords(IndentingWriter w, DirectionType.Words words) throws XMLStreamException {
+        List<String> attrs = new java.util.ArrayList<>(4);
+        if (words.italic()) {
+            attrs.add("font-style");
+            attrs.add("italic");
+        }
+        if (words.bold()) {
+            attrs.add("font-weight");
+            attrs.add("bold");
+        }
+        w.textElementWithAttrs("words", attrs, words.text());
+    }
+
+    private void writeMetronome(IndentingWriter w, DirectionType.Metronome metronome) throws XMLStreamException {
+        w.start("metronome");
+        w.textElement("beat-unit", metronome.beatUnit().xmlValue());
+        if (metronome.dotted()) {
+            w.emptyElement("beat-unit-dot");
+        }
+        w.textElement("per-minute", Integer.toString(metronome.perMinute()));
+        w.end("metronome");
+    }
+
+    private void writeDynamics(IndentingWriter w, DirectionType.Dynamic dynamic) throws XMLStreamException {
+        w.start("dynamics");
+        w.emptyElement(dynamic.mark().xmlValue());
+        w.end("dynamics");
+    }
+
     private void writeRest(IndentingWriter w, Rest rest) {
         try {
             w.start("note");
@@ -318,6 +375,21 @@ public final class MusicXmlWriter {
             writer.writeStartElement("beam");
             writer.writeAttribute("number", Integer.toString(number));
             writer.writeCharacters(state);
+            writer.writeEndElement();
+        }
+
+        /**
+         * Write a text element with a variable number of attribute pairs.
+         * {@code attrs} must contain an even number of entries: name, value,
+         * name, value, ...
+         */
+        void textElementWithAttrs(String name, List<String> attrs, String text) throws XMLStreamException {
+            indent();
+            writer.writeStartElement(name);
+            for (int i = 0; i + 1 < attrs.size(); i += 2) {
+                writer.writeAttribute(attrs.get(i), attrs.get(i + 1));
+            }
+            writer.writeCharacters(text);
             writer.writeEndElement();
         }
         }

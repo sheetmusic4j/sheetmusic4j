@@ -1,12 +1,8 @@
 package com.sheetmusic4j.core.midi;
 
-import com.sheetmusic4j.core.model.Attributes;
-import com.sheetmusic4j.core.model.Chord;
-import com.sheetmusic4j.core.model.Measure;
-import com.sheetmusic4j.core.model.MusicElement;
-import com.sheetmusic4j.core.model.Note;
-import com.sheetmusic4j.core.model.Part;
-import com.sheetmusic4j.core.model.Score;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Path;
 
 import javax.sound.midi.InvalidMidiDataException;
 import javax.sound.midi.MetaMessage;
@@ -15,9 +11,14 @@ import javax.sound.midi.MidiSystem;
 import javax.sound.midi.Sequence;
 import javax.sound.midi.ShortMessage;
 import javax.sound.midi.Track;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.file.Path;
+
+import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Chord;
+import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MusicElement;
+import com.sheetmusic4j.core.model.Note;
+import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.Score;
 
 /**
  * Exports a {@link Score} to a Standard MIDI File (format 1), one track per part.
@@ -83,7 +84,8 @@ public final class MidiExporter {
                 addNote(track, note.pitch().toMidiNumber(), tick, duration);
             }
         }
-        // Rests simply advance the cursor.
+        // Rests and Directions (zero duration) simply leave the cursor untouched.
+        // Dynamic-to-velocity conversion is a follow-up.
         return tick + duration;
     }
 

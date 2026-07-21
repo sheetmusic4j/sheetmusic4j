@@ -7,6 +7,7 @@ import com.sheetmusic4j.engraving.BeamPlacement;
 import com.sheetmusic4j.engraving.Glyph;
 import com.sheetmusic4j.engraving.GlyphPlacement;
 import com.sheetmusic4j.engraving.LayoutResult;
+import com.sheetmusic4j.engraving.MarkingCategory;
 import com.sheetmusic4j.engraving.MeasureLayout;
 import com.sheetmusic4j.engraving.StaffLayout;
 import com.sheetmusic4j.engraving.TextPlacement;
@@ -30,31 +31,31 @@ public final class ScorePainter {
     private static final int STAFF_LINES = 5;
     private static final double STEM_LENGTH_GAPS = 3.5;
 
-    private final EnumSet<TextPlacement.Category> hiddenCategories =
-            EnumSet.noneOf(TextPlacement.Category.class);
+    private final EnumSet<MarkingCategory> hiddenCategories =
+            EnumSet.noneOf(MarkingCategory.class);
 
     /** Creates a painter for rendering a layout onto any {@link RenderSurface}. */
     public ScorePainter() {
     }
 
     /**
-     * Replace the set of {@link TextPlacement.Category text categories} that
-     * should be skipped during painting. Hidden text still consumes vertical
-     * space at the engraver — reclaiming that gap is a follow-up.
+     * Replace the set of {@link MarkingCategory categories} that should be
+     * skipped during painting. Hidden content still consumes vertical space
+     * at the engraver — reclaiming that gap is a follow-up.
      *
      * @param categories categories to hide (never {@code null})
      */
-    public void setHiddenCategories(Set<TextPlacement.Category> categories) {
+    public void setHiddenCategories(Set<MarkingCategory> categories) {
         hiddenCategories.clear();
         if (categories != null && !categories.isEmpty()) {
             hiddenCategories.addAll(categories);
         }
     }
 
-    /** Currently hidden text categories (a defensive copy). */
-    public Set<TextPlacement.Category> getHiddenCategories() {
+    /** Currently hidden categories (a defensive copy). */
+    public Set<MarkingCategory> getHiddenCategories() {
         return hiddenCategories.isEmpty()
-                ? EnumSet.noneOf(TextPlacement.Category.class)
+                ? EnumSet.noneOf(MarkingCategory.class)
                 : EnumSet.copyOf(hiddenCategories);
     }
 
@@ -84,7 +85,15 @@ public final class ScorePainter {
         for (StaffLayout staff : layout.staves()) {
             drawStaff(surface, staff);
         }
-    }
+        }
+
+        /**
+        * Whether the given category should be skipped by the current painter.
+        * Package-private for tests.
+        */
+        boolean isHidden(MarkingCategory category) {
+        return hiddenCategories.contains(category);
+        }
 
     /**
      * Draw a page-level {@link TextPlacement}. Alignment is approximated by
@@ -116,6 +125,9 @@ public final class ScorePainter {
         surface.strokeLine(staff.x(), staff.lineY(0), staff.x(), staff.lineY(STAFF_LINES - 1));
 
         for (GlyphPlacement glyph : staff.glyphs()) {
+            if (hiddenCategories.contains(glyph.category())) {
+                continue;
+            }
             drawGlyph(surface, staff, glyph);
         }
 
@@ -163,6 +175,13 @@ public final class ScorePainter {
                 if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
                     double d = gap * 0.4;
                     surface.fillOval(glyph.x() - d / 2, glyph.y() - d / 2, d, d);
+                }
+            }
+            case DYNAMIC_PPP, DYNAMIC_PP, DYNAMIC_P, DYNAMIC_MP, DYNAMIC_MF,
+                    DYNAMIC_F, DYNAMIC_FF, DYNAMIC_FFF, DYNAMIC_SF, DYNAMIC_SFZ,
+                    DYNAMIC_FZ, DYNAMIC_FP, DYNAMIC_RF, DYNAMIC_RFZ, DYNAMIC_NIENTE -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText(dynamicFallback(g), glyph.x(), glyph.y() + gap * 0.4);
                 }
             }
             case CLEF_G, CLEF_F, CLEF_C -> {
@@ -275,6 +294,27 @@ public final class ScorePainter {
             case CLEF_F -> "F";
             case CLEF_C -> "C";
             default -> "G";
+        };
+    }
+
+    private static String dynamicFallback(Glyph glyph) {
+        return switch (glyph) {
+            case DYNAMIC_PPP -> "ppp";
+            case DYNAMIC_PP -> "pp";
+            case DYNAMIC_P -> "p";
+            case DYNAMIC_MP -> "mp";
+            case DYNAMIC_MF -> "mf";
+            case DYNAMIC_F -> "f";
+            case DYNAMIC_FF -> "ff";
+            case DYNAMIC_FFF -> "fff";
+            case DYNAMIC_SF -> "sf";
+            case DYNAMIC_SFZ -> "sfz";
+            case DYNAMIC_FZ -> "fz";
+            case DYNAMIC_FP -> "fp";
+            case DYNAMIC_RF -> "rf";
+            case DYNAMIC_RFZ -> "rfz";
+            case DYNAMIC_NIENTE -> "n";
+            default -> "";
         };
     }
 

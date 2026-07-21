@@ -14,10 +14,15 @@ import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Creator;
+import com.sheetmusic4j.core.model.Direction;
+import com.sheetmusic4j.core.model.DirectionType;
+import com.sheetmusic4j.core.model.DynamicMark;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
+import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Step;
 import com.sheetmusic4j.core.model.Syllabic;
@@ -374,6 +379,139 @@ class MusicXmlReaderTest {
                         <duration>1</duration>
                         <type>quarter</type>
                         """ + lyricXml + """
+                      </note>
+                    </measure>
+                  </part>
+                </score-partwise>
+                """;
+    }
+
+    @Test
+    void readsWordsDirection() {
+        String xml = directionXml("""
+                <direction placement="above">
+                  <direction-type>
+                    <words font-weight="bold">Andantino</words>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        var elements = score.parts().get(0).measures().get(0).elements();
+        Direction direction = (Direction) elements.get(0);
+        assertEquals(Placement.ABOVE, direction.placement());
+        DirectionType.Words words = (DirectionType.Words) direction.type();
+        assertEquals("Andantino", words.text());
+        assertTrue(words.bold());
+        assertTrue(!words.italic());
+    }
+
+    @Test
+    void readsItalicWordsDirection() {
+        String xml = directionXml("""
+                <direction>
+                  <direction-type>
+                    <words font-style="italic">dolce</words>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Direction direction = (Direction) score.parts().get(0).measures().get(0).elements().get(0);
+        assertEquals(Placement.DEFAULT, direction.placement());
+        DirectionType.Words words = (DirectionType.Words) direction.type();
+        assertEquals("dolce", words.text());
+        assertTrue(words.italic());
+        assertTrue(!words.bold());
+    }
+
+    @Test
+    void readsMetronomeDirection() {
+        String xml = directionXml("""
+                <direction placement="above">
+                  <direction-type>
+                    <metronome>
+                      <beat-unit>quarter</beat-unit>
+                      <per-minute>60</per-minute>
+                    </metronome>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Direction direction = (Direction) score.parts().get(0).measures().get(0).elements().get(0);
+        DirectionType.Metronome metronome = (DirectionType.Metronome) direction.type();
+        assertEquals(NoteType.QUARTER, metronome.beatUnit());
+        assertTrue(!metronome.dotted());
+        assertEquals(60, metronome.perMinute());
+    }
+
+    @Test
+    void readsDottedMetronomeDirection() {
+        String xml = directionXml("""
+                <direction>
+                  <direction-type>
+                    <metronome>
+                      <beat-unit>eighth</beat-unit>
+                      <beat-unit-dot/>
+                      <per-minute>90</per-minute>
+                    </metronome>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Direction direction = (Direction) score.parts().get(0).measures().get(0).elements().get(0);
+        DirectionType.Metronome metronome = (DirectionType.Metronome) direction.type();
+        assertEquals(NoteType.EIGHTH, metronome.beatUnit());
+        assertTrue(metronome.dotted());
+        assertEquals(90, metronome.perMinute());
+    }
+
+    @Test
+    void readsDynamicsDirection() {
+        String xml = directionXml("""
+                <direction placement="below">
+                  <direction-type>
+                    <dynamics><p/></dynamics>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Direction direction = (Direction) score.parts().get(0).measures().get(0).elements().get(0);
+        assertEquals(Placement.BELOW, direction.placement());
+        DirectionType.Dynamic dynamic = (DirectionType.Dynamic) direction.type();
+        assertEquals(DynamicMark.P, dynamic.mark());
+    }
+
+    @Test
+    void unknownDirectionTypeIgnored() {
+        String xml = directionXml("""
+                <direction>
+                  <direction-type>
+                    <wedge type="crescendo"/>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        var elements = score.parts().get(0).measures().get(0).elements();
+        // Only the note remains — unrecognised direction is silently dropped.
+        assertEquals(1, elements.size());
+        assertInstanceOf(Note.class, elements.get(0));
+    }
+
+    private static String directionXml(String directionBlock) {
+        return """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list><score-part id=\"P1\"><part-name>V</part-name></score-part></part-list>
+                  <part id=\"P1\">
+                    <measure number=\"1\">
+                      <attributes>
+                        <divisions>1</divisions>
+                        <clef><sign>G</sign><line>2</line></clef>
+                      </attributes>
+                        """ + directionBlock + """
+                      <note>
+                        <pitch><step>C</step><octave>4</octave></pitch>
+                        <duration>1</duration>
+                        <type>quarter</type>
                       </note>
                     </measure>
                   </part>

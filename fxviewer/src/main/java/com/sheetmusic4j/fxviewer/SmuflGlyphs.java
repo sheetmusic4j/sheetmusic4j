@@ -76,9 +76,24 @@ public final class SmuflGlyphs {
             case TIME_DIGIT_7 -> "\uE087";
             case TIME_DIGIT_8 -> "\uE088";
             case TIME_DIGIT_9 -> "\uE089";
+            case DYNAMIC_P -> "\uE520";
+            case DYNAMIC_F -> "\uE522";
+            case DYNAMIC_NIENTE -> "\uE526";
+            case DYNAMIC_PPP -> "\uE52A";
+            case DYNAMIC_PP -> "\uE52B";
+            case DYNAMIC_MP -> "\uE52C";
+            case DYNAMIC_MF -> "\uE52D";
+            case DYNAMIC_FF -> "\uE52F";
+            case DYNAMIC_FFF -> "\uE530";
+            case DYNAMIC_FP -> "\uE534";
+            case DYNAMIC_FZ -> "\uE535";
+            case DYNAMIC_SF -> "\uE536";
+            case DYNAMIC_SFZ -> "\uE539";
+            case DYNAMIC_RF -> "\uE53C";
+            case DYNAMIC_RFZ -> "\uE53D";
             default -> null;
-        };
-    }
+            };
+            }
 
     /**
      * Half of the SMuFL advance width for the given glyph, expressed in
@@ -105,6 +120,10 @@ public final class SmuflGlyphs {
             case ACCIDENTAL_DOUBLE_SHARP -> 1.05;
             case ACCIDENTAL_DOUBLE_FLAT -> 1.75;
             case AUG_DOT -> 0.4;
+            case DYNAMIC_P, DYNAMIC_F, DYNAMIC_NIENTE -> 1.5;
+            case DYNAMIC_PP, DYNAMIC_MP, DYNAMIC_MF, DYNAMIC_FF, DYNAMIC_FZ,
+                    DYNAMIC_FP, DYNAMIC_SF, DYNAMIC_RF -> 2.4;
+            case DYNAMIC_PPP, DYNAMIC_FFF, DYNAMIC_SFZ, DYNAMIC_RFZ -> 3.2;
             default -> 0.0;
         };
         // 1 em = 4 staff spaces in SMuFL, so staffSpaces / 4 = fraction of the em/sizeHint.

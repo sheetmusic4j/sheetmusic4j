@@ -1,10 +1,9 @@
 package com.sheetmusic4j.engraving;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import com.sheetmusic4j.core.model.Attributes;
@@ -57,7 +56,7 @@ class EngraverLyricsTest {
 
     private static List<TextPlacement> lyricTexts(LayoutResult layout) {
         return layout.texts().stream()
-                .filter(t -> t.category() == TextPlacement.Category.LYRIC)
+                .filter(t -> t.category() == MarkingCategory.LYRIC)
                 .toList();
     }
 
@@ -71,7 +70,7 @@ class EngraverLyricsTest {
         TextPlacement lyric = lyrics.get(0);
         assertEquals("La", lyric.text());
         assertEquals(TextPlacement.Align.CENTER, lyric.align());
-        assertEquals(TextPlacement.Category.LYRIC, lyric.category());
+        assertEquals(MarkingCategory.LYRIC, lyric.category());
 
         StaffLayout staff = layout.staves().get(0);
         // The lyric anchor x sits under a placed notehead in the same staff.

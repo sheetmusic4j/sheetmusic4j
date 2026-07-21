@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import com.sheetmusic4j.engraving.LayoutResult;
+import com.sheetmusic4j.engraving.MarkingCategory;
 import com.sheetmusic4j.engraving.StaffLayout;
 import com.sheetmusic4j.engraving.SystemLayout;
 import com.sheetmusic4j.engraving.TextPlacement;
@@ -21,11 +22,11 @@ class ScorePainterTextVisibilityTest {
         SystemLayout system = new SystemLayout(0, 100, 500, List.of(staff));
         List<TextPlacement> texts = List.of(
                 new TextPlacement("Title", 250, 40, 24, TextPlacement.Align.CENTER,
-                        TextPlacement.Category.TITLE),
+                        MarkingCategory.TITLE),
                 new TextPlacement("Composer", 480, 70, 12, TextPlacement.Align.RIGHT,
-                        TextPlacement.Category.CREATOR),
+                        MarkingCategory.CREATOR),
                 new TextPlacement("La", 100, 180, 14, TextPlacement.Align.CENTER,
-                        TextPlacement.Category.LYRIC));
+                        MarkingCategory.LYRIC));
         return new LayoutResult(List.of(system), texts, 500, 200);
     }
 
@@ -40,7 +41,7 @@ class ScorePainterTextVisibilityTest {
     void hidingLyricCategorySkipsLyricText() {
         RecordingSurface surface = new RecordingSurface();
         ScorePainter painter = new ScorePainter();
-        painter.setHiddenCategories(EnumSet.of(TextPlacement.Category.LYRIC));
+        painter.setHiddenCategories(EnumSet.of(MarkingCategory.LYRIC));
         painter.paint(surface, buildLayout(), 500, 200);
         assertEquals(List.of("Title", "Composer"), surface.textsDrawn);
     }
@@ -49,7 +50,7 @@ class ScorePainterTextVisibilityTest {
     void hidingCreatorCategorySkipsCreatorText() {
         RecordingSurface surface = new RecordingSurface();
         ScorePainter painter = new ScorePainter();
-        painter.setHiddenCategories(EnumSet.of(TextPlacement.Category.CREATOR));
+        painter.setHiddenCategories(EnumSet.of(MarkingCategory.CREATOR));
         painter.paint(surface, buildLayout(), 500, 200);
         assertEquals(List.of("Title", "La"), surface.textsDrawn);
         }
@@ -59,7 +60,7 @@ class ScorePainterTextVisibilityTest {
         RecordingSurface surface = new RecordingSurface();
         ScorePainter painter = new ScorePainter();
         painter.setHiddenCategories(EnumSet.of(
-                TextPlacement.Category.TITLE, TextPlacement.Category.SUBTITLE));
+                MarkingCategory.TITLE, MarkingCategory.SUBTITLE));
         painter.paint(surface, buildLayout(), 500, 200);
         assertEquals(List.of("Composer", "La"), surface.textsDrawn);
         }
@@ -68,7 +69,7 @@ class ScorePainterTextVisibilityTest {
     void hiddenCategoryStillDrawsStaves() {
         RecordingSurface surface = new RecordingSurface();
         ScorePainter painter = new ScorePainter();
-        painter.setHiddenCategories(EnumSet.allOf(TextPlacement.Category.class));
+        painter.setHiddenCategories(EnumSet.allOf(MarkingCategory.class));
         painter.paint(surface, buildLayout(), 500, 200);
         assertTrue(surface.textsDrawn.isEmpty(), "no text should be drawn");
         assertTrue(surface.strokeLineCount > 0,
@@ -78,9 +79,9 @@ class ScorePainterTextVisibilityTest {
     @Test
     void gettersReflectHiddenCategories() {
         ScorePainter painter = new ScorePainter();
-        painter.setHiddenCategories(EnumSet.of(TextPlacement.Category.CREATOR));
-        assertEquals(EnumSet.of(TextPlacement.Category.CREATOR), painter.getHiddenCategories());
-        painter.setHiddenCategories(EnumSet.noneOf(TextPlacement.Category.class));
+        painter.setHiddenCategories(EnumSet.of(MarkingCategory.CREATOR));
+        assertEquals(EnumSet.of(MarkingCategory.CREATOR), painter.getHiddenCategories());
+        painter.setHiddenCategories(EnumSet.noneOf(MarkingCategory.class));
         assertTrue(painter.getHiddenCategories().isEmpty());
     }
 

@@ -77,8 +77,8 @@ class EngraverTextBlockTest {
                 minimalScore("Symphony No. 5", "I. Allegro con brio"),
                 LayoutOptions.defaults());
         assertEquals(2, layout.texts().size());
-        assertEquals(TextPlacement.Category.TITLE, layout.texts().get(0).category());
-        assertEquals(TextPlacement.Category.SUBTITLE, layout.texts().get(1).category());
+        assertEquals(MarkingCategory.TITLE, layout.texts().get(0).category());
+        assertEquals(MarkingCategory.SUBTITLE, layout.texts().get(1).category());
         }
 
         @Test
@@ -90,21 +90,21 @@ class EngraverTextBlockTest {
         LayoutResult layout = new Engraver().layout(score, options);
 
         long creatorCount = layout.texts().stream()
-                .filter(t -> t.category() == TextPlacement.Category.CREATOR)
+                .filter(t -> t.category() == MarkingCategory.CREATOR)
                 .count();
         assertEquals(2, creatorCount, "expected two CREATOR placements");
 
         TextPlacement composer = layout.texts().stream()
                 .filter(t -> t.text().equals("J. S. Bach"))
                 .findFirst().orElseThrow();
-        assertEquals(TextPlacement.Category.CREATOR, composer.category());
+        assertEquals(MarkingCategory.CREATOR, composer.category());
         assertEquals(TextPlacement.Align.RIGHT, composer.align());
         assertEquals(options.systemWidth() - options.rightMargin(), composer.x(), 1e-6);
 
         TextPlacement lyricist = layout.texts().stream()
                 .filter(t -> t.text().equals("Anon."))
                 .findFirst().orElseThrow();
-        assertEquals(TextPlacement.Category.CREATOR, lyricist.category());
+        assertEquals(MarkingCategory.CREATOR, lyricist.category());
         assertEquals(TextPlacement.Align.LEFT, lyricist.align());
         assertEquals(options.leftMargin(), lyricist.x(), 1e-6);
 

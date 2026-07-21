@@ -13,14 +13,14 @@ package com.sheetmusic4j.engraving;
  * @param category semantic classification of this text; used by viewers to
  *                 toggle categories of text on and off
  */
-public record TextPlacement(String text, double x, double y, double fontSize, Align align, Category category) {
+public record TextPlacement(String text, double x, double y, double fontSize, Align align, MarkingCategory category) {
 
     /**
      * Backwards-compatible constructor for callers that did not yet classify
-     * their placements. Defaults to {@link Category#TITLE}.
+     * their placements. Defaults to {@link MarkingCategory#TITLE}.
      */
     public TextPlacement(String text, double x, double y, double fontSize, Align align) {
-        this(text, x, y, fontSize, align, Category.TITLE);
+        this(text, x, y, fontSize, align, MarkingCategory.TITLE);
     }
 
     /**
@@ -31,19 +31,5 @@ public record TextPlacement(String text, double x, double y, double fontSize, Al
         LEFT,
         CENTER,
         RIGHT
-    }
-
-    /**
-     * Semantic classification of a {@link TextPlacement}. Viewers can hide or
-     * show text by category (e.g. show titles but hide composer credits).
-     */
-    public enum Category {
-        TITLE,
-        SUBTITLE,
-        CREATOR,
-        LYRIC,
-        DIRECTION,
-        REHEARSAL,
-        CHORD_SYMBOL
     }
 }

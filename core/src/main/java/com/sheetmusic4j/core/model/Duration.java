@@ -9,6 +9,12 @@ package com.sheetmusic4j.core.model;
  */
 public record Duration(int value, int divisions) {
 
+    /**
+     * A zero-length duration. Useful for elements that occupy no time on the
+     * timeline (e.g. directions, dynamics, tempo markings).
+     */
+    public static final Duration ZERO = new Duration(0, 1);
+
     public Duration {
         if (value < 0) {
             throw new IllegalArgumentException("duration value must not be negative");
@@ -23,6 +29,13 @@ public record Duration(int value, int divisions) {
      */
     public double inQuarters() {
         return (double) value / divisions;
+    }
+
+    /**
+     * Whether this duration occupies zero time on the timeline.
+     */
+    public boolean isZero() {
+        return value == 0;
     }
 
     /**

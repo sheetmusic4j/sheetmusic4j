@@ -12,6 +12,9 @@ import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
 import com.sheetmusic4j.core.model.Creator;
+import com.sheetmusic4j.core.model.Direction;
+import com.sheetmusic4j.core.model.DirectionType;
+import com.sheetmusic4j.core.model.DynamicMark;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
@@ -20,6 +23,7 @@ import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Pitch;
+import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.TimeSignature;
@@ -66,6 +70,34 @@ public final class Engraver {
      * staff of a part when that part carries at least one verse-1 lyric.
      */
     private static final double LYRIC_RESERVE_GAPS = 3.2;
+
+    /**
+     * Additional vertical space (in staff-line gaps) reserved below the last
+     * staff of a part when that part carries at least one direction placed
+     * below the staff (e.g. a dynamic). Sized to match {@link
+     * #LYRIC_RESERVE_GAPS} so lyrics and dynamics share the same slot for
+     * the MVP; a fine-grained collision policy is a follow-up.
+     */
+    private static final double DIRECTION_BELOW_RESERVE_GAPS = 3.2;
+
+    /**
+     * Additional vertical space (in staff-line gaps) reserved above the top
+     * staff of a system when at least one part in that system carries a
+     * direction placed above the staff.
+     */
+    private static final double DIRECTION_ABOVE_RESERVE_GAPS = 3.0;
+
+    /**
+     * Distance (in staff-line gaps) from a staff to a direction's baseline
+     * anchor. Words/metronome sit above; dynamics sit below.
+     */
+    private static final double DIRECTION_OFFSET_GAPS = 1.5;
+
+    /**
+     * Multiplier applied to the staff-line gap to derive the direction text
+     * font size (words / metronome).
+     */
+    private static final double DIRECTION_FONT_SIZE_GAPS = 1.6;
 
     /**
      * Multiplier applied to the staff-line gap to derive the lyric font size.
@@ -122,6 +154,16 @@ public final class Engraver {
 
             List<StaffLayout> stavesForRow = new ArrayList<>();
             double staffTop = y;
+            boolean rowHasAboveDirections = false;
+            for (PartInfo p : parts) {
+                if (p.hasDirectionsAboveInRange(start, endExclusive)) {
+                    rowHasAboveDirections = true;
+                    break;
+                }
+            }
+            if (rowHasAboveDirections) {
+                staffTop += options.staffLineGap() * DIRECTION_ABOVE_RESERVE_GAPS;
+            }
             for (PartInfo p : parts) {
                 for (int staffIdx = 0; staffIdx < p.staveCount(); staffIdx++) {
                     StaffLayout sl = layoutStaffRow(
@@ -130,9 +172,16 @@ public final class Engraver {
                     stavesForRow.add(sl);
                     staffTop += options.staffHeight() + options.staffSpacing();
                 }
+                double belowReserve = 0.0;
                 if (p.hasLyrics()) {
-                    staffTop += options.staffLineGap() * LYRIC_RESERVE_GAPS;
+                    belowReserve = Math.max(belowReserve,
+                            options.staffLineGap() * LYRIC_RESERVE_GAPS);
                 }
+                if (p.hasDirectionsBelow()) {
+                    belowReserve = Math.max(belowReserve,
+                            options.staffLineGap() * DIRECTION_BELOW_RESERVE_GAPS);
+                }
+                staffTop += belowReserve;
             }
             systems.add(new SystemLayout(0, y, options.systemWidth(), stavesForRow));
             y = staffTop;
@@ -160,7 +209,7 @@ public final class Engraver {
         if (workTitle != null && !workTitle.isBlank()) {
             double fontSize = gap * 2.4;
             texts.add(new TextPlacement(workTitle, centerX, y + fontSize,
-                    fontSize, TextPlacement.Align.CENTER, TextPlacement.Category.TITLE));
+                    fontSize, TextPlacement.Align.CENTER, MarkingCategory.TITLE));
             double advance = fontSize * 1.2;
             y += advance;
             consumed += advance;
@@ -169,7 +218,7 @@ public final class Engraver {
         if (movement != null && !movement.isBlank() && !movement.equals(workTitle)) {
             double fontSize = gap * 1.6;
             texts.add(new TextPlacement(movement, centerX, y + fontSize,
-                    fontSize, TextPlacement.Align.CENTER, TextPlacement.Category.SUBTITLE));
+                    fontSize, TextPlacement.Align.CENTER, MarkingCategory.SUBTITLE));
             double advance = fontSize * 1.4;
             y += advance;
             consumed += advance;
@@ -196,11 +245,11 @@ public final class Engraver {
                 double baselineY = y + fontSize;
                 if (i < rightColumn.size()) {
                     texts.add(new TextPlacement(rightColumn.get(i).name(), rightX, baselineY,
-                            fontSize, TextPlacement.Align.RIGHT, TextPlacement.Category.CREATOR));
+                            fontSize, TextPlacement.Align.RIGHT, MarkingCategory.CREATOR));
                 }
                 if (i < leftColumn.size()) {
                     texts.add(new TextPlacement(leftColumn.get(i).name(), leftX, baselineY,
-                            fontSize, TextPlacement.Align.LEFT, TextPlacement.Category.CREATOR));
+                            fontSize, TextPlacement.Align.LEFT, MarkingCategory.CREATOR));
                 }
                 double advance = fontSize * 1.4;
                 y += advance;
@@ -226,20 +275,40 @@ public final class Engraver {
         private final KeySignature[] keyPerMeasure;
         private final TimeSignature[] timePerMeasure;
         private final boolean hasLyrics;
+        private final boolean[] hasDirectionsAbovePerMeasure;
+        private final boolean hasDirectionsBelow;
 
         private PartInfo(Part part, int staveCount,
                          Clef[][] clefs, KeySignature[] keys, TimeSignature[] times,
-                         boolean hasLyrics) {
+                         boolean hasLyrics,
+                         boolean[] hasDirectionsAbovePerMeasure,
+                         boolean hasDirectionsBelow) {
             this.part = part;
             this.staveCount = staveCount;
             this.clefsPerMeasure = clefs;
             this.keyPerMeasure = keys;
             this.timePerMeasure = times;
             this.hasLyrics = hasLyrics;
+            this.hasDirectionsAbovePerMeasure = hasDirectionsAbovePerMeasure;
+            this.hasDirectionsBelow = hasDirectionsBelow;
         }
 
         boolean hasLyrics() {
             return hasLyrics;
+        }
+
+        boolean hasDirectionsBelow() {
+            return hasDirectionsBelow;
+        }
+
+        boolean hasDirectionsAboveInRange(int start, int endExclusive) {
+            int upper = Math.min(endExclusive, hasDirectionsAbovePerMeasure.length);
+            for (int i = Math.max(0, start); i < upper; i++) {
+                if (hasDirectionsAbovePerMeasure[i]) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         Part part() {
@@ -337,9 +406,25 @@ public final class Engraver {
                 }
                 keys[idx] = currentKey;
                 times[idx] = currentTime;
-            }
-            return new PartInfo(part, staveCount, clefs, keys, times, scanHasLyrics(part));
-            }
+                }
+                boolean[] aboveMask = new boolean[n];
+                boolean belowAny = false;
+                for (int idx = 0; idx < n; idx++) {
+                Measure measure = part.measures().get(idx);
+                for (MusicElement element : measure.elements()) {
+                    if (element instanceof Direction direction) {
+                        Placement resolved = resolvedPlacement(direction);
+                        if (resolved == Placement.ABOVE) {
+                            aboveMask[idx] = true;
+                        } else if (resolved == Placement.BELOW) {
+                            belowAny = true;
+                        }
+                    }
+                }
+                }
+                return new PartInfo(part, staveCount, clefs, keys, times, scanHasLyrics(part),
+                    aboveMask, belowAny);
+                }
 
             /**
             * Whether the part contains at least one verse-1 lyric with non-empty
@@ -645,16 +730,49 @@ public final class Engraver {
             }
 
             List<MusicElement> elements = filterElementsForStaff(measure.elements(), staffNumber, staveCount);
-            double available = (cursorX + measureWidth) - contentStart - options.staffLineGap();
-            double step = elements.isEmpty() ? available : available / elements.size();
-            double noteX = contentStart;
+            // Directions occupy zero time but appear in document order among
+            // notes/rests/chords. We size the measure only by the time-
+            // consuming elements and then map each Direction to the x of the
+            // *next* time-consuming element (falling back to the last one).
+            List<MusicElement> timedElements = new ArrayList<>(elements.size());
             for (MusicElement element : elements) {
-                placeElement(glyphs, beams, ties, openBeams, tieCandidates,
-                        element, noteX, y, currentClef, options);
-                if (staffIdx == 0) {
-                    placeLyrics(texts, element, noteX, y, options);
+                if (!(element instanceof Direction)) {
+                    timedElements.add(element);
                 }
-                noteX += step;
+            }
+            double available = (cursorX + measureWidth) - contentStart - options.staffLineGap();
+            double step = timedElements.isEmpty() ? available : available / timedElements.size();
+            double[] timedX = new double[timedElements.size()];
+            double xCursor = contentStart;
+            for (int i = 0; i < timedElements.size(); i++) {
+                timedX[i] = xCursor;
+                xCursor += step;
+            }
+            // Fallback x when the measure has no time-consuming elements at all
+            // (rare, but possible for a measure that only carries directions).
+            double fallbackX = contentStart;
+            for (int i = 0, timedIdx = 0; i < elements.size(); i++) {
+                MusicElement element = elements.get(i);
+                if (element instanceof Direction direction) {
+                    double dirX;
+                    if (timedIdx < timedX.length) {
+                        dirX = timedX[timedIdx];
+                    } else if (timedX.length > 0) {
+                        dirX = timedX[timedX.length - 1];
+                    } else {
+                        dirX = fallbackX;
+                    }
+                    if (staffIdx == 0) {
+                        placeDirection(texts, glyphs, direction, dirX, y, options);
+                    }
+                } else {
+                    double noteX = timedX[timedIdx++];
+                    placeElement(glyphs, beams, ties, openBeams, tieCandidates,
+                            element, noteX, y, currentClef, options);
+                    if (staffIdx == 0) {
+                        placeLyrics(texts, element, noteX, y, options);
+                    }
+                }
             }
 
             cursorX += measureWidth;
@@ -692,7 +810,7 @@ public final class Engraver {
                 return note.staff();
             }
         }
-        // Rests inherit the previous staff assignment; default to staff 1.
+        // Rests and Directions inherit the previous staff assignment; default to staff 1.
         return 1;
     }
 
@@ -781,6 +899,101 @@ public final class Engraver {
     }
 
     /**
+     * Emit direction placements at the given anchor x. Words / metronome go
+     * above the staff (unless the placement attribute forces them below);
+     * dynamics go below the staff (unless forced above). {@link
+     * Placement#DEFAULT} follows the type-specific convention.
+     */
+    private void placeDirection(List<TextPlacement> texts, List<GlyphPlacement> glyphs,
+                                Direction direction, double x, double staffY,
+                                LayoutOptions options) {
+        double gap = options.staffLineGap();
+        Placement side = resolvedPlacement(direction);
+        DirectionType type = direction.type();
+        if (type instanceof DirectionType.Words words) {
+            double fontSize = gap * DIRECTION_FONT_SIZE_GAPS;
+            double y = side == Placement.BELOW
+                    ? staffY + options.staffHeight() + gap * DIRECTION_OFFSET_GAPS + fontSize
+                    : staffY - gap * DIRECTION_OFFSET_GAPS;
+            texts.add(new TextPlacement(words.text(), x, y, fontSize,
+                    TextPlacement.Align.LEFT, MarkingCategory.DIRECTION));
+        } else if (type instanceof DirectionType.Metronome metronome) {
+            double fontSize = gap * DIRECTION_FONT_SIZE_GAPS;
+            double y = side == Placement.BELOW
+                    ? staffY + options.staffHeight() + gap * DIRECTION_OFFSET_GAPS + fontSize
+                    : staffY - gap * DIRECTION_OFFSET_GAPS;
+            String text = metronomeText(metronome);
+            texts.add(new TextPlacement(text, x, y, fontSize,
+                    TextPlacement.Align.LEFT, MarkingCategory.TEMPO));
+        } else if (type instanceof DirectionType.Dynamic dynamic) {
+            Glyph glyph = dynamicGlyph(dynamic.mark());
+            double y = side == Placement.ABOVE
+                    ? staffY - gap * DIRECTION_OFFSET_GAPS - gap
+                    : staffY + options.staffHeight() + gap * DIRECTION_OFFSET_GAPS + gap;
+            // Use a staff step well outside the staff so ledger-line hinting
+            // never engages for the dynamic glyph.
+            int staffStep = side == Placement.ABOVE ? -6 : 12;
+            glyphs.add(new GlyphPlacement(x, y, glyph, staffStep, MarkingCategory.DYNAMIC));
+        }
+    }
+
+    /**
+     * Resolve a {@link Direction}'s effective placement. Explicit ABOVE/BELOW
+     * wins; DEFAULT follows the type convention (words/metronome above,
+     * dynamics below).
+     */
+    private static Placement resolvedPlacement(Direction direction) {
+        Placement raw = direction.placement();
+        if (raw != null && raw != Placement.DEFAULT) {
+            return raw;
+        }
+        return direction.type() instanceof DirectionType.Dynamic
+                ? Placement.BELOW
+                : Placement.ABOVE;
+    }
+
+    /**
+     * Render a metronome mark as a plain unicode string, e.g. {@code ♩ = 60}.
+     * A proper engraved metronome (SMuFL note glyph + digit glyphs) is a
+     * follow-up.
+     */
+    private static String metronomeText(DirectionType.Metronome metronome) {
+        String beatChar = switch (metronome.beatUnit()) {
+            case WHOLE -> "𝅝";
+            case HALF -> "♩";
+            case QUARTER -> "♩";
+            case EIGHTH -> "♪";
+            case SIXTEENTH -> "♬";
+            default -> "♩";
+        };
+        String dotSuffix = metronome.dotted() ? "." : "";
+        return beatChar + dotSuffix + " = " + metronome.perMinute();
+    }
+
+    /**
+     * Map a {@link DynamicMark} to the corresponding SMuFL dynamic glyph.
+     */
+    private static Glyph dynamicGlyph(DynamicMark mark) {
+        return switch (mark) {
+            case PPP -> Glyph.DYNAMIC_PPP;
+            case PP -> Glyph.DYNAMIC_PP;
+            case P -> Glyph.DYNAMIC_P;
+            case MP -> Glyph.DYNAMIC_MP;
+            case MF -> Glyph.DYNAMIC_MF;
+            case F -> Glyph.DYNAMIC_F;
+            case FF -> Glyph.DYNAMIC_FF;
+            case FFF -> Glyph.DYNAMIC_FFF;
+            case SF -> Glyph.DYNAMIC_SF;
+            case SFZ -> Glyph.DYNAMIC_SFZ;
+            case FZ -> Glyph.DYNAMIC_FZ;
+            case FP -> Glyph.DYNAMIC_FP;
+            case RF -> Glyph.DYNAMIC_RF;
+            case RFZ -> Glyph.DYNAMIC_RFZ;
+            case N -> Glyph.DYNAMIC_NIENTE;
+        };
+    }
+
+    /**
      * Emit lyric {@link TextPlacement}s for the given measure element. Only
      * verse-1 lyrics are rendered in the current MVP scope; verses &gt;= 2 are
      * captured in the model but not drawn.
@@ -805,7 +1018,7 @@ public final class Engraver {
             }
             String rendered = text + syllabicSuffix(lyric.syllabic());
             texts.add(new TextPlacement(rendered, noteX, baselineY, fontSize,
-                    TextPlacement.Align.CENTER, TextPlacement.Category.LYRIC));
+                    TextPlacement.Align.CENTER, MarkingCategory.LYRIC));
         }
     }
 
