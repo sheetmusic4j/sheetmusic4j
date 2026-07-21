@@ -26,7 +26,6 @@
 
         <!-- Dependencies -->
         <javafx.version>21.0.4</javafx.version>
-        <monocle.version>21.0.2</monocle.version>
         <pdfviewfx.version>3.4.2</pdfviewfx.version>
 
         <!-- Test dependencies -->
@@ -100,11 +99,6 @@
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-swing</artifactId>
                 <version>${javafx.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.testfx</groupId>
-                <artifactId>openjfx-monocle</artifactId>
-                <version>${monocle.version}</version>
             </dependency>
 
             <!-- Testing -->

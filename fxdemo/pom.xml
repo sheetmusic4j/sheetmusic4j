@@ -89,36 +89,42 @@
         <profile>
             <!--
                 Regenerate the reference PNGs used by the diagnostic comparator.
-                Activate with:  mvn -pl fxdemo -Prefresh-references test
+                Local-only: needs a working JavaFX + WebView (native macOS / Windows,
+                or Linux with a display / Xvfb). Do NOT wire this into CI.
+
+                Usage:
+                    mvn -pl fxdemo -am -Prefresh-references test
             -->
             <id>refresh-references</id>
-            <dependencies>
-                <!--
-                    Headless JavaFX Monocle backend is only needed when running the
-                    WebView-driven reference generator. Adding it here keeps the
-                    default "mvn test" free of any external artifact resolution.
-                -->
-                <dependency>
-                    <groupId>org.testfx</groupId>
-                    <artifactId>openjfx-monocle</artifactId>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
             <build>
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
-                            <excludedGroups></excludedGroups>
+                            <!--
+                                combine.self="override" is required: without it, an
+                                empty child element MERGES with (does not replace)
+                                the parent's <excludedGroups>reference-generation</...>,
+                                so JUnit ends up including AND excluding the same
+                                tag and Tests run: 0 silently.
+                            -->
+                            <excludedGroups combine.self="override"></excludedGroups>
                             <groups>reference-generation</groups>
+                            <!--
+                                Fail loudly when the tag filter accidentally
+                                matches nothing (regression guard for the merge
+                                bug we just fixed).
+                            -->
+                            <failIfNoTests>true</failIfNoTests>
                             <systemPropertyVariables>
                                 <sheetmusic4j.reference.regenerate>true</sheetmusic4j.reference.regenerate>
-                                <glass.platform>Monocle</glass.platform>
-                                <monocle.platform>Headless</monocle.platform>
+                                <!--
+                                    Force software Prism to keep PNG output stable
+                                    across GPU drivers. Do NOT set glass.platform
+                                    or monocle.platform: Monocle cannot host WebView.
+                                -->
                                 <prism.order>sw</prism.order>
-                                <prism.text>t2k</prism.text>
-                                <java.awt.headless>true</java.awt.headless>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>

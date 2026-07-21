@@ -39,7 +39,7 @@ mvn -pl core -Dtest=MusicXmlReaderTest test   # run a single test class
 mvn -pl fxdemo javafx:run               # launch the JavaFX demo app
 ```
 
-CI (`.github/workflows/maven.yml`) runs tests with `mvn test -Pheadless-tests` and a separate build/JavaDoc-validation job with `mvn -Dmaven.test.skip=true install` + `mvn javadoc:javadoc`, on JDK 25 (Zulu) even though `maven.compiler.release` is 21 — don't assume the CI JDK version dictates the language level.
+CI (`.github/workflows/ci.yml`) runs `mvn verify` on JDK 26 (Temurin). The library still targets `maven.compiler.release=21`. There is no CI workflow that regenerates OSMD reference PNGs — that is a local-only step (`mvn -pl fxdemo -am -Prefresh-references test`); PNGs are committed by the developer.
 
 Release is a manual `workflow_dispatch` (`.github/workflows/release.yml`) that bumps the version with `versions:set` and runs `mvn -Prelease clean deploy` to Maven Central.
 

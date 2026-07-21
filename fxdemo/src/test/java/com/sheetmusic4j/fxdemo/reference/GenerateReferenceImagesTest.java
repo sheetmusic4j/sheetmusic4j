@@ -1,10 +1,5 @@
 package com.sheetmusic4j.fxdemo.reference;
 
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +8,10 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Regenerates the reference PNGs used by {@link com.sheetmusic4j.fxdemo.CompareFxViewWithReferenceTest}
@@ -29,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>If the OSMD bundle is not committed under
  * {@code fxdemo/src/test/resources/reference/osmd/opensheetmusicdisplay.min.js},
- * or if JavaFX-web/Monocle cannot be booted, the test skips gracefully via
+ * or if JavaFX-web cannot be booted, the test skips gracefully via
  * {@link Assumptions}.
  */
 @Tag("reference-generation")
