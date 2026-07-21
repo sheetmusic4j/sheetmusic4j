@@ -36,12 +36,14 @@ public final class DiffReportWriter {
      * @param reference           the reference image
      * @param referencePageCount  number of PDF pages the reference was stitched from
      *                            (0 or negative to omit the count from the caption)
+     * @param renderedSystems     number of engraved systems (rows of staves) in the
+     *                            rendered image; when non-positive the value is omitted
      * @param diagnostic          the diagnostic to summarize in the report
      * @return path to the generated {@code report.html} file
      * @throws IOException if the output directory or report files cannot be written
      */
-    public static Path write(Path outputDir, String name, BufferedImage rendered, BufferedImage reference,
-                             int referencePageCount,
+     public static Path write(Path outputDir, String name, BufferedImage rendered, BufferedImage reference,
+                             int referencePageCount, int renderedSystems,
                              DiagnosticComparator.Diagnostic diagnostic) throws IOException {
         Files.createDirectories(outputDir);
 
@@ -79,6 +81,12 @@ public final class DiffReportWriter {
                 .append("Rendered staves: ").append(diagnostic.renderedStaves().size()).append(" &middot; ")
                 .append("Reference staves: ").append(diagnostic.referenceStaves().size())
                 .append("</div>\n");
+        if (renderedSystems > 0) {
+            sb.append("<div class=\"summary\">\n")
+                    .append("Rendered systems: ").append(renderedSystems)
+                    .append(" &middot; Reference bands: ").append(diagnostic.referenceStaves().size())
+                    .append("</div>\n");
+        }
 
         sb.append("<div class=\"row\">\n")
                 .append("  <div class=\"pane\"><h3>Sheet4j rendering</h3><img src=\"rendered.png\"></div>\n")

@@ -55,7 +55,6 @@ import javafx.stage.Stage;
 public final class SheetDemoApp extends Application {
 
     private static final int DIFF_WIDTH = 1000;
-    private static final int DIFF_HEIGHT = 300;
 
     private static final float PDF_DPI =
             (float) Double.parseDouble(
@@ -75,6 +74,7 @@ public final class SheetDemoApp extends Application {
     private BorderPane debugPane;
     private BorderPane diffPane;
     private ScrollPane scoreScroll;
+    private double lastViewportWidth = 0;
 
     private Stage stage;
     private Path currentFile;
@@ -144,6 +144,16 @@ public final class SheetDemoApp extends Application {
         scoreScroll.setPannable(true);
         scoreScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         scoreScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        // Reflow the engraved score to whatever width the viewport currently
+        // offers so the user can drag the window and get more/fewer systems.
+        scoreScroll.viewportBoundsProperty().addListener((obs, oldV, newV) -> {
+            double w = Math.max(200, newV.getWidth() - 4);
+            if (Math.abs(w - lastViewportWidth) > 0.5) {
+                lastViewportWidth = w;
+                sheetView.setSystemWidth(w);
+                updateDebug(currentScore, PdfSibling.existingPathFor(currentFile != null ? currentFile : java.nio.file.Path.of(".")));
+            }
+        });
         BorderPane scorePane = new BorderPane(scoreScroll);
         scorePane.setTop(sectionTitle("Sheet4j rendering"));
 
@@ -252,6 +262,18 @@ public final class SheetDemoApp extends Application {
         }
     }
 
+    /**
+     * Viewport-driven width used by the top "Sheet4j rendering" pane. The
+     * diff comparison keeps the fixed {@link #DIFF_WIDTH} so per-fixture
+     * similarity numbers stay comparable across runs.
+     *
+     * @return the current effective system width in pixels, or
+     *         {@code DIFF_WIDTH} when the viewport has not resolved yet
+     */
+    private double currentViewportWidth() {
+        return lastViewportWidth > 0 ? lastViewportWidth : DIFF_WIDTH;
+    }
+
     private void generateReferenceAsync() {
         if (currentFile == null || currentScore == null) {
             diffStatus.setText("Open a MusicXML file first.");
@@ -285,15 +307,15 @@ public final class SheetDemoApp extends Application {
                 }
                 BufferedImage reference = ImageStack.stackVertically(pages.get(), 8, Color.WHITE);
 
-                BufferedImage rendered = HeadlessScoreImage.render(score, DIFF_WIDTH, DIFF_HEIGHT);
                 LayoutResult layout = new Engraver().layout(score, layoutOptions());
+                BufferedImage rendered = HeadlessScoreImage.render(score, DIFF_WIDTH);
                 DiagnosticComparator.Diagnostic diagnostic =
                         new DiagnosticComparator().compare(rendered, reference, layout);
 
                 Path outDir = Path.of(System.getProperty("java.io.tmpdir"), "sheet4j-diff",
                         stripExtension(fileName));
                 return DiffReportWriter.write(outDir, stripExtension(fileName),
-                        rendered, reference, count.getAsInt(), diagnostic);
+                        rendered, reference, count.getAsInt(), layout.systems().size(), diagnostic);
             }
         };
         task.setOnSucceeded(e -> {
@@ -350,7 +372,10 @@ public final class SheetDemoApp extends Application {
     private void updateDebug(Score score, Optional<Path> pdf) {
         StringBuilder sb = new StringBuilder();
         sb.append("File: ").append(currentFile != null ? currentFile.toAbsolutePath() : "(none)").append('\n');
-        sb.append("PDF : ").append(pdf.map(p -> p.toAbsolutePath().toString()).orElse("(none)")).append("\n\n");
+        sb.append("PDF : ").append(pdf.map(p -> p.toAbsolutePath().toString()).orElse("(none)")).append('\n');
+        sb.append("System width (viewport): ")
+                .append(String.format(java.util.Locale.ROOT, "%.0f", currentViewportWidth()))
+                .append("\n\n");
         sb.append(ScoreInspector.describe(score));
         debugArea.setText(sb.toString());
     }

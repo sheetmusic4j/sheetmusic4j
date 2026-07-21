@@ -52,7 +52,6 @@ import com.sheetmusic4j.fxdemo.reference.PdfRasterizer;
 class CompareFxViewWithReferenceTest {
 
     private static final int WIDTH = 1000;
-    private static final int HEIGHT = 300;
 
     private static final float PDF_DPI =
             (float) Double.parseDouble(
@@ -64,6 +63,15 @@ class CompareFxViewWithReferenceTest {
     // band the StaffDetector finds. Loosened from the OSMD-era 0.25..4.0.
     private static final double MIN_STAFF_HEIGHT_RATIO = 0.15;
     private static final double MAX_STAFF_HEIGHT_RATIO = 8.0;
+    /**
+     * Global per-measure similarity floor. Ratcheting history:
+     * <pre>
+     *   0.20  initial bar (single overflowing system, no line breaks)
+     * </pre>
+     * The target is 0.95. Every step raises this constant only as far as all
+     * committed fixtures still clear it. Callers may override the bar
+     * locally via {@code -Dsheetmusic4j.compare.measure.threshold}.
+     */
     private static final double MIN_PER_MEASURE_SIMILARITY =
             Double.parseDouble(System.getProperty("sheetmusic4j.compare.measure.threshold", "0.2"));
 
@@ -80,6 +88,7 @@ class CompareFxViewWithReferenceTest {
      */
     static Stream<Arguments> fixtures() {
         Path samples = Paths.get("src", "test", "resources", "xmlsamples");
+        Path melodyMatrix = Paths.get("src", "test", "resources", "melodymatrix");
         return Stream.of(
                 Arguments.of("ActorPreludeSample", samples.resolve("ActorPreludeSample.musicxml"), 4),
                 Arguments.of("BeetAnGeSample", samples.resolve("BeetAnGeSample.musicxml"), 1),
@@ -87,6 +96,7 @@ class CompareFxViewWithReferenceTest {
                 Arguments.of("BrookeWestSample", samples.resolve("BrookeWestSample.musicxml"), 1),
                 Arguments.of("DebuMandSample", samples.resolve("DebuMandSample.musicxml"), 1),
                 Arguments.of("Dichterliebe01", samples.resolve("Dichterliebe01.musicxml"), 2),
+                Arguments.of("do-re-mi", melodyMatrix.resolve("do-re-mi.mxl"), 1),
                 Arguments.of("Echigo-Jishi", samples.resolve("Echigo-Jishi.musicxml"), 1),
                 Arguments.of("FaurReveSample", samples.resolve("FaurReveSample.musicxml"), 1),
                 Arguments.of("MahlFaGe4Sample", samples.resolve("MahlFaGe4Sample.musicxml"), 1),
@@ -116,17 +126,17 @@ class CompareFxViewWithReferenceTest {
                 pages.get(), 8, Color.WHITE);
 
         Score score = loadScore(xmlPath);
-        BufferedImage rendered = HeadlessScoreImage.render(score, WIDTH, HEIGHT);
+        LayoutResult layout = new Engraver().layout(score, layoutOptions());
+        BufferedImage rendered = HeadlessScoreImage.render(score, WIDTH);
         double ink = ImageSimilarity.inkRatio(rendered);
         assertTrue(ink > MIN_INK, "rendered score should not be blank, ink ratio was " + ink);
 
-        LayoutResult layout = new Engraver().layout(score, layoutOptions());
         DiagnosticComparator.Diagnostic diagnostic =
                 new DiagnosticComparator().compare(rendered, referenceImage, layout);
 
         Path reportDir = Paths.get("target", "sheet4j-diff", name);
         Path report = DiffReportWriter.write(reportDir, name, rendered, referenceImage,
-                actualPageCount.getAsInt(), diagnostic);
+                actualPageCount.getAsInt(), layout.systems().size(), diagnostic);
 
         try {
             assertStaffCount(diagnostic);
@@ -151,9 +161,11 @@ class CompareFxViewWithReferenceTest {
         for (int i = 0; i < compare; i++) {
             Rectangle r = rendered.get(i);
             Rectangle ref = reference.get(i);
-            // Skip staves that the engraver clipped out of the fixed-width canvas -
-            // multi-staff / multi-system scores are still a known Sheet4j gap.
-            if (r.height <= 0) {
+            // Only skip staves whose reference band could not be detected.
+            // With the auto-sized rendering canvas, rendered staves are no
+            // longer clipped off the bottom, so their height should be
+            // meaningful.
+            if (r.height <= 0 || ref.height <= 0) {
                 continue;
             }
             double ratio = ref.height / (double) Math.max(1, r.height);
