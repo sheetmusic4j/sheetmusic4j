@@ -1,6 +1,10 @@
 package com.sheetmusic4j.fxviewer;
 
+import java.util.Set;
+
 import com.sheetmusic4j.engraving.LayoutResult;
+import com.sheetmusic4j.engraving.TextPlacement;
+
 import javafx.scene.canvas.GraphicsContext;
 
 /**
@@ -20,5 +24,19 @@ public final class ScoreRenderer {
     public void render(GraphicsContext gc, LayoutResult layout) {
         RenderSurface surface = new FxRenderSurface(gc);
         painter.paint(surface, layout, gc.getCanvas().getWidth(), gc.getCanvas().getHeight());
+    }
+
+    /**
+     * Configure which {@link TextPlacement.Category text categories} the
+     * underlying painter should skip. See
+     * {@link ScorePainter#setHiddenCategories(Set)}.
+     */
+    public void setHiddenTextCategories(Set<TextPlacement.Category> categories) {
+        painter.setHiddenCategories(categories);
+    }
+
+    /** @return the current set of hidden categories (defensive copy). */
+    public Set<TextPlacement.Category> getHiddenTextCategories() {
+        return painter.getHiddenCategories();
     }
 }

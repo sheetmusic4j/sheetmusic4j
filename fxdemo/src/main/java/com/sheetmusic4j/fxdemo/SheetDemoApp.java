@@ -16,6 +16,7 @@ import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.LayoutOptions;
 import com.sheetmusic4j.engraving.LayoutResult;
+import com.sheetmusic4j.engraving.TextPlacement;
 import com.sheetmusic4j.fxdemo.reference.DiagnosticComparator;
 import com.sheetmusic4j.fxdemo.reference.DiffReportWriter;
 import com.sheetmusic4j.fxdemo.reference.ImageStack;
@@ -29,6 +30,7 @@ import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
@@ -125,6 +127,18 @@ public final class SheetDemoApp extends Application {
         MenuItem showDiff = new MenuItem("Show Diff tab");
         showDiff.setOnAction(e -> showDiffTab());
         viewMenu.getItems().add(showDiff);
+
+        Menu textMenu = new Menu("Text");
+        CheckMenuItem showTitles = new CheckMenuItem("Show titles");
+        showTitles.setSelected(true);
+        showTitles.setOnAction(e -> toggleTextCategories(showTitles.isSelected(),
+                TextPlacement.Category.TITLE, TextPlacement.Category.SUBTITLE));
+        CheckMenuItem showCreators = new CheckMenuItem("Show composer / lyricist");
+        showCreators.setSelected(true);
+        showCreators.setOnAction(e -> toggleTextCategories(showCreators.isSelected(),
+                TextPlacement.Category.CREATOR));
+        textMenu.getItems().addAll(showTitles, showCreators);
+        viewMenu.getItems().add(textMenu);
 
         Menu helpMenu = new Menu("Help");
         MenuItem about = new MenuItem("About");
@@ -252,6 +266,22 @@ public final class SheetDemoApp extends Application {
     private void removePdf() {
         split.getItems().remove(pdfPane);
         split.setDividerPositions(0.72);
+    }
+
+    /**
+     * Add or remove the given categories from the sheet view's hidden set,
+     * based on whether their menu item is checked. Ticked = visible = remove
+     * from hidden set; unticked = hidden = add to hidden set.
+     */
+    private void toggleTextCategories(boolean visible, TextPlacement.Category... categories) {
+        var hidden = sheetView.hiddenTextCategoriesProperty();
+        for (TextPlacement.Category category : categories) {
+            if (visible) {
+                hidden.remove(category);
+            } else {
+                hidden.add(category);
+            }
+        }
     }
 
     private void showDiffTab() {

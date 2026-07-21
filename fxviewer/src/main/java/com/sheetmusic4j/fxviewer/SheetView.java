@@ -1,12 +1,18 @@
 package com.sheetmusic4j.fxviewer;
 
+import java.util.EnumSet;
+
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.LayoutOptions;
 import com.sheetmusic4j.engraving.LayoutResult;
+import com.sheetmusic4j.engraving.TextPlacement;
 
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.SimpleDoubleProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableSet;
+import javafx.collections.SetChangeListener;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.layout.Region;
 
@@ -37,12 +43,16 @@ public final class SheetView extends Region {
     private final DoubleProperty systemWidth =
             new SimpleDoubleProperty(this, "systemWidth", LayoutOptions.defaults().systemWidth());
 
+    private final ObservableSet<TextPlacement.Category> hiddenTextCategories =
+            FXCollections.observableSet(EnumSet.noneOf(TextPlacement.Category.class));
+
     private Score score;
 
     /** Creates an empty score view at the default engraving width. */
     public SheetView() {
         getChildren().add(canvas);
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
+        hiddenTextCategories.addListener((SetChangeListener<TextPlacement.Category>) change -> rebuild());
         // Initial empty canvas at the default width; setScore replaces it.
         canvas.setWidth(systemWidth.get());
         canvas.setHeight(FALLBACK_HEIGHT);
@@ -86,6 +96,16 @@ public final class SheetView extends Region {
     }
 
     /**
+     * Live-observable set of {@link TextPlacement.Category text categories}
+     * that this view should hide. Mutations trigger a rebuild.
+     *
+     * @return the observable set (never {@code null})
+     */
+    public ObservableSet<TextPlacement.Category> hiddenTextCategoriesProperty() {
+        return hiddenTextCategories;
+    }
+
+    /**
      * Recompute the layout for the current score, resize the canvas to the
      * layout's content extent, and redraw. Also updates the region's
      * preferred/min sizes so a wrapping {@link javafx.scene.control.ScrollPane}
@@ -100,6 +120,7 @@ public final class SheetView extends Region {
             LayoutResult layout = engraver.layout(score, layoutOptions());
             canvas.setWidth(Math.max(layout.width(), 1.0));
             canvas.setHeight(Math.max(layout.height(), 1.0));
+            renderer.setHiddenTextCategories(hiddenTextCategories);
             renderer.render(canvas.getGraphicsContext2D(), layout);
         }
         setPrefSize(canvas.getWidth(), canvas.getHeight());

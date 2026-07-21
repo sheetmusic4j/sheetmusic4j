@@ -11,6 +11,7 @@ import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
+import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.MusicElement;
@@ -138,7 +139,7 @@ public final class Engraver {
         if (workTitle != null && !workTitle.isBlank()) {
             double fontSize = gap * 2.4;
             texts.add(new TextPlacement(workTitle, centerX, y + fontSize,
-                    fontSize, TextPlacement.Align.CENTER));
+                    fontSize, TextPlacement.Align.CENTER, TextPlacement.Category.TITLE));
             double advance = fontSize * 1.2;
             y += advance;
             consumed += advance;
@@ -147,10 +148,45 @@ public final class Engraver {
         if (movement != null && !movement.isBlank() && !movement.equals(workTitle)) {
             double fontSize = gap * 1.6;
             texts.add(new TextPlacement(movement, centerX, y + fontSize,
-                    fontSize, TextPlacement.Align.CENTER));
+                    fontSize, TextPlacement.Align.CENTER, TextPlacement.Category.SUBTITLE));
             double advance = fontSize * 1.4;
+            y += advance;
             consumed += advance;
         }
+
+        // Creator rows: composer/arranger/transcriber to the right, lyricist/
+        // poet/translator to the left; any other role stacks left below.
+        List<Creator> creators = score.creators();
+        if (!creators.isEmpty()) {
+            List<Creator> rightColumn = new ArrayList<>();
+            List<Creator> leftColumn = new ArrayList<>();
+            for (Creator creator : creators) {
+                switch (creator.role()) {
+                    case "composer", "arranger", "transcriber" -> rightColumn.add(creator);
+                    case "lyricist", "poet", "translator" -> leftColumn.add(creator);
+                    default -> leftColumn.add(creator);
+                }
+            }
+            double fontSize = gap * 1.1;
+            double leftX = options.leftMargin();
+            double rightX = options.systemWidth() - options.rightMargin();
+            int rowCount = Math.max(rightColumn.size(), leftColumn.size());
+            for (int i = 0; i < rowCount; i++) {
+                double baselineY = y + fontSize;
+                if (i < rightColumn.size()) {
+                    texts.add(new TextPlacement(rightColumn.get(i).name(), rightX, baselineY,
+                            fontSize, TextPlacement.Align.RIGHT, TextPlacement.Category.CREATOR));
+                }
+                if (i < leftColumn.size()) {
+                    texts.add(new TextPlacement(leftColumn.get(i).name(), leftX, baselineY,
+                            fontSize, TextPlacement.Align.LEFT, TextPlacement.Category.CREATOR));
+                }
+                double advance = fontSize * 1.4;
+                y += advance;
+                consumed += advance;
+            }
+        }
+
         if (consumed > 0) {
             // A little breathing space between the title block and the first staff.
             consumed += gap;

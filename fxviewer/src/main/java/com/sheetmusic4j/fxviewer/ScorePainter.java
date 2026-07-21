@@ -1,5 +1,8 @@
 package com.sheetmusic4j.fxviewer;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 import com.sheetmusic4j.engraving.BeamPlacement;
 import com.sheetmusic4j.engraving.Glyph;
 import com.sheetmusic4j.engraving.GlyphPlacement;
@@ -27,8 +30,32 @@ public final class ScorePainter {
     private static final int STAFF_LINES = 5;
     private static final double STEM_LENGTH_GAPS = 3.5;
 
+    private final EnumSet<TextPlacement.Category> hiddenCategories =
+            EnumSet.noneOf(TextPlacement.Category.class);
+
     /** Creates a painter for rendering a layout onto any {@link RenderSurface}. */
     public ScorePainter() {
+    }
+
+    /**
+     * Replace the set of {@link TextPlacement.Category text categories} that
+     * should be skipped during painting. Hidden text still consumes vertical
+     * space at the engraver — reclaiming that gap is a follow-up.
+     *
+     * @param categories categories to hide (never {@code null})
+     */
+    public void setHiddenCategories(Set<TextPlacement.Category> categories) {
+        hiddenCategories.clear();
+        if (categories != null && !categories.isEmpty()) {
+            hiddenCategories.addAll(categories);
+        }
+    }
+
+    /** Currently hidden text categories (a defensive copy). */
+    public Set<TextPlacement.Category> getHiddenCategories() {
+        return hiddenCategories.isEmpty()
+                ? EnumSet.noneOf(TextPlacement.Category.class)
+                : EnumSet.copyOf(hiddenCategories);
     }
 
     /**
@@ -46,7 +73,12 @@ public final class ScorePainter {
         surface.setFill(RenderColor.BLACK);
         surface.setLineWidth(1.0);
 
+        // Hidden text still consumes vertical space at the engraver —
+        // reclaiming that gap is a follow-up task.
         for (TextPlacement text : layout.texts()) {
+            if (hiddenCategories.contains(text.category())) {
+                continue;
+            }
             drawText(surface, text);
         }
         for (StaffLayout staff : layout.staves()) {

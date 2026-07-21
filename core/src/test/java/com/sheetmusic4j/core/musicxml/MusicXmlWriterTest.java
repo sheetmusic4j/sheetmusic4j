@@ -1,17 +1,18 @@
 package com.sheetmusic4j.core.musicxml;
 
-import com.sheetmusic4j.core.model.MusicElement;
-import com.sheetmusic4j.core.model.Note;
-import com.sheetmusic4j.core.model.Part;
-import com.sheetmusic4j.core.model.Score;
-import org.junit.jupiter.api.Test;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import org.junit.jupiter.api.Test;
+
+import com.sheetmusic4j.core.model.Creator;
+import com.sheetmusic4j.core.model.MusicElement;
+import com.sheetmusic4j.core.model.Note;
+import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.Score;
 
 class MusicXmlWriterTest {
 
@@ -48,6 +49,22 @@ class MusicXmlWriterTest {
                 assertSameElement(origElems.get(i), reElems.get(i));
             }
         }
+    }
+
+    @Test
+    void roundTripPreservesCreators() {
+        Score original = Score.builder()
+                .workTitle("Test Piece")
+                .addCreator(new Creator("composer", "Alice Composer"))
+                .addCreator(new Creator("lyricist", "Bob Lyricist"))
+                .addPart(Part.builder("P1").name("Piano").build())
+                .build();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new MusicXmlWriter().write(original, out);
+
+        Score reparsed = new MusicXmlReader().read(new ByteArrayInputStream(out.toByteArray()));
+        assertEquals(original.creators(), reparsed.creators());
     }
 
     private void assertSameElement(MusicElement a, MusicElement b) {

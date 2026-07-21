@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -25,6 +26,7 @@ import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
+import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
@@ -45,6 +47,14 @@ import com.sheetmusic4j.core.model.TimeSignature;
  * dots, ties). Unknown elements are ignored leniently.
  */
 public final class MusicXmlReader {
+
+    /**
+     * Set of {@code <credit-type>} values recognised as creator roles when we
+     * fall back to {@code <credit>} elements (only used if the corresponding
+     * role is not already in {@code <identification>}).
+     */
+    private static final Set<String> KNOWN_CREATOR_ROLES = Set.of(
+            "composer", "lyricist", "arranger", "poet", "translator", "transcriber");
 
     private final XMLInputFactory factory;
 
@@ -161,6 +171,8 @@ public final class MusicXmlReader {
                 switch (name) {
                     case "work-title" -> score.workTitle(readText(reader));
                     case "movement-title" -> score.movementTitle(readText(reader));
+                    case "identification" -> readIdentification(reader, score);
+                    case "credit" -> readCredit(reader, score);
                     case "score-part" -> readScorePart(reader, partNames);
                     case "part" -> {
                         String id = reader.getAttributeValue(null, "id");
@@ -178,6 +190,78 @@ public final class MusicXmlReader {
             score.addPart(partBuilders.get(id).build());
         }
         return score.build();
+    }
+
+    private void readIdentification(XMLStreamReader reader, Score.Builder score) throws XMLStreamException {
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                if ("creator".equals(reader.getLocalName())) {
+                    String type = reader.getAttributeValue(null, "type");
+                    String text = readText(reader);
+                    Creator creator = Creator.of(type, text);
+                    if (creator != null && !score.hasCreatorRole(creator.role())) {
+                        score.addCreator(creator);
+                    }
+                } else {
+                    skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT && "identification".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+    }
+
+    private void readCredit(XMLStreamReader reader, Score.Builder score) throws XMLStreamException {
+        String creditType = null;
+        String creditWords = null;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                switch (reader.getLocalName()) {
+                    case "credit-type" -> {
+                        String text = readText(reader);
+                        if (creditType == null && text != null && !text.isBlank()) {
+                            creditType = text.trim().toLowerCase(Locale.ROOT);
+                        }
+                    }
+                    case "credit-words" -> {
+                        String text = readText(reader);
+                        if (creditWords == null && text != null && !text.isBlank()) {
+                            creditWords = text;
+                        }
+                    }
+                    default -> skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT && "credit".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        if (creditType != null && creditWords != null
+                && KNOWN_CREATOR_ROLES.contains(creditType)
+                && !score.hasCreatorRole(creditType)) {
+            Creator creator = Creator.of(creditType, creditWords);
+            if (creator != null) {
+                score.addCreator(creator);
+            }
+        }
+    }
+
+    /**
+     * Consume the current element including all nested content. Used to
+     * safely skip unknown children when scanning {@code <identification>} /
+     * {@code <credit>}.
+     */
+    private void skipElement(XMLStreamReader reader) throws XMLStreamException {
+        int depth = 1;
+        while (reader.hasNext() && depth > 0) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                depth++;
+            } else if (event == XMLStreamConstants.END_ELEMENT) {
+                depth--;
+            }
+        }
     }
 
     private void readScorePart(XMLStreamReader reader, Map<String, String> partNames) throws XMLStreamException {

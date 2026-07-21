@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
+import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
@@ -134,6 +135,87 @@ class MusicXmlReaderTest {
         assertEquals(2, attributes.clefs().size());
         Note note = (Note) score.parts().get(0).measures().get(0).elements().get(0);
         assertEquals(2, note.staff());
+    }
+
+    @Test
+    void readsComposerAndLyricistFromIdentification() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <identification>
+                    <creator type=\"composer\">Ludwig van Beethoven</creator>
+                    <creator type=\"lyricist\">Friedrich Schiller</creator>
+                  </identification>
+                  <part-list><score-part id=\"P1\"><part-name>Piano</part-name></score-part></part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(2, score.creators().size());
+        Creator composer = score.creators().get(0);
+        assertEquals("composer", composer.role());
+        assertEquals("Ludwig van Beethoven", composer.name());
+        Creator lyricist = score.creators().get(1);
+        assertEquals("lyricist", lyricist.role());
+        assertEquals("Friedrich Schiller", lyricist.name());
+    }
+
+    @Test
+    void readsCreatorFromCreditWhenIdentificationAbsent() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <credit page=\"1\">
+                    <credit-type>composer</credit-type>
+                    <credit-words default-x=\"600\" default-y=\"1500\">Frederic Chopin</credit-words>
+                  </credit>
+                  <part-list><score-part id=\"P1\"><part-name>Piano</part-name></score-part></part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1, score.creators().size());
+        assertEquals("composer", score.creators().get(0).role());
+        assertEquals("Frederic Chopin", score.creators().get(0).name());
+    }
+
+    @Test
+    void identificationTakesPrecedenceOverCredit() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <identification>
+                    <creator type=\"composer\">Correct Name</creator>
+                  </identification>
+                  <credit page=\"1\">
+                    <credit-type>composer</credit-type>
+                    <credit-words>Wrong Name</credit-words>
+                  </credit>
+                  <part-list><score-part id=\"P1\"><part-name>Piano</part-name></score-part></part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1, score.creators().size());
+        assertEquals("composer", score.creators().get(0).role());
+        assertEquals("Correct Name", score.creators().get(0).name());
+    }
+
+    @Test
+    void ignoresUnknownCreditTypes() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <credit page=\"1\">
+                    <credit-type>page number</credit-type>
+                    <credit-words>1</credit-words>
+                  </credit>
+                  <part-list><score-part id=\"P1\"><part-name>Piano</part-name></score-part></part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertTrue(score.creators().isEmpty());
     }
 
     @Test

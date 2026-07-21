@@ -18,6 +18,7 @@ import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
+import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.MusicElement;
@@ -75,6 +76,15 @@ public final class MusicXmlWriter {
             w.end("work");
         }
         score.movementTitle().ifPresent(t -> w.textElementUnchecked("movement-title", t));
+
+        List<Creator> creators = score.creators();
+        if (!creators.isEmpty()) {
+            w.start("identification");
+            for (Creator creator : creators) {
+                w.textElementWithAttr("creator", "type", creator.role(), creator.name());
+            }
+            w.end("identification");
+        }
 
         w.start("part-list");
         for (Part part : score.parts()) {
@@ -258,6 +268,18 @@ public final class MusicXmlWriter {
             writer.writeStartElement(name);
             writer.writeCharacters(text);
             writer.writeEndElement();
+        }
+
+        void textElementWithAttr(String name, String attr, String attrValue, String text) {
+            try {
+                indent();
+                writer.writeStartElement(name);
+                writer.writeAttribute(attr, attrValue);
+                writer.writeCharacters(text);
+                writer.writeEndElement();
+            } catch (XMLStreamException e) {
+                throw new MusicXmlException("Failed to write element " + name, e);
+            }
         }
 
         void textElementUnchecked(String name, String text) {
