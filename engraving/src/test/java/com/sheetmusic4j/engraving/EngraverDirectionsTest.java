@@ -249,6 +249,39 @@ class EngraverDirectionsTest {
     }
 
     @Test
+    void rehearsalMarkEmitsBoxedTextAboveStaff() {
+        Direction dir = new Direction(
+                new DirectionType.Rehearsal("A"), Placement.ABOVE);
+        Score score = singleDirectionScore(dir, quarter(Step.C));
+
+        LayoutOptions options = LayoutOptions.defaults();
+        LayoutResult layout = new Engraver().layout(score, options);
+
+        List<TextPlacement> rehearsals = textsOf(layout, MarkingCategory.REHEARSAL);
+        assertEquals(1, rehearsals.size());
+        TextPlacement placement = rehearsals.get(0);
+        assertEquals("A", placement.text());
+        assertTrue(placement.boxed(),
+                "rehearsal mark placement must carry boxed=true");
+
+        double staffY = layout.staves().get(0).y();
+        assertTrue(placement.y() < staffY,
+                "rehearsal mark y (" + placement.y() + ") must sit above staff y (" + staffY + ")");
+    }
+
+    @Test
+    void rehearsalMarkDefaultPlacementIsAbove() {
+        Direction dir = new Direction(
+                new DirectionType.Rehearsal("12"), Placement.DEFAULT);
+        Score score = singleDirectionScore(dir, quarter(Step.C));
+
+        LayoutResult layout = new Engraver().layout(score, LayoutOptions.defaults());
+        TextPlacement placement = textsOf(layout, MarkingCategory.REHEARSAL).get(0);
+        double staffY = layout.staves().get(0).y();
+        assertTrue(placement.y() < staffY);
+    }
+
+    @Test
     void metronomeDirectionSmuflMappingCoversNewGlyphs() {
         // Sanity-check: every declared DynamicMark maps to a Glyph, so the
         // engraver's switch is exhaustive.

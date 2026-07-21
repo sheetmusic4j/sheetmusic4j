@@ -3,6 +3,7 @@ package com.sheetmusic4j.core.musicxml;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -348,11 +349,19 @@ class MusicXmlReaderTest {
         assertEquals("Ma", firstLyric);
     }
 
-    private static java.nio.file.Path findBinchoisSample() {
+    private static Path findBinchoisSample() {
+        return findSample("Binchois.musicxml");
+    }
+
+    private static Path findActorPreludeSample() {
+        return findSample("ActorPreludeSample.musicxml");
+    }
+
+    private static Path findSample(String fileName) {
         String[] candidates = {
-            "../fxdemo/src/test/resources/xmlsamples/Binchois.musicxml",
-            "fxdemo/src/test/resources/xmlsamples/Binchois.musicxml",
-            "sheetmusic4j/fxdemo/src/test/resources/xmlsamples/Binchois.musicxml"
+            "../fxdemo/src/test/resources/xmlsamples/" + fileName,
+            "fxdemo/src/test/resources/xmlsamples/" + fileName,
+            "sheetmusic4j/fxdemo/src/test/resources/xmlsamples/" + fileName
         };
         for (String candidate : candidates) {
             java.nio.file.Path p = java.nio.file.Paths.get(candidate).toAbsolutePath().normalize();
@@ -361,6 +370,30 @@ class MusicXmlReaderTest {
             }
         }
         return null;
+    }
+
+    @Test
+    void readsRehearsalFromActorPreludeSample() {
+        java.nio.file.Path p = findActorPreludeSample();
+        if (p == null) {
+            return; // resource not on the core test classpath — skip
+        }
+        Score score = new MusicXmlReader().read(p);
+        boolean found = false;
+        outer:
+        for (Part part : score.parts()) {
+            for (var measure : part.measures()) {
+                for (MusicElement el : measure.elements()) {
+                    if (el instanceof Direction dir
+                            && dir.type() instanceof DirectionType.Rehearsal rehearsal
+                            && "A".equals(rehearsal.label())) {
+                        found = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+        assertTrue(found, "expected at least one Rehearsal(\"A\") in ActorPreludeSample");
     }
 
     private static String noteXmlWithLyric(String lyricXml) {
@@ -478,6 +511,38 @@ class MusicXmlReaderTest {
         assertEquals(Placement.BELOW, direction.placement());
         DirectionType.Dynamic dynamic = (DirectionType.Dynamic) direction.type();
         assertEquals(DynamicMark.P, dynamic.mark());
+    }
+
+    @Test
+    void readsRehearsalDirection() {
+        String xml = directionXml("""
+                <direction placement="above">
+                  <direction-type>
+                    <rehearsal>A</rehearsal>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Direction direction = (Direction) score.parts().get(0).measures().get(0).elements().get(0);
+        assertEquals(Placement.ABOVE, direction.placement());
+        DirectionType.Rehearsal rehearsal = (DirectionType.Rehearsal) direction.type();
+        assertEquals("A", rehearsal.label());
+    }
+
+    @Test
+    void dropsRehearsalDirectionWithBlankLabel() {
+        String xml = directionXml("""
+                <direction placement="above">
+                  <direction-type>
+                    <rehearsal>   </rehearsal>
+                  </direction-type>
+                </direction>
+                """);
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        var elements = score.parts().get(0).measures().get(0).elements();
+        // Only the note remains — blank rehearsal drops the direction entirely.
+        assertEquals(1, elements.size());
+        assertInstanceOf(Note.class, elements.get(0));
     }
 
     @Test

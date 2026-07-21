@@ -109,6 +109,17 @@ public final class ScorePainter {
             case RIGHT -> text.x() - estimatedWidth;
         };
         surface.drawText(text.text(), x, text.y(), text.fontSize());
+        if (text.boxed()) {
+            double padding = text.fontSize() * 0.2;
+            double boxHeight = text.fontSize() * 1.2;
+            double boxX = x - padding;
+            // Text is drawn with its baseline at text.y(); the visual bounding
+            // box extends roughly from (baseline - fontSize) to baseline.
+            double boxY = text.y() - text.fontSize() - padding;
+            double boxW = estimatedWidth + 2 * padding;
+            double boxH = boxHeight + 2 * padding;
+            surface.strokeRect(boxX, boxY, boxW, boxH);
+        }
     }
 
     private void drawStaff(RenderSurface surface, StaffLayout staff) {

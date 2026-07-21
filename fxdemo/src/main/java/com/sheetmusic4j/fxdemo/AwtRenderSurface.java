@@ -81,6 +81,13 @@ public final class AwtRenderSurface implements RenderSurface {
     }
 
     @Override
+    public void strokeRect(double x, double y, double width, double height) {
+        g.setColor(stroke);
+        g.drawRect((int) Math.round(x), (int) Math.round(y),
+                (int) Math.round(width), (int) Math.round(height));
+    }
+
+    @Override
     public void strokeText(String text, double x, double y) {
         g.setColor(stroke);
         g.drawString(text, (float) x, (float) y);

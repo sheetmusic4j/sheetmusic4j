@@ -66,6 +66,11 @@ public final class FxRenderSurface implements RenderSurface {
     }
 
     @Override
+    public void strokeRect(double x, double y, double width, double height) {
+        gc.strokeRect(x, y, width, height);
+    }
+
+    @Override
     public void strokeText(String text, double x, double y) {
         gc.strokeText(text, x, y);
     }

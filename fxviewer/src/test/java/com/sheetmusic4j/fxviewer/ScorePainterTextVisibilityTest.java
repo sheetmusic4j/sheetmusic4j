@@ -117,6 +117,32 @@ class ScorePainterTextVisibilityTest {
     }
 
     @Test
+    void hidingRehearsalCategorySkipsMark() {
+        StaffLayout staff = new StaffLayout(0, 100, 500, 10.0,
+                List.of(), List.of(), List.of(), List.of());
+        SystemLayout system = new SystemLayout(0, 100, 500, List.of(staff));
+        List<TextPlacement> texts = List.of(
+                new TextPlacement("A", 50, 80, 18, TextPlacement.Align.LEFT,
+                        MarkingCategory.REHEARSAL, true));
+        LayoutResult layout = new LayoutResult(List.of(system), texts, 500, 200);
+
+        RecordingSurface visible = new RecordingSurface();
+        new ScorePainter().paint(visible, layout, 500, 200);
+        assertEquals(List.of("A"), visible.textsDrawn);
+        assertTrue(visible.strokeRectCount > 0,
+                "boxed text must stroke a rectangle when visible");
+
+        RecordingSurface hidden = new RecordingSurface();
+        ScorePainter painter = new ScorePainter();
+        painter.setHiddenCategories(EnumSet.of(MarkingCategory.REHEARSAL));
+        painter.paint(hidden, layout, 500, 200);
+        assertTrue(hidden.textsDrawn.isEmpty(),
+                "rehearsal text must be skipped when category is hidden");
+        assertEquals(0, hidden.strokeRectCount,
+                "box outline must be skipped when rehearsal category is hidden");
+    }
+
+    @Test
     void gettersReflectHiddenCategories() {
         ScorePainter painter = new ScorePainter();
         painter.setHiddenCategories(EnumSet.of(MarkingCategory.CREATOR));
@@ -129,6 +155,7 @@ class ScorePainterTextVisibilityTest {
     private static final class RecordingSurface implements RenderSurface {
         final List<String> textsDrawn = new ArrayList<>();
         int strokeLineCount;
+        int strokeRectCount;
         boolean noteGlyphDrawn;
         boolean dynamicGlyphDrawn;
 
@@ -144,6 +171,9 @@ class ScorePainterTextVisibilityTest {
             noteGlyphDrawn = true;
         }
         @Override public void strokeOval(double x, double y, double w, double h) { }
+        @Override public void strokeRect(double x, double y, double w, double h) {
+            strokeRectCount++;
+        }
         @Override public void strokeText(String text, double x, double y) {
             textsDrawn.add(text);
             // Dynamic primitive fallback strokes the mark's letters.

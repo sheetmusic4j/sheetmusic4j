@@ -153,8 +153,12 @@ public final class SheetDemoApp extends Application {
         showDynamics.setSelected(true);
         showDynamics.setOnAction(e -> toggleTextCategories(showDynamics.isSelected(),
                 MarkingCategory.DYNAMIC));
+        CheckMenuItem showRehearsalMarks = new CheckMenuItem("Show rehearsal marks");
+        showRehearsalMarks.setSelected(true);
+        showRehearsalMarks.setOnAction(e -> toggleTextCategories(showRehearsalMarks.isSelected(),
+                MarkingCategory.REHEARSAL));
         textMenu.getItems().addAll(showTitles, showCreators, showLyrics,
-                showTempo, showDirections, showDynamics);
+                showTempo, showDirections, showDynamics, showRehearsalMarks);
         viewMenu.getItems().add(textMenu);
 
         Menu helpMenu = new Menu("Help");

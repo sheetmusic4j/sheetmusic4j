@@ -180,6 +180,36 @@ class MusicXmlWriterTest {
         assertEquals(new DirectionType.Dynamic(DynamicMark.MF), reDynamic.type());
     }
 
+    @Test
+    void roundTripPreservesRehearsalDirection() {
+        int divisions = 1;
+        Direction rehearsal = new Direction(
+                new DirectionType.Rehearsal("A"), Placement.ABOVE);
+        Note note = Note.builder()
+                .pitch(new Pitch(Step.C, 4))
+                .duration(new Duration(1, divisions))
+                .type(NoteType.QUARTER)
+                .build();
+        Measure measure = Measure.builder(1)
+                .attributes(Attributes.builder().divisions(divisions).clef(Clef.treble()).build())
+                .addElement(rehearsal)
+                .addElement(note)
+                .build();
+        Score original = Score.builder()
+                .addPart(Part.builder("P1").name("V").addMeasure(measure).build())
+                .build();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new MusicXmlWriter().write(original, out);
+        Score reparsed = new MusicXmlReader().read(new ByteArrayInputStream(out.toByteArray()));
+
+        var elements = reparsed.parts().get(0).measures().get(0).elements();
+        assertEquals(2, elements.size());
+        Direction reRehearsal = (Direction) elements.get(0);
+        assertEquals(Placement.ABOVE, reRehearsal.placement());
+        assertEquals(new DirectionType.Rehearsal("A"), reRehearsal.type());
+    }
+
     private void assertSameElement(MusicElement a, MusicElement b) {
         assertEquals(a.getClass(), b.getClass());
         assertEquals(a.duration().value(), b.duration().value());

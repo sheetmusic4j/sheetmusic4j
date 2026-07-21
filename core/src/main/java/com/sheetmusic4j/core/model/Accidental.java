@@ -21,7 +21,11 @@ public enum Accidental {
         this.alter = alter;
     }
 
-    /** Returns the chromatic alteration value. */
+    /**
+     * Returns the chromatic alteration value.
+     *
+     * @return the alteration (-2 for double flat, -1 for flat, 0 for natural, 1 for sharp, 2 for double sharp)
+     */
     public int alter() {
         return alter;
     }

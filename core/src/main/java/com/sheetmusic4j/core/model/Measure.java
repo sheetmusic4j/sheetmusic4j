@@ -20,27 +20,43 @@ public final class Measure {
         this.elements = List.copyOf(builder.elements);
     }
 
-    /** Returns the 1-based measure number. */
+    /**
+     * Returns the 1-based measure number.
+     *
+     * @return the measure number
+     */
     public int number() {
         return number;
     }
 
-    /** Returns the attributes if set at this measure. */
+    /**
+     * Returns the attributes if set at this measure.
+     *
+     * @return the attributes, or empty if not set
+     */
     public Optional<Attributes> attributes() {
         return Optional.ofNullable(attributes);
     }
 
-    /** Returns the list of musical elements in this measure. */
+    /**
+     * Returns the list of musical elements in this measure.
+     *
+     * @return the elements list
+     */
     public List<MusicElement> elements() {
         return elements;
     }
 
-    /** Creates a new builder for a measure with the given number. */
+    /**
+     * Creates a new builder for a measure with the given number.
+     *
+     * @param number the 1-based measure number
+     * @return a new builder instance
+     */
     public static Builder builder(int number) {
         return new Builder(number);
     }
 
-    /** Builder for constructing {@link Measure} instances. */
     /** Builder for constructing {@link Measure} instances. */
     public static final class Builder {
         private final int number;
@@ -51,26 +67,45 @@ public final class Measure {
             this.number = number;
         }
 
-        /** Sets the attributes for this measure. */
+        /**
+         * Sets the attributes for this measure.
+         *
+         * @param attributes the attributes to set
+         * @return this builder
+         */
         public Builder attributes(Attributes attributes) {
             this.attributes = attributes;
             return this;
         }
 
-        /** Adds an element to this measure. */
+        /**
+         * Adds an element to this measure.
+         *
+         * @param element the element to add
+         * @return this builder
+         */
         public Builder addElement(MusicElement element) {
             this.elements.add(element);
             return this;
         }
 
-        /** Sets all elements for this measure. */
+        /**
+         * Sets all elements for this measure.
+         *
+         * @param elements the elements list
+         * @return this builder
+         */
         public Builder elements(List<MusicElement> elements) {
             this.elements.clear();
             this.elements.addAll(elements);
             return this;
         }
 
-        /** Builds and returns the {@link Measure} instance. */
+        /**
+         * Builds and returns the {@link Measure} instance.
+         *
+         * @return the constructed Measure
+         */
         public Measure build() {
             return new Measure(this);
         }
