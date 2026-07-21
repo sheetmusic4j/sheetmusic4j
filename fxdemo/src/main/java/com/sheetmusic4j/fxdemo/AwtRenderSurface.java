@@ -1,28 +1,34 @@
 package com.sheetmusic4j.fxdemo;
 
-import com.sheetmusic4j.fxviewer.RenderColor;
-import com.sheetmusic4j.fxviewer.RenderSurface;
-
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
+import java.io.InputStream;
+
+import com.sheetmusic4j.fxviewer.RenderColor;
+import com.sheetmusic4j.fxviewer.RenderSurface;
+import com.sheetmusic4j.fxviewer.SmuflGlyphs;
 
 /**
  * A headless {@link RenderSurface} backed by AWT {@link Graphics2D}. Used to render
  * the score with the exact same {@link com.sheetmusic4j.fxviewer.ScorePainter} logic
  * as the on-screen JavaFX view, but into a {@link java.awt.image.BufferedImage}.
+ *
+ * <p>Loads Bravura from the fxviewer classpath on first SMuFL glyph draw when
+ * available; otherwise reports the glyph as unrendered so the painter falls
+ * back to primitive shapes.
  */
 public final class AwtRenderSurface implements RenderSurface {
+
+    private static volatile boolean bravuraAttempted;
+    private static volatile Font bravuraTemplate;
 
     private final Graphics2D g;
     private Color stroke = Color.BLACK;
     private Color fill = Color.BLACK;
 
-    /**
-     * Creates an AWT-backed render surface.
-     *
-     * @param g graphics context to draw into
-     */
     public AwtRenderSurface(Graphics2D g) {
         this.g = g;
     }
@@ -78,5 +84,37 @@ public final class AwtRenderSurface implements RenderSurface {
     public void strokeText(String text, double x, double y) {
         g.setColor(stroke);
         g.drawString(text, (float) x, (float) y);
+    }
+
+    @Override
+    public boolean drawSmuflGlyph(String glyphChars, double x, double y, double sizeHint) {
+        Font font = ensureBravura();
+        if (font == null) {
+            return false;
+        }
+        Font previous = g.getFont();
+        g.setFont(font.deriveFont((float) sizeHint));
+        g.setColor(fill);
+        g.drawString(glyphChars, (float) x, (float) y);
+        g.setFont(previous);
+        return true;
+    }
+
+    private static synchronized Font ensureBravura() {
+        if (bravuraAttempted) {
+            return bravuraTemplate;
+        }
+        bravuraAttempted = true;
+        try (InputStream in = AwtRenderSurface.class.getResourceAsStream(SmuflGlyphs.BRAVURA_RESOURCE)) {
+            if (in == null) {
+                return null;
+            }
+            Font loaded = Font.createFont(Font.TRUETYPE_FONT, in);
+            GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(loaded);
+            bravuraTemplate = loaded;
+            return loaded;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

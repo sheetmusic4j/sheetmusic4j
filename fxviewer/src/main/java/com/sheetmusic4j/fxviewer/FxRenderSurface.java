@@ -1,12 +1,23 @@
 package com.sheetmusic4j.fxviewer;
 
+import java.io.InputStream;
+
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
 
 /**
  * {@link RenderSurface} backed by a JavaFX {@link GraphicsContext}.
+ *
+ * <p>On first call to {@link #drawSmuflGlyph}, this surface tries to load
+ * {@link SmuflGlyphs#BRAVURA_RESOURCE Bravura.otf} from the fxviewer classpath.
+ * If the font is available, subsequent SMuFL draws use it; if not, this method
+ * returns {@code false} so {@link ScorePainter} falls back to primitives.
  */
 public final class FxRenderSurface implements RenderSurface {
+
+    private static volatile boolean bravuraAttempted;
+    private static volatile Font bravuraTemplate;
 
     private final GraphicsContext gc;
 
@@ -56,5 +67,37 @@ public final class FxRenderSurface implements RenderSurface {
     @Override
     public void strokeText(String text, double x, double y) {
         gc.strokeText(text, x, y);
+    }
+
+    @Override
+    public boolean drawSmuflGlyph(String glyphChars, double x, double y, double sizeHint) {
+        Font font = ensureBravura(sizeHint);
+        if (font == null) {
+            return false;
+        }
+        Font previous = gc.getFont();
+        gc.setFont(Font.font(font.getFamily(), sizeHint));
+        gc.fillText(glyphChars, x, y);
+        gc.setFont(previous);
+        return true;
+    }
+
+    private static synchronized Font ensureBravura(double sizeHint) {
+        if (bravuraAttempted) {
+            return bravuraTemplate == null ? null : bravuraTemplate;
+        }
+        bravuraAttempted = true;
+        try (InputStream in = FxRenderSurface.class.getResourceAsStream(SmuflGlyphs.BRAVURA_RESOURCE)) {
+            if (in == null) {
+                return null;
+            }
+            Font loaded = Font.loadFont(in, sizeHint);
+            if (loaded != null) {
+                bravuraTemplate = loaded;
+            }
+            return loaded;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

@@ -25,4 +25,21 @@ public interface RenderSurface {
     void strokeOval(double x, double y, double width, double height);
 
     void strokeText(String text, double x, double y);
+
+    /**
+     * Draw a SMuFL glyph (see {@link SmuflGlyphs}) if a SMuFL font is
+     * available on this surface. The default implementation returns
+     * {@code false}, meaning "no SMuFL font, fall back to primitives".
+     *
+     * @param glyphChars one or more Private Use Area characters
+     * @param x          horizontal anchor (SMuFL glyphs are drawn with their
+     *                   left edge at {@code x} and baseline at {@code y})
+     * @param y          baseline y
+     * @param sizeHint   preferred font em-size, typically {@code 4 * staffLineGap}
+     * @return {@code true} if the surface rendered the glyph, {@code false}
+     *         if the caller should use a primitive fallback
+     */
+    default boolean drawSmuflGlyph(String glyphChars, double x, double y, double sizeHint) {
+        return false;
+    }
 }

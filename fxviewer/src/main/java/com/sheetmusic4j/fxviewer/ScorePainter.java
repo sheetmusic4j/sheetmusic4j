@@ -1,5 +1,6 @@
 package com.sheetmusic4j.fxviewer;
 
+import com.sheetmusic4j.engraving.Glyph;
 import com.sheetmusic4j.engraving.GlyphPlacement;
 import com.sheetmusic4j.engraving.LayoutResult;
 import com.sheetmusic4j.engraving.MeasureLayout;
@@ -10,9 +11,13 @@ import com.sheetmusic4j.engraving.StaffLayout;
  * {@link RenderSurface}, so the identical logic can target a JavaFX canvas
  * (on screen) or an AWT image (headless tests / comparisons).
  *
- * <p>Uses primitive shapes rather than a bundled SMuFL font. When a SMuFL font
- * (typically Bravura) is later bundled with fxviewer, {@link #drawGlyph} is the
- * single place to switch to codepoint text rendering.
+ * <p>When a SMuFL font (Bravura) is available on the fxviewer classpath under
+ * {@link SmuflGlyphs#BRAVURA_RESOURCE}, clef, notehead, rest and time-signature
+ * glyphs are drawn via
+ * {@link RenderSurface#drawSmuflGlyph(String, double, double, double)}. When
+ * the font is missing, the painter falls back to primitive shapes so that
+ * every downstream test still runs on a fresh checkout without any binary
+ * asset.
  */
 public final class ScorePainter {
 
@@ -53,17 +58,12 @@ public final class ScorePainter {
         double gap = staff.lineGap();
         double headW = gap * 1.2;
         double headH = gap * 0.9;
-        switch (glyph.glyph()) {
-            case NOTEHEAD_BLACK -> {
-                surface.fillOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
-                drawLedgerLines(surface, staff, glyph);
-            }
-            case NOTEHEAD_HALF -> {
-                surface.strokeOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
-                drawLedgerLines(surface, staff, glyph);
-            }
-            case NOTEHEAD_WHOLE -> {
-                surface.strokeOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
+        Glyph g = glyph.glyph();
+        switch (g) {
+            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                    drawNoteheadPrimitive(surface, g, glyph, headW, headH);
+                }
                 drawLedgerLines(surface, staff, glyph);
             }
             case STEM_UP -> {
@@ -74,58 +74,97 @@ public final class ScorePainter {
                 double sx = glyph.x() - headW / 2;
                 surface.strokeLine(sx, glyph.y(), sx, glyph.y() + gap * STEM_LENGTH_GAPS);
             }
-            case CLEF_G -> drawClef(surface, staff, glyph, "G");
-            case CLEF_F -> drawClef(surface, staff, glyph, "F");
-            case CLEF_C -> drawClef(surface, staff, glyph, "C");
-            case REST_WHOLE -> drawWholeRest(surface, staff, glyph);
-            case REST_HALF -> drawHalfRest(surface, staff, glyph);
-            case REST_QUARTER -> drawQuarterRest(surface, staff, glyph);
-            case REST_EIGHTH -> drawEighthRest(surface, staff, glyph);
-            default -> {
-                Character digit = glyph.glyph().timeDigitChar();
-                if (digit != null) {
-                    surface.strokeText(digit.toString(), glyph.x(), glyph.y());
+            case CLEF_G, CLEF_F, CLEF_C -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                    drawClefFallback(surface, staff, glyph, clefLetter(g));
                 }
-                // STAFF_LINE / LEDGER_LINE / STEM (legacy) handled elsewhere.
+            }
+            case REST_WHOLE -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                    drawWholeRest(surface, staff, glyph);
+                }
+            }
+            case REST_HALF -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                    drawHalfRest(surface, staff, glyph);
+                }
+            }
+            case REST_QUARTER -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                    drawQuarterRest(surface, staff, glyph);
+                }
+            }
+            case REST_EIGHTH -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                    drawEighthRest(surface, staff, glyph);
+                }
+            }
+            default -> {
+                if (g.timeDigitChar() != null) {
+                    if (!drawSmuflIfAvailable(surface, g, glyph, gap * 2)) {
+                        surface.strokeText(g.timeDigitChar().toString(), glyph.x(), glyph.y());
+                    }
+                }
+                // STAFF_LINE / LEDGER_LINE / legacy STEM handled elsewhere.
             }
         }
     }
 
-    /**
-     * Draw a stylized clef. Until a SMuFL font is bundled, this simply emits the
-     * clef letter but scaled larger and vertically anchored on the correct line.
-     */
-    private void drawClef(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph, String letter) {
-        double gap = staff.lineGap();
-        // Draw the letter roughly two staff spaces tall so it visibly reads as a clef.
-        surface.strokeText(letter, glyph.x(), glyph.y() + gap * 0.5);
+    private static boolean drawSmuflIfAvailable(RenderSurface surface, Glyph glyph, GlyphPlacement placement,
+                                                double sizeHint) {
+        String codepoint = SmuflGlyphs.codepoint(glyph);
+        if (codepoint == null) {
+            return false;
+        }
+        return surface.drawSmuflGlyph(codepoint, placement.x(), placement.y(), sizeHint);
+    }
+
+    private static void drawNoteheadPrimitive(RenderSurface surface, Glyph g, GlyphPlacement glyph,
+                                              double headW, double headH) {
+        switch (g) {
+            case NOTEHEAD_BLACK ->
+                    surface.fillOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
+            case NOTEHEAD_HALF, NOTEHEAD_WHOLE ->
+                    surface.strokeOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
+            default -> {
+            }
+        }
+    }
+
+    private static String clefLetter(Glyph glyph) {
+        return switch (glyph) {
+            case CLEF_F -> "F";
+            case CLEF_C -> "C";
+            default -> "G";
+        };
     }
 
     /**
-     * Whole rest: filled rectangle hanging from the 4th line (top-of-third-space).
+     * Non-SMuFL clef fallback: just emit the clef letter, anchored on the
+     * correct line. Deliberately simple - the plumbing above uses Bravura
+     * whenever it is committed to the fxviewer classpath.
      */
+    private void drawClefFallback(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph, String letter) {
+        double gap = staff.lineGap();
+        surface.strokeText(letter, glyph.x(), glyph.y() + gap * 0.5);
+    }
+
     private void drawWholeRest(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
         double gap = staff.lineGap();
         double w = gap * 1.2;
         double h = gap * 0.5;
-        double y = staff.lineY(1); // hanging from line 2 (top of middle space)
+        double y = staff.lineY(1);
         surface.fillRect(glyph.x() - w / 2, y, w, h);
     }
 
-    /**
-     * Half rest: filled rectangle sitting on the middle line.
-     */
     private void drawHalfRest(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
         double gap = staff.lineGap();
         double w = gap * 1.2;
         double h = gap * 0.5;
-        double y = staff.lineY(2) - h; // sitting on line 3 (middle line)
+        double y = staff.lineY(2) - h;
         surface.fillRect(glyph.x() - w / 2, y, w, h);
     }
 
-    /**
-     * Quarter rest: stylized zig-zag drawn as three connected segments.
-     */
     private void drawQuarterRest(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
         double gap = staff.lineGap();
         double x = glyph.x();
@@ -137,9 +176,6 @@ public final class ScorePainter {
         surface.strokeLine(x - half, top + 2 * gap, x + half, bottom);
     }
 
-    /**
-     * Eighth rest: small filled circle with a flag-like stroke.
-     */
     private void drawEighthRest(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
         double gap = staff.lineGap();
         double d = gap * 0.6;
