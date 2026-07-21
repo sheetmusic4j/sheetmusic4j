@@ -19,7 +19,9 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
@@ -266,8 +268,6 @@ public final class MusicXmlReader {
         Integer beats = null;
         Integer beatType = null;
         Integer fifths = null;
-        ClefSign clefSign = null;
-        Integer clefLine = null;
 
         while (reader.hasNext()) {
             int event = reader.next();
@@ -281,8 +281,13 @@ public final class MusicXmlReader {
                     case "fifths" -> fifths = parseIntOr(readText(reader), 0);
                     case "beats" -> beats = parseIntOr(readText(reader), 4);
                     case "beat-type" -> beatType = parseIntOr(readText(reader), 4);
-                    case "sign" -> clefSign = ClefSign.fromXml(readText(reader));
-                    case "line" -> clefLine = parseIntOr(readText(reader), 2);
+                    case "staves" -> builder.staves(parseIntOr(readText(reader), 1));
+                    case "clef" -> {
+                        Clef clef = readClef(reader);
+                        if (clef != null) {
+                            builder.addClef(clef);
+                        }
+                    }
                     default -> { /* ignore */ }
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT && "attributes".equals(reader.getLocalName())) {
@@ -296,10 +301,34 @@ public final class MusicXmlReader {
         if (beats != null && beatType != null) {
             builder.timeSignature(new TimeSignature(beats, beatType));
         }
-        if (clefSign != null) {
-            builder.clef(new Clef(clefSign, clefLine != null ? clefLine : 2));
-        }
         return builder.build();
+    }
+
+    private Clef readClef(XMLStreamReader reader) throws XMLStreamException {
+        ClefSign clefSign = null;
+        Integer clefLine = null;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                switch (reader.getLocalName()) {
+                    case "sign" -> clefSign = ClefSign.fromXml(readText(reader));
+                    case "line" -> clefLine = parseIntOr(readText(reader), 2);
+                    default -> { /* ignore */ }
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT && "clef".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        if (clefSign == null) {
+            return null;
+        }
+        int defaultLine = switch (clefSign) {
+            case F -> 4;
+            case C -> 3;
+            case G -> 2;
+            default -> 2;
+        };
+        return new Clef(clefSign, clefLine != null ? clefLine : defaultLine);
     }
 
     private ParsedNote readNote(XMLStreamReader reader, int divisions) throws XMLStreamException {
@@ -313,6 +342,9 @@ public final class MusicXmlReader {
         int dots = 0;
         boolean tieStart = false;
         boolean tieStop = false;
+        Accidental accidental = null;
+        int staff = 1;
+        java.util.List<Beam> beams = new ArrayList<>();
 
         while (reader.hasNext()) {
             int event = reader.next();
@@ -326,6 +358,13 @@ public final class MusicXmlReader {
                     case "duration" -> duration = parseIntOr(readText(reader), 0);
                     case "type" -> type = NoteType.fromXml(readText(reader).trim());
                     case "dot" -> dots++;
+                    case "staff" -> staff = parseIntOr(readText(reader), 1);
+                    case "accidental" -> accidental = parseAccidental(readText(reader));
+                    case "beam" -> {
+                        int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
+                        Beam.State state = Beam.State.fromXml(readText(reader));
+                        beams.add(new Beam(number, state));
+                    }
                     case "tie" -> {
                         String tieType = reader.getAttributeValue(null, "type");
                         if ("start".equals(tieType)) {
@@ -355,11 +394,31 @@ public final class MusicXmlReader {
                 .duration(dur)
                 .dots(dots)
                 .tieStart(tieStart)
-                .tieStop(tieStop);
+                .tieStop(tieStop)
+                .staff(staff)
+                .beams(beams);
+        if (accidental != null) {
+            nb.displayedAccidental(accidental);
+        }
         if (type != null) {
             nb.type(type);
         }
         return ParsedNote.note(nb.build(), chord);
+    }
+
+    private static Accidental parseAccidental(String value) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.trim().toLowerCase(Locale.ROOT);
+        return switch (v) {
+            case "sharp" -> Accidental.SHARP;
+            case "flat" -> Accidental.FLAT;
+            case "natural" -> Accidental.NATURAL;
+            case "double-sharp", "sharp-sharp" -> Accidental.DOUBLE_SHARP;
+            case "flat-flat", "double-flat" -> Accidental.DOUBLE_FLAT;
+            default -> null;
+        };
     }
 
     private String readText(XMLStreamReader reader) throws XMLStreamException {

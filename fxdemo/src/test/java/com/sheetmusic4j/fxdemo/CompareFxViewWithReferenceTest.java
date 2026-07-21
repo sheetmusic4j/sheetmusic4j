@@ -60,13 +60,28 @@ class CompareFxViewWithReferenceTest {
         System.setProperty("java.awt.headless", "true");
     }
 
+    /**
+     * Fixture ladder for the diagnostic comparator. To add a new fixture:
+     * <ol>
+     *   <li>drop the OSMD-generated reference PNG at
+     *       {@code fxdemo/src/test/resources/reference/generated/&lt;basename&gt;.png}
+     *       (typically by running {@code mvn -pl fxdemo -Prefresh-references test}),</li>
+     *   <li>add an {@code Arguments.of(basename, path)} line below.</li>
+     * </ol>
+     * When a reference PNG is missing, the corresponding parameterised invocation
+     * skips gracefully via {@link Assumptions}.
+     */
     static Stream<Arguments> fixtures() {
-        // Only the single c-major-scale sample is expected to have a checked-in
-        // reference at this stage. Additional fixtures are added by simply
-        // dropping their generated PNGs into REFERENCE_DIR.
         Path resourcesRoot = Paths.get("src", "test", "resources");
+        Path samples = resourcesRoot.resolve("xmlsamples");
         return Stream.of(
-                Arguments.of("c-major-scale", resourcesRoot.resolve("c-major-scale.musicxml"))
+                Arguments.of("c-major-scale", resourcesRoot.resolve("c-major-scale.musicxml")),
+                Arguments.of("Saltarello", samples.resolve("Saltarello.musicxml")),
+                Arguments.of("Telemann", samples.resolve("Telemann.musicxml")),
+                Arguments.of("Echigo-Jishi", samples.resolve("Echigo-Jishi.musicxml")),
+                Arguments.of("Dichterliebe01", samples.resolve("Dichterliebe01.musicxml")),
+                Arguments.of("MozartPianoSonata", samples.resolve("MozartPianoSonata.musicxml")),
+                Arguments.of("MozartTrio", samples.resolve("MozartTrio.musicxml"))
         );
     }
 

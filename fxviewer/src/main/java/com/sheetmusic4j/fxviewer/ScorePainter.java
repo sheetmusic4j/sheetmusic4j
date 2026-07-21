@@ -1,10 +1,12 @@
 package com.sheetmusic4j.fxviewer;
 
+import com.sheetmusic4j.engraving.BeamPlacement;
 import com.sheetmusic4j.engraving.Glyph;
 import com.sheetmusic4j.engraving.GlyphPlacement;
 import com.sheetmusic4j.engraving.LayoutResult;
 import com.sheetmusic4j.engraving.MeasureLayout;
 import com.sheetmusic4j.engraving.StaffLayout;
+import com.sheetmusic4j.engraving.TiePlacement;
 
 /**
  * Surface-agnostic painting of a {@link LayoutResult}. All drawing goes through a
@@ -52,16 +54,24 @@ public final class ScorePainter {
         for (GlyphPlacement glyph : staff.glyphs()) {
             drawGlyph(surface, staff, glyph);
         }
+
+        for (BeamPlacement beam : staff.beams()) {
+            drawBeam(surface, staff, beam);
+        }
+        for (TiePlacement tie : staff.ties()) {
+            drawTie(surface, staff, tie);
+        }
     }
 
     private void drawGlyph(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
         double gap = staff.lineGap();
         double headW = gap * 1.2;
         double headH = gap * 0.9;
+        double sizeHint = gap * 4;
         Glyph g = glyph.glyph();
         switch (g) {
             case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE -> {
-                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
                     drawNoteheadPrimitive(surface, g, glyph, headW, headH);
                 }
                 drawLedgerLines(surface, staff, glyph);
@@ -74,40 +84,105 @@ public final class ScorePainter {
                 double sx = glyph.x() - headW / 2;
                 surface.strokeLine(sx, glyph.y(), sx, glyph.y() + gap * STEM_LENGTH_GAPS);
             }
+            case FLAG_8TH_UP, FLAG_8TH_DOWN, FLAG_16TH_UP, FLAG_16TH_DOWN -> {
+                // Flags rely on the SMuFL font; when absent we draw nothing
+                // (a missing flag is preferable to an incorrect primitive).
+                drawSmuflIfAvailable(surface, g, glyph, sizeHint);
+            }
+            case ACCIDENTAL_SHARP, ACCIDENTAL_FLAT, ACCIDENTAL_NATURAL,
+                    ACCIDENTAL_DOUBLE_SHARP, ACCIDENTAL_DOUBLE_FLAT -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText(accidentalFallback(g), glyph.x(), glyph.y() + gap * 0.4);
+                }
+            }
+            case AUG_DOT -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    double d = gap * 0.4;
+                    surface.fillOval(glyph.x() - d / 2, glyph.y() - d / 2, d, d);
+                }
+            }
             case CLEF_G, CLEF_F, CLEF_C -> {
-                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
                     drawClefFallback(surface, staff, glyph, clefLetter(g));
                 }
             }
             case REST_WHOLE -> {
-                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
                     drawWholeRest(surface, staff, glyph);
                 }
             }
             case REST_HALF -> {
-                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
                     drawHalfRest(surface, staff, glyph);
                 }
             }
             case REST_QUARTER -> {
-                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
                     drawQuarterRest(surface, staff, glyph);
                 }
             }
             case REST_EIGHTH -> {
-                if (!drawSmuflIfAvailable(surface, g, glyph, gap * 4)) {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
                     drawEighthRest(surface, staff, glyph);
                 }
             }
             default -> {
                 if (g.timeDigitChar() != null) {
-                    if (!drawSmuflIfAvailable(surface, g, glyph, gap * 2)) {
+                    if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), gap * 4)) {
                         surface.strokeText(g.timeDigitChar().toString(), glyph.x(), glyph.y());
                     }
                 }
-                // STAFF_LINE / LEDGER_LINE / legacy STEM handled elsewhere.
+                // STAFF_LINE / LEDGER_LINE / legacy STEM / BEAM handled elsewhere.
             }
         }
+    }
+
+    /**
+     * Draw a beam segment as a thick rectangle (axis-aligned MVP; a full
+     * implementation would use a rotated polygon). Multi-level beams are
+     * stacked below (for stem-up groups) / above (stem-down groups) the
+     * primary beam.
+     */
+    private void drawBeam(RenderSurface surface, StaffLayout staff, BeamPlacement beam) {
+        double gap = staff.lineGap();
+        double thickness = gap * 0.5;
+        // Level 1 is the primary beam, aligned exactly at the stem tips.
+        // Higher levels stack toward the notehead.
+        double offset = (beam.level() - 1) * gap * 0.75;
+        double dy = beam.stemUp() ? offset : -offset;
+        double y = ((beam.y1() + beam.y2()) / 2.0) + dy;
+        double x1 = Math.min(beam.x1(), beam.x2());
+        double x2 = Math.max(beam.x1(), beam.x2());
+        surface.fillRect(x1, y - thickness / 2, x2 - x1, thickness);
+    }
+
+    /**
+     * Draw a tie as a shallow curve approximated with two lines meeting at
+     * the peak. Callers that need a real curve should override this via a
+     * dedicated surface primitive; the two-segment approximation is enough
+     * for the diagnostic comparator's window-level similarity check.
+     */
+    private void drawTie(RenderSurface surface, StaffLayout staff, TiePlacement tie) {
+        double gap = staff.lineGap();
+        double bend = gap * 0.6 * (tie.curveUp() ? -1 : 1);
+        double midX = (tie.x1() + tie.x2()) / 2.0;
+        double midY = ((tie.y1() + tie.y2()) / 2.0) + bend;
+        surface.strokeLine(tie.x1(), tie.y1(), midX, midY);
+        surface.strokeLine(midX, midY, tie.x2(), tie.y2());
+    }
+
+    /**
+     * SMuFL glyph draw centered on ({@code centerX}, {@code centerY}) by
+     * shifting the left-edge origin by half the glyph's advance width.
+     */
+    private static boolean drawSmuflCentered(RenderSurface surface, Glyph glyph,
+                                             double centerX, double centerY, double sizeHint) {
+        String codepoint = SmuflGlyphs.codepoint(glyph);
+        if (codepoint == null) {
+            return false;
+        }
+        double halfW = SmuflGlyphs.halfAdvanceWidth(glyph, sizeHint);
+        return surface.drawSmuflGlyph(codepoint, centerX - halfW, centerY, sizeHint);
     }
 
     private static boolean drawSmuflIfAvailable(RenderSurface surface, Glyph glyph, GlyphPlacement placement,
@@ -136,6 +211,15 @@ public final class ScorePainter {
             case CLEF_F -> "F";
             case CLEF_C -> "C";
             default -> "G";
+        };
+    }
+
+    private static String accidentalFallback(Glyph glyph) {
+        return switch (glyph) {
+            case ACCIDENTAL_SHARP, ACCIDENTAL_DOUBLE_SHARP -> "#";
+            case ACCIDENTAL_FLAT, ACCIDENTAL_DOUBLE_FLAT -> "b";
+            case ACCIDENTAL_NATURAL -> "n";
+            default -> "";
         };
     }
 

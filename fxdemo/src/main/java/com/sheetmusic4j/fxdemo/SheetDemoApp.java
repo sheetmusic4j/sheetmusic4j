@@ -1,5 +1,13 @@
 package com.sheetmusic4j.fxdemo;
 
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+
 import com.dlsc.pdfviewfx.PDFView;
 import com.sheetmusic4j.core.io.ScoreFile;
 import com.sheetmusic4j.core.model.Score;
@@ -10,6 +18,7 @@ import com.sheetmusic4j.fxdemo.reference.DiagnosticComparator;
 import com.sheetmusic4j.fxdemo.reference.DiffReportWriter;
 import com.sheetmusic4j.fxdemo.reference.WebViewReferenceRenderer;
 import com.sheetmusic4j.fxviewer.SheetView;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
@@ -33,14 +42,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * Standalone demo/testbed for the Sheet4j {@link SheetView}. Provides a File menu
@@ -128,8 +129,14 @@ public final class SheetDemoApp extends Application {
 
     private SplitPane buildContent() {
         scoreScroll = new ScrollPane(sheetView);
-        scoreScroll.setFitToWidth(true);
+        // Do NOT fit the view to the viewport: SheetView is content-sized so
+        // the ScrollPane can discover the real score dimensions and show
+        // horizontal + vertical scrollbars whenever the content overflows.
+        scoreScroll.setFitToWidth(false);
+        scoreScroll.setFitToHeight(false);
         scoreScroll.setPannable(true);
+        scoreScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scoreScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         BorderPane scorePane = new BorderPane(scoreScroll);
         scorePane.setTop(sectionTitle("Sheet4j rendering"));
 

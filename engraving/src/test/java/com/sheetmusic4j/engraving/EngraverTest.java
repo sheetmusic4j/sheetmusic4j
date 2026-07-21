@@ -9,11 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.Note;
+import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Score;
@@ -96,4 +98,116 @@ class EngraverTest {
         boolean hasClef = staff.glyphs().stream().anyMatch(g -> g.glyph() == Glyph.CLEF_G);
         assertTrue(hasClef, "expected a G clef glyph");
     }
-}
+
+    @Test
+    void emitsKeySignatureAccidentals() {
+        int divisions = 1;
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder()
+                .divisions(divisions)
+                .keySignature(new KeySignature(2))
+                .timeSignature(TimeSignature.fourFour())
+                .clef(Clef.treble())
+                .build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.C, 4)).duration(new Duration(4, divisions)).type(NoteType.WHOLE).build());
+        Score score = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        StaffLayout staff = new Engraver().layout(score, LayoutOptions.defaults()).staves().get(0);
+        long sharps = staff.glyphs().stream().filter(g -> g.glyph() == Glyph.ACCIDENTAL_SHARP).count();
+        assertEquals(2, sharps, "D major should emit two sharps");
+    }
+
+    @Test
+    void emitsFlagForUnbeamedEighth() {
+        int divisions = 2;
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder()
+                .divisions(divisions).clef(Clef.treble()).timeSignature(TimeSignature.fourFour()).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.G, 4)).duration(new Duration(1, divisions)).type(NoteType.EIGHTH).build());
+        Score score = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        StaffLayout staff = new Engraver().layout(score, LayoutOptions.defaults()).staves().get(0);
+        boolean hasFlag = staff.glyphs().stream().anyMatch(g ->
+                g.glyph() == Glyph.FLAG_8TH_UP || g.glyph() == Glyph.FLAG_8TH_DOWN);
+        assertTrue(hasFlag, "unbeamed eighth note should have a flag");
+    }
+
+    @Test
+    void beamedNotesEmitBeamsNotFlags() {
+        int divisions = 2;
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder()
+                .divisions(divisions).clef(Clef.treble()).timeSignature(TimeSignature.fourFour()).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.G, 4)).duration(new Duration(1, divisions)).type(NoteType.EIGHTH)
+                .addBeam(new Beam(1, Beam.State.BEGIN)).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.A, 4)).duration(new Duration(1, divisions)).type(NoteType.EIGHTH)
+                .addBeam(new Beam(1, Beam.State.END)).build());
+        Score score = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        StaffLayout staff = new Engraver().layout(score, LayoutOptions.defaults()).staves().get(0);
+        assertEquals(1, staff.beams().size(), "expected one beam segment for BEGIN..END");
+        boolean hasFlag = staff.glyphs().stream().anyMatch(g ->
+                g.glyph() == Glyph.FLAG_8TH_UP || g.glyph() == Glyph.FLAG_8TH_DOWN);
+        assertFalse(hasFlag, "beamed notes must not carry flags");
+    }
+
+    @Test
+    void emitsTieBetweenTiedNotes() {
+        int divisions = 1;
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder()
+                .divisions(divisions).clef(Clef.treble()).timeSignature(TimeSignature.fourFour()).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.C, 4)).duration(new Duration(1, divisions))
+                .type(NoteType.QUARTER).tieStart(true).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.C, 4)).duration(new Duration(1, divisions))
+                .type(NoteType.QUARTER).tieStop(true).build());
+        Score score = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        StaffLayout staff = new Engraver().layout(score, LayoutOptions.defaults()).staves().get(0);
+        assertEquals(1, staff.ties().size());
+    }
+
+    @Test
+    void multiStaffPartProducesTwoStaves() {
+        int divisions = 1;
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder()
+                .divisions(divisions)
+                .staves(2)
+                .addClef(Clef.treble())
+                .addClef(Clef.bass())
+                .timeSignature(TimeSignature.fourFour())
+                .build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.C, 5)).duration(new Duration(4, divisions))
+                .type(NoteType.WHOLE).staff(1).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.C, 3)).duration(new Duration(4, divisions))
+                .type(NoteType.WHOLE).staff(2).build());
+        Score score = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        LayoutResult layout = new Engraver().layout(score, LayoutOptions.defaults());
+        assertEquals(2, layout.staves().size(), "grand-staff part must produce two StaffLayouts");
+
+        long trebleClefs = layout.staves().get(0).glyphs().stream()
+                .filter(g -> g.glyph() == Glyph.CLEF_G).count();
+        long bassClefs = layout.staves().get(1).glyphs().stream()
+                .filter(g -> g.glyph() == Glyph.CLEF_F).count();
+        assertEquals(1, trebleClefs, "upper staff must carry a treble clef");
+        assertEquals(1, bassClefs, "lower staff must carry a bass clef");
+
+        long topNoteheads = layout.staves().get(0).glyphs().stream()
+                .filter(g -> g.glyph() == Glyph.NOTEHEAD_WHOLE).count();
+        long bottomNoteheads = layout.staves().get(1).glyphs().stream()
+                .filter(g -> g.glyph() == Glyph.NOTEHEAD_WHOLE).count();
+        assertEquals(1, topNoteheads, "only the staff-1 note should be routed to the top staff");
+        assertEquals(1, bottomNoteheads, "only the staff-2 note should be routed to the bottom staff");
+    }
+
+    @Test
+    void emitsAugmentationDot() {
+        int divisions = 2;
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder()
+                .divisions(divisions).clef(Clef.treble()).timeSignature(TimeSignature.fourFour()).build());
+        m.addElement(Note.builder().pitch(new Pitch(Step.G, 4)).duration(new Duration(3, divisions))
+                .type(NoteType.QUARTER).dots(1).build());
+        Score score = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        StaffLayout staff = new Engraver().layout(score, LayoutOptions.defaults()).staves().get(0);
+        long dots = staff.glyphs().stream().filter(g -> g.glyph() == Glyph.AUG_DOT).count();
+        assertEquals(1, dots);
+        }
+        }

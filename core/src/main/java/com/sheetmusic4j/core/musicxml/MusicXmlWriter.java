@@ -13,7 +13,9 @@ import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.KeySignature;
@@ -133,7 +135,23 @@ public final class MusicXmlWriter {
                 w.textElement("beat-type", Integer.toString(time.beatType()));
                 w.end("time");
             }
-            if (attributes.clef().isPresent()) {
+            if (attributes.staves().isPresent()) {
+                w.textElement("staves", Integer.toString(attributes.staves().get()));
+            }
+            List<Clef> clefs = attributes.clefs();
+            if (!clefs.isEmpty()) {
+                for (int i = 0; i < clefs.size(); i++) {
+                    Clef clef = clefs.get(i);
+                    if (clefs.size() > 1) {
+                        w.start("clef", "number", Integer.toString(i + 1));
+                    } else {
+                        w.start("clef");
+                    }
+                    w.textElement("sign", clef.sign().xmlValue());
+                    w.textElement("line", Integer.toString(clef.line()));
+                    w.end("clef");
+                }
+            } else if (attributes.clef().isPresent()) {
                 Clef clef = attributes.clef().get();
                 w.start("clef");
                 w.textElement("sign", clef.sign().xmlValue());
@@ -170,6 +188,15 @@ public final class MusicXmlWriter {
             w.textElement("type", note.type().xmlValue());
             for (int i = 0; i < note.dots(); i++) {
                 w.emptyElement("dot");
+            }
+            if (note.displayedAccidental().isPresent()) {
+                w.textElement("accidental", accidentalXml(note.displayedAccidental().get()));
+            }
+            if (note.staff() > 1) {
+                w.textElement("staff", Integer.toString(note.staff()));
+            }
+            for (Beam beam : note.beams()) {
+                w.startBeam(beam.number(), beam.state().xmlValue());
             }
             w.end("note");
         } catch (XMLStreamException e) {
@@ -256,5 +283,23 @@ public final class MusicXmlWriter {
             writer.writeCharacters(NEWLINE);
             writer.flush();
         }
-    }
-}
+
+        void startBeam(int number, String state) throws XMLStreamException {
+            indent();
+            writer.writeStartElement("beam");
+            writer.writeAttribute("number", Integer.toString(number));
+            writer.writeCharacters(state);
+            writer.writeEndElement();
+        }
+        }
+
+        private static String accidentalXml(Accidental accidental) {
+        return switch (accidental) {
+            case SHARP -> "sharp";
+            case FLAT -> "flat";
+            case NATURAL -> "natural";
+            case DOUBLE_SHARP -> "double-sharp";
+            case DOUBLE_FLAT -> "flat-flat";
+        };
+        }
+        }

@@ -1,5 +1,8 @@
 package com.sheetmusic4j.core.model;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
  * A single pitched note.
  */
@@ -11,6 +14,9 @@ public final class Note implements MusicElement {
     private final int dots;
     private final boolean tieStart;
     private final boolean tieStop;
+    private final Accidental displayedAccidental;
+    private final List<Beam> beams;
+    private final int staff;
 
     private Note(Builder builder) {
         this.pitch = builder.pitch;
@@ -19,6 +25,9 @@ public final class Note implements MusicElement {
         this.dots = builder.dots;
         this.tieStart = builder.tieStart;
         this.tieStop = builder.tieStop;
+        this.displayedAccidental = builder.displayedAccidental;
+        this.beams = List.copyOf(builder.beams);
+        this.staff = builder.staff;
     }
 
     public Pitch pitch() {
@@ -46,6 +55,38 @@ public final class Note implements MusicElement {
         return tieStop;
     }
 
+    /**
+     * The explicit accidental to display for this note occurrence, when the
+     * MusicXML {@code <accidental>} element is present. Falls back to a
+     * derivation from {@link Pitch#alter()} at rendering time when absent.
+     */
+    public Optional<Accidental> displayedAccidental() {
+        return Optional.ofNullable(displayedAccidental);
+    }
+
+    /**
+     * Beam entries attached to this note; empty for notes that are not part
+     * of any beamed group.
+     */
+    public List<Beam> beams() {
+        return beams;
+    }
+
+    /**
+     * Whether this note participates in a beam of the given level.
+     */
+    public boolean isBeamed() {
+        return !beams.isEmpty();
+    }
+
+    /**
+     * The staff index (1-based) this note is assigned to within its part.
+     * Defaults to {@code 1} for single-staff parts.
+     */
+    public int staff() {
+        return staff;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -57,6 +98,9 @@ public final class Note implements MusicElement {
         private int dots;
         private boolean tieStart;
         private boolean tieStop;
+        private Accidental displayedAccidental;
+        private java.util.List<Beam> beams = new java.util.ArrayList<>();
+        private int staff = 1;
 
         public Builder pitch(Pitch pitch) {
             this.pitch = pitch;
@@ -85,6 +129,26 @@ public final class Note implements MusicElement {
 
         public Builder tieStop(boolean tieStop) {
             this.tieStop = tieStop;
+            return this;
+        }
+
+        public Builder displayedAccidental(Accidental displayedAccidental) {
+            this.displayedAccidental = displayedAccidental;
+            return this;
+        }
+
+        public Builder addBeam(Beam beam) {
+            this.beams.add(beam);
+            return this;
+        }
+
+        public Builder beams(java.util.List<Beam> beams) {
+            this.beams = new java.util.ArrayList<>(beams);
+            return this;
+        }
+
+        public Builder staff(int staff) {
+            this.staff = staff;
             return this;
         }
 

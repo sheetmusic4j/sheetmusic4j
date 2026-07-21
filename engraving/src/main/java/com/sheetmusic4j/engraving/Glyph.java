@@ -23,6 +23,37 @@ public enum Glyph {
      */
     @Deprecated
     STEM,
+    /**
+     * Flag for an unbeamed eighth note with an upward stem.
+     */
+    FLAG_8TH_UP,
+    /**
+     * Flag for an unbeamed eighth note with a downward stem.
+     */
+    FLAG_8TH_DOWN,
+    /**
+     * Flag for an unbeamed sixteenth note with an upward stem.
+     */
+    FLAG_16TH_UP,
+    /**
+     * Flag for an unbeamed sixteenth note with a downward stem.
+     */
+    FLAG_16TH_DOWN,
+    /**
+     * A beam segment connecting the stem tips of two or more beamed notes.
+     * Positioning is carried by {@link BeamPlacement} rather than a
+     * {@link GlyphPlacement}, so this value is a marker only.
+     */
+    BEAM,
+    ACCIDENTAL_SHARP,
+    ACCIDENTAL_FLAT,
+    ACCIDENTAL_NATURAL,
+    ACCIDENTAL_DOUBLE_SHARP,
+    ACCIDENTAL_DOUBLE_FLAT,
+    /**
+     * Augmentation dot ("dot of prolongation").
+     */
+    AUG_DOT,
     CLEF_G,
     CLEF_F,
     CLEF_C,

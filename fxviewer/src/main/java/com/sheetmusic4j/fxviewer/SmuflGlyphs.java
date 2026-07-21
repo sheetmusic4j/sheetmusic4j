@@ -16,6 +16,12 @@ import com.sheetmusic4j.engraving.Glyph;
  *   <li>{@code noteheadWhole} = {@code U+E0A2}</li>
  *   <li>{@code noteheadHalf} = {@code U+E0A3}</li>
  *   <li>{@code noteheadBlack} = {@code U+E0A4}</li>
+ *   <li>{@code flag8thUp} = {@code U+E240}, {@code flag8thDown} = {@code U+E241}</li>
+ *   <li>{@code flag16thUp} = {@code U+E242}, {@code flag16thDown} = {@code U+E243}</li>
+ *   <li>{@code accidentalFlat} = {@code U+E260}, {@code accidentalNatural} = {@code U+E261}</li>
+ *   <li>{@code accidentalSharp} = {@code U+E262}, {@code accidentalDoubleSharp} = {@code U+E263}</li>
+ *   <li>{@code accidentalDoubleFlat} = {@code U+E264}</li>
+ *   <li>{@code augmentationDot} = {@code U+E1E7}</li>
  *   <li>{@code restWhole} = {@code U+E4E3}</li>
  *   <li>{@code restHalf} = {@code U+E4E4}</li>
  *   <li>{@code restQuarter} = {@code U+E4E5}</li>
@@ -42,6 +48,16 @@ public final class SmuflGlyphs {
             case NOTEHEAD_WHOLE -> "\uE0A2";
             case NOTEHEAD_HALF -> "\uE0A3";
             case NOTEHEAD_BLACK -> "\uE0A4";
+            case FLAG_8TH_UP -> "\uE240";
+            case FLAG_8TH_DOWN -> "\uE241";
+            case FLAG_16TH_UP -> "\uE242";
+            case FLAG_16TH_DOWN -> "\uE243";
+            case ACCIDENTAL_FLAT -> "\uE260";
+            case ACCIDENTAL_NATURAL -> "\uE261";
+            case ACCIDENTAL_SHARP -> "\uE262";
+            case ACCIDENTAL_DOUBLE_SHARP -> "\uE263";
+            case ACCIDENTAL_DOUBLE_FLAT -> "\uE264";
+            case AUG_DOT -> "\uE1E7";
             case REST_WHOLE -> "\uE4E3";
             case REST_HALF -> "\uE4E4";
             case REST_QUARTER -> "\uE4E5";
@@ -58,6 +74,37 @@ public final class SmuflGlyphs {
             case TIME_DIGIT_9 -> "\uE089";
             default -> null;
         };
+    }
+
+    /**
+     * Half of the SMuFL advance width for the given glyph, expressed in
+     * layout units at the given {@code sizeHint} font size.
+     *
+     * <p>Advance widths taken from Bravura's {@code glyphAdvanceWidths.json}
+     * (in staff spaces; 1 em = 4 staff spaces). Returned in the same units
+     * as the layout so callers can shift a "center-anchored" glyph by
+     * subtracting this from the target x.
+     *
+     * @param glyph    SMuFL-backed glyph
+     * @param sizeHint font em-size the glyph will be drawn at
+     * @return half advance width in layout units, or 0 for non-SMuFL glyphs
+     */
+    public static double halfAdvanceWidth(Glyph glyph, double sizeHint) {
+        double staffSpaces = switch (glyph) {
+            case NOTEHEAD_BLACK, NOTEHEAD_HALF -> 1.18;
+            case NOTEHEAD_WHOLE -> 1.5;
+            case TIME_DIGIT_0, TIME_DIGIT_1, TIME_DIGIT_2, TIME_DIGIT_3, TIME_DIGIT_4,
+                    TIME_DIGIT_5, TIME_DIGIT_6, TIME_DIGIT_7, TIME_DIGIT_8, TIME_DIGIT_9 -> 1.4;
+            case ACCIDENTAL_FLAT -> 0.9;
+            case ACCIDENTAL_NATURAL -> 0.65;
+            case ACCIDENTAL_SHARP -> 1.0;
+            case ACCIDENTAL_DOUBLE_SHARP -> 1.05;
+            case ACCIDENTAL_DOUBLE_FLAT -> 1.75;
+            case AUG_DOT -> 0.4;
+            default -> 0.0;
+        };
+        // 1 em = 4 staff spaces in SMuFL, so staffSpaces / 4 = fraction of the em/sizeHint.
+        return staffSpaces * 0.5 * sizeHint / 4.0;
     }
 
     /**
