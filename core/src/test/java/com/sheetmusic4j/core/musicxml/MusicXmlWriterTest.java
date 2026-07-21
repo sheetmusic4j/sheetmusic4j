@@ -228,6 +228,41 @@ class MusicXmlWriterTest {
     }
 
     @Test
+    void roundTripPreservesPartAbbreviation() {
+        Score original = Score.builder()
+                .workTitle("T")
+                .addPart(Part.builder("P1")
+                        .name("Bass Clarinet in B\u266D")
+                        .abbreviation("B. Cl.")
+                        .build())
+                .build();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new MusicXmlWriter().write(original, out);
+        Score reparsed = new MusicXmlReader().read(new ByteArrayInputStream(out.toByteArray()));
+
+        Part reparsedPart = reparsed.parts().get(0);
+        assertEquals("Bass Clarinet in B\u266D", reparsedPart.name());
+        assertEquals("B. Cl.", reparsedPart.abbreviation());
+    }
+
+    @Test
+    void doesNotEmitPartAbbreviationWhenAbsent() {
+        Score original = Score.builder()
+                .addPart(Part.builder("P1").name("Voice").build())
+                .build();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new MusicXmlWriter().write(original, out);
+
+        String xml = out.toString(java.nio.charset.StandardCharsets.UTF_8);
+        // Must not synthesize a <part-abbreviation> element when the model
+        // did not carry one.
+        org.junit.jupiter.api.Assertions.assertFalse(xml.contains("part-abbreviation"),
+                "writer must not emit <part-abbreviation> when the model has none: " + xml);
+    }
+
+    @Test
     void roundTripPreservesRehearsalDirection() {
         int divisions = 1;
         Direction rehearsal = new Direction(

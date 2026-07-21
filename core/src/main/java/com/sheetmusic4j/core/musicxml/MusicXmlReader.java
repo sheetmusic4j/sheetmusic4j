@@ -169,7 +169,7 @@ public final class MusicXmlReader {
 
     private Score parseDocument(XMLStreamReader reader) throws XMLStreamException {
         Score.Builder score = Score.builder();
-        Map<String, String> partNames = new LinkedHashMap<>();
+        Map<String, ScorePartInfo> scoreParts = new LinkedHashMap<>();
         Map<String, Part.Builder> partBuilders = new LinkedHashMap<>();
         List<String> partOrder = new ArrayList<>();
 
@@ -182,10 +182,13 @@ public final class MusicXmlReader {
                     case "movement-title" -> score.movementTitle(readText(reader));
                     case "identification" -> readIdentification(reader, score);
                     case "credit" -> readCredit(reader, score);
-                    case "score-part" -> readScorePart(reader, partNames);
+                    case "score-part" -> readScorePart(reader, scoreParts);
                     case "part" -> {
                         String id = reader.getAttributeValue(null, "id");
-                        Part.Builder part = Part.builder(id).name(partNames.get(id));
+                        ScorePartInfo info = scoreParts.get(id);
+                        Part.Builder part = Part.builder(id)
+                                .name(info != null ? info.name() : null)
+                                .abbreviation(info != null ? info.abbreviation() : null);
                         partBuilders.put(id, part);
                         partOrder.add(id);
                         readPart(reader, part);
@@ -199,6 +202,13 @@ public final class MusicXmlReader {
             score.addPart(partBuilders.get(id).build());
         }
         return score.build();
+    }
+
+    /**
+     * Immutable pair of a part's full name and abbreviation, gathered from
+     * a single {@code <score-part>} entry in the {@code <part-list>}.
+     */
+    private record ScorePartInfo(String name, String abbreviation) {
     }
 
     private void readIdentification(XMLStreamReader reader, Score.Builder score) throws XMLStreamException {
@@ -273,21 +283,24 @@ public final class MusicXmlReader {
         }
     }
 
-    private void readScorePart(XMLStreamReader reader, Map<String, String> partNames) throws XMLStreamException {
+    private void readScorePart(XMLStreamReader reader, Map<String, ScorePartInfo> scoreParts) throws XMLStreamException {
         String id = reader.getAttributeValue(null, "id");
         String name = null;
+        String abbreviation = null;
         while (reader.hasNext()) {
             int event = reader.next();
             if (event == XMLStreamConstants.START_ELEMENT) {
-                if ("part-name".equals(reader.getLocalName())) {
-                    name = readText(reader);
+                switch (reader.getLocalName()) {
+                    case "part-name" -> name = readText(reader);
+                    case "part-abbreviation" -> abbreviation = readText(reader);
+                    default -> { /* ignore other score-part children */ }
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT && "score-part".equals(reader.getLocalName())) {
                 break;
             }
         }
         if (id != null) {
-            partNames.put(id, name);
+            scoreParts.put(id, new ScorePartInfo(name, abbreviation));
         }
     }
 

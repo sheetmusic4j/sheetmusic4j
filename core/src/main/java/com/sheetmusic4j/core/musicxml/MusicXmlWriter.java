@@ -94,6 +94,9 @@ public final class MusicXmlWriter {
         for (Part part : score.parts()) {
             w.start("score-part", "id", part.id());
             w.textElement("part-name", part.name() != null ? part.name() : part.id());
+            if (part.abbreviation() != null) {
+                w.textElement("part-abbreviation", part.abbreviation());
+            }
             w.end("score-part");
         }
         w.end("part-list");

@@ -4,12 +4,15 @@ import java.util.EnumSet;
 import java.util.Set;
 
 import com.sheetmusic4j.engraving.BeamPlacement;
+import com.sheetmusic4j.engraving.BracketPlacement;
 import com.sheetmusic4j.engraving.Glyph;
 import com.sheetmusic4j.engraving.GlyphPlacement;
 import com.sheetmusic4j.engraving.LayoutResult;
 import com.sheetmusic4j.engraving.MarkingCategory;
 import com.sheetmusic4j.engraving.MeasureLayout;
 import com.sheetmusic4j.engraving.StaffLayout;
+import com.sheetmusic4j.engraving.SystemBarline;
+import com.sheetmusic4j.engraving.SystemLayout;
 import com.sheetmusic4j.engraving.TextPlacement;
 import com.sheetmusic4j.engraving.TiePlacement;
 
@@ -82,8 +85,16 @@ public final class ScorePainter {
             }
             drawText(surface, text);
         }
-        for (StaffLayout staff : layout.staves()) {
-            drawStaff(surface, staff);
+        for (SystemLayout system : layout.systems()) {
+            for (StaffLayout staff : system.staves()) {
+                drawStaff(surface, staff);
+            }
+            for (SystemBarline barline : system.barlines()) {
+                drawSystemBarline(surface, barline);
+            }
+            for (BracketPlacement bracket : system.brackets()) {
+                drawBracket(surface, bracket);
+            }
         }
         }
 
@@ -133,7 +144,6 @@ public final class ScorePainter {
             double bottom = staff.lineY(STAFF_LINES - 1);
             surface.strokeLine(measure.right(), top, measure.right(), bottom);
         }
-        surface.strokeLine(staff.x(), staff.lineY(0), staff.x(), staff.lineY(STAFF_LINES - 1));
 
         for (GlyphPlacement glyph : staff.glyphs()) {
             if (hiddenCategories.contains(glyph.category())) {
@@ -382,6 +392,75 @@ public final class ScorePainter {
         double y = staff.lineY(2);
         surface.fillOval(x - d / 2, y - d / 2, d, d);
         surface.strokeLine(x + d / 2, y, x - d / 2, y + gap * 1.5);
+    }
+
+    /**
+     * Draw a system-wide vertical barline at the given x, spanning the
+     * top-line of the first staff to the bottom-line of the last staff of
+     * the enclosing system. Style is honored by picking a heavier line
+     * width for {@link SystemBarline.LineStyle#THICK}.
+     */
+    private void drawSystemBarline(RenderSurface surface, SystemBarline barline) {
+        if (barline.style() == SystemBarline.LineStyle.THICK) {
+            surface.setLineWidth(2.5);
+            surface.strokeLine(barline.x(), barline.topY(), barline.x(), barline.bottomY());
+            surface.setLineWidth(1.0);
+        } else {
+            surface.strokeLine(barline.x(), barline.topY(), barline.x(), barline.bottomY());
+        }
+    }
+
+    /**
+     * Draw a grouping mark (brace / bracket / line) at the left edge of a
+     * system. {@link BracketPlacement.BracketShape#BRACE} is rendered via
+     * the SMuFL {@code brace} glyph when a font is available, with a
+     * primitive vertical line + serif fallback otherwise.
+     * {@link BracketPlacement.BracketShape#BRACKET} and
+     * {@link BracketPlacement.BracketShape#LINE} are reserved for a
+     * follow-up task and currently render as a plain vertical line so the
+     * switch is exhaustive.
+     */
+    private void drawBracket(RenderSurface surface, BracketPlacement bracket) {
+        double span = bracket.bottomY() - bracket.topY();
+        double midY = (bracket.topY() + bracket.bottomY()) / 2.0;
+        switch (bracket.shape()) {
+            case BRACE -> {
+                // SMuFL's brace (E000) is a single-size glyph; approximate
+                // stretching by drawing it at the span size, anchored so the
+                // rough vertical centre sits near the group midpoint.
+                boolean drawn = surface.drawSmuflGlyph("\uE000",
+                        bracket.x(), midY + span * 0.25, span);
+                if (!drawn) {
+                    drawBraceFallback(surface, bracket, span);
+                }
+            }
+            case BRACKET, LINE -> drawBracketLineFallback(surface, bracket);
+        }
+    }
+
+    /**
+     * Primitive brace fallback: a vertical line joined by two short
+     * horizontal serifs at each end. Uglier than a real brace but
+     * unambiguously signals "these staves are grouped".
+     */
+    private void drawBraceFallback(RenderSurface surface, BracketPlacement bracket, double span) {
+        double x = bracket.x();
+        surface.strokeLine(x, bracket.topY(), x, bracket.bottomY());
+        // Serif width: 2/3 of the average staff-line gap. We don't have
+        // direct access to the gap here; approximate from the span so the
+        // serif scales sensibly with the brace height.
+        double serif = Math.max(4.0, span * 0.05);
+        surface.strokeLine(x, bracket.topY(), x + serif, bracket.topY());
+        surface.strokeLine(x, bracket.bottomY(), x + serif, bracket.bottomY());
+    }
+
+    /**
+     * Fallback for the not-yet-emitted {@link BracketPlacement.BracketShape#BRACKET}
+     * and {@link BracketPlacement.BracketShape#LINE} shapes. Renders a
+     * plain vertical line so downstream painters remain exhaustive.
+     */
+    private void drawBracketLineFallback(RenderSurface surface, BracketPlacement bracket) {
+        surface.strokeLine(bracket.x(), bracket.topY(), bracket.x(), bracket.bottomY());
     }
 
     private void drawLedgerLines(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {

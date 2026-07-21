@@ -91,6 +91,7 @@ public final class SmuflGlyphs {
             case DYNAMIC_SFZ -> "\uE539";
             case DYNAMIC_RF -> "\uE53C";
             case DYNAMIC_RFZ -> "\uE53D";
+            case BRACE -> "\uE000";
             default -> null;
             };
             }
@@ -124,8 +125,9 @@ public final class SmuflGlyphs {
             case DYNAMIC_PP, DYNAMIC_MP, DYNAMIC_MF, DYNAMIC_FF, DYNAMIC_FZ,
                     DYNAMIC_FP, DYNAMIC_SF, DYNAMIC_RF -> 2.4;
             case DYNAMIC_PPP, DYNAMIC_FFF, DYNAMIC_SFZ, DYNAMIC_RFZ -> 3.2;
+            case BRACE -> 0.6;
             default -> 0.0;
-        };
+            };
         // 1 em = 4 staff spaces in SMuFL, so staffSpaces / 4 = fraction of the em/sizeHint.
         return staffSpaces * 0.5 * sizeHint / 4.0;
     }

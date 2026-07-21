@@ -91,7 +91,12 @@ public enum Glyph {
     DYNAMIC_FP,
     DYNAMIC_RF,
     DYNAMIC_RFZ,
-    DYNAMIC_NIENTE;
+    DYNAMIC_NIENTE,
+    /**
+     * SMuFL {@code brace} glyph (U+E000). Drawn at the left edge of a
+     * multi-staff part to visually group its staves.
+     */
+    BRACE;
 
     /**
      * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.

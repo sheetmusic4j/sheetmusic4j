@@ -165,6 +165,28 @@ class ScorePainterTextVisibilityTest {
     }
 
     @Test
+    void hidingPartLabelCategorySkipsLabel() {
+        StaffLayout staff = new StaffLayout(0, 100, 500, 10.0,
+                List.of(), List.of(), List.of(), List.of());
+        SystemLayout system = new SystemLayout(0, 100, 500, List.of(staff));
+        List<TextPlacement> texts = List.of(
+                new TextPlacement("Voice", 20, 130, 14, TextPlacement.Align.LEFT,
+                        MarkingCategory.PART_LABEL));
+        LayoutResult layout = new LayoutResult(List.of(system), texts, 500, 200);
+
+        RecordingSurface visible = new RecordingSurface();
+        new ScorePainter().paint(visible, layout, 500, 200);
+        assertEquals(List.of("Voice"), visible.textsDrawn);
+
+        RecordingSurface hidden = new RecordingSurface();
+        ScorePainter painter = new ScorePainter();
+        painter.setHiddenCategories(EnumSet.of(MarkingCategory.PART_LABEL));
+        painter.paint(hidden, layout, 500, 200);
+        assertTrue(hidden.textsDrawn.isEmpty(),
+                "instrument label must be skipped when PART_LABEL category is hidden");
+    }
+
+    @Test
     void gettersReflectHiddenCategories() {
         ScorePainter painter = new ScorePainter();
         painter.setHiddenCategories(EnumSet.of(MarkingCategory.CREATOR));

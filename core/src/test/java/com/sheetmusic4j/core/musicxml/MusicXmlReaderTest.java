@@ -116,6 +116,39 @@ class MusicXmlReaderTest {
     }
 
     @Test
+    void readsPartAbbreviation() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list><score-part id=\"P1\">
+                    <part-name>Bass Clarinet in B\u266D</part-name>
+                    <part-abbreviation>B. Cl.</part-abbreviation>
+                  </score-part></part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Part part = score.parts().get(0);
+        assertEquals("Bass Clarinet in B\u266D", part.name());
+        assertEquals("B. Cl.", part.abbreviation());
+    }
+
+    @Test
+    void partAbbreviationIsNullWhenAbsent() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list><score-part id=\"P1\"><part-name>Voice</part-name></score-part></part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        Part part = score.parts().get(0);
+        assertEquals("Voice", part.name());
+        assertEquals(null, part.abbreviation());
+    }
+
+    @Test
     void readsMultiStaffPart() {
         String xml = """
                 <?xml version=\"1.0\" encoding=\"UTF-8\"?>

@@ -64,6 +64,11 @@ public final class Engraver {
      * Half-staff-step position of the middle staff line for a five-line staff.
      */
     private static final int MIDDLE_LINE_STAFF_STEP = 4;
+
+    /**
+     * Number of horizontal lines on a standard staff.
+     */
+    private static final int STAFF_LINES = 5;
     private static final double STEM_LENGTH_GAPS = 3.5;
 
     /**
@@ -136,6 +141,26 @@ public final class Engraver {
     private static final double LYRIC_FONT_SIZE_GAPS = 1.4;
 
     /**
+     * Multiplier applied to the staff-line gap to derive the part-label font
+     * size. Matches {@link #LYRIC_FONT_SIZE_GAPS} so both share a visual
+     * weight class.
+     */
+    private static final double PART_LABEL_FONT_SIZE_GAPS = 1.4;
+
+    /**
+     * Character-to-em ratio used by both {@link ScorePainter}'s alignment
+     * fallback and {@link #computeLabelReserve}. Keep in sync with the value
+     * in {@code ScorePainter.drawText}.
+     */
+    private static final double LABEL_CHAR_WIDTH_RATIO = 0.55;
+
+    /**
+     * Small trailing gap (in staff-line gaps) added after the longest label
+     * so labels never abut the system left barline.
+     */
+    private static final double PART_LABEL_TRAILING_PAD_GAPS = 1.2;
+
+    /**
      * Distance (in staff-line gaps) from the bottom staff line to the baseline
      * of the verse-1 lyric row.
      */
@@ -151,7 +176,9 @@ public final class Engraver {
                     options.topMargin() + titleBlockHeight + options.staffHeight());
         }
 
-        double staffWidth = options.systemWidth() - options.leftMargin() - options.rightMargin();
+        double labelReserve = computeLabelReserve(score, options);
+        double contentLeft = options.leftMargin() + labelReserve;
+        double staffWidth = options.systemWidth() - contentLeft - options.rightMargin();
 
         List<PartInfo> parts = new ArrayList<>(score.parts().size());
         int measureCount = 0;
@@ -184,6 +211,7 @@ public final class Engraver {
                     Math.max(0, staffWidth - rowHeader), rowHeader);
 
             List<StaffLayout> stavesForRow = new ArrayList<>();
+            List<BracketPlacement> bracketsForRow = new ArrayList<>();
             double staffTop = y;
             boolean rowHasAboveDirections = false;
             boolean rowHasHarmony = false;
@@ -205,12 +233,29 @@ public final class Engraver {
                 staffTop += options.staffLineGap() * HARMONY_ABOVE_RESERVE_GAPS;
             }
             for (PartInfo p : parts) {
+                StaffLayout firstStaffOfPart = null;
+                StaffLayout lastStaffOfPart = null;
                 for (int staffIdx = 0; staffIdx < p.staveCount(); staffIdx++) {
                     StaffLayout sl = layoutStaffRow(
-                            p, staffIdx, options.leftMargin(), staffTop,
+                            p, staffIdx, contentLeft, staffTop,
                             options, start, endExclusive, rowWidths, rowIdx == 0, texts);
                     stavesForRow.add(sl);
+                    if (firstStaffOfPart == null) {
+                        firstStaffOfPart = sl;
+                    }
+                    lastStaffOfPart = sl;
                     staffTop += options.staffHeight() + options.staffSpacing();
+                }
+                if (firstStaffOfPart != null) {
+                    emitPartLabel(texts, p.part(), rowIdx,
+                            firstStaffOfPart, lastStaffOfPart, options);
+                    if (p.staveCount() > 1) {
+                        bracketsForRow.add(new BracketPlacement(
+                                contentLeft - options.staffLineGap() * 0.8,
+                                firstStaffOfPart.lineY(0),
+                                lastStaffOfPart.lineY(STAFF_LINES - 1),
+                                BracketPlacement.BracketShape.BRACE));
+                    }
                 }
                 double belowReserve = 0.0;
                 if (p.hasLyrics()) {
@@ -223,9 +268,20 @@ public final class Engraver {
                 }
                 staffTop += belowReserve;
             }
-            systems.add(new SystemLayout(0, y, options.systemWidth(), stavesForRow));
+            List<SystemBarline> barlinesForRow = new ArrayList<>();
+            if (!stavesForRow.isEmpty()) {
+                StaffLayout firstStaff = stavesForRow.get(0);
+                StaffLayout lastStaff = stavesForRow.get(stavesForRow.size() - 1);
+                barlinesForRow.add(new SystemBarline(
+                        contentLeft,
+                        firstStaff.lineY(0),
+                        lastStaff.lineY(STAFF_LINES - 1),
+                        SystemBarline.LineStyle.THIN));
+            }
+            systems.add(new SystemLayout(0, y, options.systemWidth(),
+                    stavesForRow, barlinesForRow, bracketsForRow));
             y = staffTop;
-        }
+            }
 
         double height = y - options.staffSpacing() + options.rightMargin();
         return new LayoutResult(systems, texts, options.systemWidth(), height);
@@ -591,6 +647,79 @@ public final class Engraver {
             advance += maxLen * digitWidth + gap;
         }
         return advance;
+    }
+
+    /**
+     * Compute the horizontal space to reserve to the left of every system
+     * for part-name / part-abbreviation labels. Returns {@code 0} when no
+     * part carries a non-blank name or abbreviation, so single-part
+     * unlabeled scores keep their pre-existing layout.
+     *
+     * <p>Width estimate matches the {@code 0.55 * fontSize * length}
+     * heuristic used by {@link ScorePainter} for right/center alignment,
+     * then adds a small padding so labels never abut the system barline.
+     *
+     * @param score   the score to inspect
+     * @param options layout options; used for staff-line gap only
+     * @return non-negative reserve in layout units
+     */
+    private static double computeLabelReserve(Score score, LayoutOptions options) {
+        double gap = options.staffLineGap();
+        double fontSize = gap * PART_LABEL_FONT_SIZE_GAPS;
+        int longest = 0;
+        for (Part part : score.parts()) {
+            longest = Math.max(longest, labelLength(part.name()));
+            longest = Math.max(longest, labelLength(part.abbreviation()));
+        }
+        if (longest == 0) {
+            return 0.0;
+        }
+        return longest * LABEL_CHAR_WIDTH_RATIO * fontSize
+                + gap * PART_LABEL_TRAILING_PAD_GAPS;
+    }
+
+    /**
+     * Length of a label for the purposes of {@link #computeLabelReserve}
+     * width estimation. Returns {@code 0} for {@code null} or blank strings.
+     */
+    private static int labelLength(String label) {
+        return label == null || label.isBlank() ? 0 : label.length();
+    }
+
+    /**
+     * Emit the instrument-label {@link TextPlacement} for a part at the
+     * given row. Skipped silently when the part carries neither a name nor
+     * an abbreviation. On the first row of the layout the full
+     * {@code <part-name>} is used; on subsequent rows we prefer
+     * {@code <part-abbreviation>} and fall back to the full name when the
+     * source did not supply one.
+     *
+     * @param texts             collector for page-level text placements
+     * @param part              the part being labeled
+     * @param rowIdx            0-based row index within the layout
+     * @param firstStaffOfPart  first staff belonging to the part in this row
+     * @param lastStaffOfPart   last staff belonging to the part in this row
+     * @param options           layout options; used for font sizing only
+     */
+    private static void emitPartLabel(List<TextPlacement> texts, Part part, int rowIdx,
+                                      StaffLayout firstStaffOfPart, StaffLayout lastStaffOfPart,
+                                      LayoutOptions options) {
+        String labelText;
+        if (rowIdx == 0) {
+            labelText = part.name();
+        } else {
+            labelText = part.abbreviation() != null ? part.abbreviation() : part.name();
+        }
+        if (labelText == null || labelText.isBlank()) {
+            return;
+        }
+        double gap = options.staffLineGap();
+        double fontSize = gap * PART_LABEL_FONT_SIZE_GAPS;
+        double top = firstStaffOfPart.lineY(0);
+        double bottom = lastStaffOfPart.lineY(STAFF_LINES - 1);
+        double labelY = (top + bottom) / 2.0 + fontSize / 2.0;
+        texts.add(new TextPlacement(labelText, options.leftMargin(), labelY,
+                fontSize, TextPlacement.Align.LEFT, MarkingCategory.PART_LABEL));
     }
 
     /**

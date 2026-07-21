@@ -27,5 +27,11 @@ public enum MarkingCategory {
     /** Reserved for a follow-up task. */
     REHEARSAL,
     /** Reserved for a follow-up task. */
-    CHORD_SYMBOL
-}
+    CHORD_SYMBOL,
+    /**
+     * Instrument label emitted at the left of a system for each part
+     * (full {@code <part-name>} on the first system,
+     * {@code <part-abbreviation>} on continuation systems).
+     */
+    PART_LABEL
+    }
