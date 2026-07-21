@@ -60,10 +60,13 @@ public final class Engraver {
     private static final double STEM_LENGTH_GAPS = 3.5;
 
     public LayoutResult layout(Score score, LayoutOptions options) {
+        List<TextPlacement> texts = new ArrayList<>();
+        double titleBlockHeight = layoutTitleBlock(score, options, texts);
+
         if (score.parts().isEmpty()) {
             SystemLayout empty = new SystemLayout(0, 0, options.systemWidth(), List.of());
-            return new LayoutResult(List.of(empty), options.systemWidth(),
-                    options.topMargin() + options.staffHeight());
+            return new LayoutResult(List.of(empty), texts, options.systemWidth(),
+                    options.topMargin() + titleBlockHeight + options.staffHeight());
         }
 
         double staffWidth = options.systemWidth() - options.leftMargin() - options.rightMargin();
@@ -77,8 +80,8 @@ public final class Engraver {
         }
         if (measureCount == 0) {
             SystemLayout empty = new SystemLayout(0, 0, options.systemWidth(), List.of());
-            return new LayoutResult(List.of(empty), options.systemWidth(),
-                    options.topMargin() + options.staffHeight());
+            return new LayoutResult(List.of(empty), texts, options.systemWidth(),
+                    options.topMargin() + titleBlockHeight + options.staffHeight());
         }
 
         double firstSystemHeader = maxHeaderAdvanceAtRowStart(parts, 0, options);
@@ -88,7 +91,7 @@ public final class Engraver {
         List<int[]> rows = computeRowRanges(baseWidths, staffWidth, firstSystemHeader, parts, options);
 
         List<SystemLayout> systems = new ArrayList<>(rows.size());
-        double y = options.topMargin();
+        double y = options.topMargin() + titleBlockHeight;
         for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
             int[] range = rows.get(rowIdx);
             int start = range[0];
@@ -96,7 +99,7 @@ public final class Engraver {
 
             double rowHeader = maxHeaderAdvanceAtRowStart(parts, start, options);
             List<Double> rowWidths = stretchRowWidths(baseWidths, start, endExclusive,
-                    Math.max(0, staffWidth - rowHeader));
+                    Math.max(0, staffWidth - rowHeader), rowHeader);
 
             List<StaffLayout> stavesForRow = new ArrayList<>();
             double staffTop = y;
@@ -114,8 +117,46 @@ public final class Engraver {
         }
 
         double height = y - options.staffSpacing() + options.rightMargin();
-        return new LayoutResult(systems, options.systemWidth(), height);
-    }
+        return new LayoutResult(systems, texts, options.systemWidth(), height);
+        }
+
+        /**
+        * Emit the score-level title / subtitle text placements at the top of the
+        * page and return the total vertical space they consume (0 when the
+        * score carries no metadata).
+        *
+        * <p>Titles are centered horizontally on the system. The block sits above
+        * the first system's staves and pushes them down by the returned height.
+        */
+        private static double layoutTitleBlock(Score score, LayoutOptions options, List<TextPlacement> texts) {
+        double gap = options.staffLineGap();
+        double centerX = options.systemWidth() / 2.0;
+        double y = options.topMargin();
+        double consumed = 0.0;
+
+        String workTitle = score.workTitle().orElse(null);
+        if (workTitle != null && !workTitle.isBlank()) {
+            double fontSize = gap * 2.4;
+            texts.add(new TextPlacement(workTitle, centerX, y + fontSize,
+                    fontSize, TextPlacement.Align.CENTER));
+            double advance = fontSize * 1.2;
+            y += advance;
+            consumed += advance;
+        }
+        String movement = score.movementTitle().orElse(null);
+        if (movement != null && !movement.isBlank() && !movement.equals(workTitle)) {
+            double fontSize = gap * 1.6;
+            texts.add(new TextPlacement(movement, centerX, y + fontSize,
+                    fontSize, TextPlacement.Align.CENTER));
+            double advance = fontSize * 1.4;
+            consumed += advance;
+        }
+        if (consumed > 0) {
+            // A little breathing space between the title block and the first staff.
+            consumed += gap;
+        }
+        return consumed;
+        }
 
     /**
      * Per-part immutable metadata plus a per-measure trace of the clef/key/time
@@ -417,11 +458,27 @@ public final class Engraver {
 
     /**
      * Stretch the base widths of measures {@code [start, endExclusive)} so
-     * they fill the given target width exactly, preserving their relative
-     * proportions.
+     * they fill the given content width exactly, then absorb the row
+     * {@code header} into the first measure's width.
+     *
+     * <p>Consequences:
+     * <ul>
+     *   <li>The first measure's {@link MeasureLayout} spans from the staff's
+     *       left edge (including the clef / key / time-signature block) to
+     *       {@code header + contentTarget[0]} — so barlines and measure
+     *       diagnostics see the full visual measure, not just its
+     *       post-header content.</li>
+     *   <li>All measures together fill exactly {@code contentTarget +
+     *       header = staffWidth} so no trailing gap remains at the right
+     *       side of the staff.</li>
+     *   <li>Note x-positions inside the first measure are still packed from
+     *       {@code contentStart = leftMargin + header} onwards, so the
+     *       post-header content of measure 1 has the same visual density
+     *       as any other measure in the row.</li>
+     * </ul>
      */
     private static List<Double> stretchRowWidths(List<Double> baseWidths, int start, int endExclusive,
-                                                 double target) {
+                                                 double contentTarget, double header) {
         List<Double> widths = new ArrayList<>(endExclusive - start);
         if (endExclusive <= start) {
             return widths;
@@ -430,15 +487,12 @@ public final class Engraver {
         for (int i = start; i < endExclusive; i++) {
             sum += baseWidths.get(i);
         }
-        if (sum <= 0 || target <= 0) {
-            for (int i = start; i < endExclusive; i++) {
-                widths.add(baseWidths.get(i));
-            }
-            return widths;
-        }
-        double scale = target / sum;
+        double scale = (sum > 0 && contentTarget > 0) ? contentTarget / sum : 1.0;
         for (int i = start; i < endExclusive; i++) {
             widths.add(baseWidths.get(i) * scale);
+        }
+        if (header > 0) {
+            widths.set(0, widths.get(0) + header);
         }
         return widths;
     }

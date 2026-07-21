@@ -6,6 +6,7 @@ import com.sheetmusic4j.engraving.GlyphPlacement;
 import com.sheetmusic4j.engraving.LayoutResult;
 import com.sheetmusic4j.engraving.MeasureLayout;
 import com.sheetmusic4j.engraving.StaffLayout;
+import com.sheetmusic4j.engraving.TextPlacement;
 import com.sheetmusic4j.engraving.TiePlacement;
 
 /**
@@ -45,9 +46,28 @@ public final class ScorePainter {
         surface.setFill(RenderColor.BLACK);
         surface.setLineWidth(1.0);
 
+        for (TextPlacement text : layout.texts()) {
+            drawText(surface, text);
+        }
         for (StaffLayout staff : layout.staves()) {
             drawStaff(surface, staff);
         }
+    }
+
+    /**
+     * Draw a page-level {@link TextPlacement}. Alignment is approximated by
+     * subtracting an estimated width (0.55 * fontSize per character) from the
+     * anchor x. Backends that support real text metrics can override the
+     * surface to do this more accurately.
+     */
+    private void drawText(RenderSurface surface, TextPlacement text) {
+        double estimatedWidth = 0.55 * text.fontSize() * Math.max(1, text.text().length());
+        double x = switch (text.align()) {
+            case LEFT -> text.x();
+            case CENTER -> text.x() - estimatedWidth / 2.0;
+            case RIGHT -> text.x() - estimatedWidth;
+        };
+        surface.drawText(text.text(), x, text.y(), text.fontSize());
     }
 
     private void drawStaff(RenderSurface surface, StaffLayout staff) {

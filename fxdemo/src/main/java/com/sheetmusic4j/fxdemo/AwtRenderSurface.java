@@ -87,6 +87,15 @@ public final class AwtRenderSurface implements RenderSurface {
     }
 
     @Override
+    public void drawText(String text, double x, double y, double fontSize) {
+        Font previous = g.getFont();
+        g.setFont(previous.deriveFont((float) fontSize));
+        g.setColor(fill);
+        g.drawString(text, (float) x, (float) y);
+        g.setFont(previous);
+    }
+
+    @Override
     public boolean drawSmuflGlyph(String glyphChars, double x, double y, double sizeHint) {
         Font font = ensureBravura();
         if (font == null) {

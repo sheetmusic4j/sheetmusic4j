@@ -35,6 +35,20 @@ public interface RenderSurface {
     void strokeText(String text, double x, double y);
 
     /**
+     * Draws text at the given font em-size. Default implementation ignores
+     * {@code fontSize} and falls back to {@link #strokeText(String, double, double)};
+     * backends that support font sizing (AWT / FX) should override.
+     *
+     * @param text     text to draw
+     * @param x        baseline x
+     * @param y        baseline y
+     * @param fontSize preferred font em-size in layout units
+     */
+    default void drawText(String text, double x, double y, double fontSize) {
+        strokeText(text, x, y);
+    }
+
+    /**
      * Draw a SMuFL glyph (see {@link SmuflGlyphs}) if a SMuFL font is
      * available on this surface. The default implementation returns
      * {@code false}, meaning "no SMuFL font, fall back to primitives".

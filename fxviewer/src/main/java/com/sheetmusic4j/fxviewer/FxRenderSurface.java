@@ -71,6 +71,14 @@ public final class FxRenderSurface implements RenderSurface {
     }
 
     @Override
+    public void drawText(String text, double x, double y, double fontSize) {
+        Font previous = gc.getFont();
+        gc.setFont(Font.font(previous != null ? previous.getFamily() : "System", fontSize));
+        gc.fillText(text, x, y);
+        gc.setFont(previous);
+    }
+
+    @Override
     public boolean drawSmuflGlyph(String glyphChars, double x, double y, double sizeHint) {
         Font font = ensureBravura(sizeHint);
         if (font == null) {
