@@ -76,8 +76,16 @@
             promise.then(function () {
                 try {
                     osmdInstance.render();
-                    // Give the DOM a tick to lay out before we snapshot.
-                    setTimeout(function () { setStatus("done"); }, 50);
+                    // OSMD lays out into an <svg>, but the pixels are not yet
+                    // guaranteed to be on screen until the browser has run a
+                    // paint frame. Two requestAnimationFrame calls straddle a
+                    // full paint cycle; the extra setTimeout is a belt-and-
+                    // braces buffer for slow WebKit builds.
+                    requestAnimationFrame(function () {
+                        requestAnimationFrame(function () {
+                            setTimeout(function () { setStatus("done"); }, 100);
+                        });
+                    });
                 } catch (renderErr) {
                     setStatus("error:render:" + renderErr);
                 }

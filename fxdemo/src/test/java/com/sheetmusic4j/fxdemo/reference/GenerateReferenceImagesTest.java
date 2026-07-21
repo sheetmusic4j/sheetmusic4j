@@ -1,10 +1,14 @@
 package com.sheetmusic4j.fxdemo.reference;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -65,7 +69,7 @@ class GenerateReferenceImagesTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("fixtures")
     void regenerate(Path xml) throws IOException {
-        String musicXml = Files.readString(xml);
+        String musicXml = readXml(xml);
         String sample = stripExtension(xml.getFileName().toString());
 
         ReferenceCache cache = new ReferenceCache(REFERENCE_DIR);
@@ -84,4 +88,66 @@ class GenerateReferenceImagesTest {
         int dot = fileName.lastIndexOf('.');
         return dot >= 0 ? fileName.substring(0, dot) : fileName;
     }
-}
+
+    /**
+     * MusicXML files in the wild are not always UTF-8: MuseScore emits UTF-16 for
+     * some scores, others carry a UTF-8 BOM. {@link Files#readString(Path)} uses
+     * UTF-8 unconditionally and throws {@link java.nio.charset.MalformedInputException}
+     * on the first non-UTF-8 byte. Detect the encoding from BOM / XML declaration
+     * and strip any leading BOM so OSMD receives clean text.
+     */
+    private static String readXml(Path path) throws IOException {
+        byte[] bytes = Files.readAllBytes(path);
+        Charset cs = detectCharset(bytes);
+        int offset = bomLength(bytes, cs);
+        return new String(bytes, offset, bytes.length - offset, cs);
+    }
+
+    private static final Pattern XML_ENCODING = Pattern.compile(
+            "<\\?xml[^>]*encoding\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
+
+    private static Charset detectCharset(byte[] bytes) {
+        if (bytes.length >= 3
+                && (bytes[0] & 0xFF) == 0xEF
+                && (bytes[1] & 0xFF) == 0xBB
+                && (bytes[2] & 0xFF) == 0xBF) {
+            return StandardCharsets.UTF_8;
+        }
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE) {
+            return StandardCharsets.UTF_16LE;
+        }
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
+            return StandardCharsets.UTF_16BE;
+        }
+        // No BOM: read the first ~200 bytes as ASCII to fish out the XML declaration.
+        int head = Math.min(bytes.length, 200);
+        String prolog = new String(bytes, 0, head, StandardCharsets.ISO_8859_1);
+        Matcher m = XML_ENCODING.matcher(prolog);
+        if (m.find()) {
+            String name = m.group(1);
+            try {
+                return Charset.forName(name);
+            } catch (Exception ignored) {
+                // fall through to UTF-8
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    private static int bomLength(byte[] bytes, Charset cs) {
+        if (cs.equals(StandardCharsets.UTF_8)
+                && bytes.length >= 3
+                && (bytes[0] & 0xFF) == 0xEF
+                && (bytes[1] & 0xFF) == 0xBB
+                && (bytes[2] & 0xFF) == 0xBF) {
+            return 3;
+        }
+        if ((cs.equals(StandardCharsets.UTF_16LE) || cs.equals(StandardCharsets.UTF_16BE))
+                && bytes.length >= 2
+                && ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE
+                    || (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF)) {
+            return 2;
+        }
+        return 0;
+        }
+        }
