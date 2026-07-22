@@ -36,15 +36,21 @@ class MeasureSpacingTest {
 
     @Test
     void denseMeasureIsWiderThanSparseMeasure() {
-        LayoutResult layout = new Engraver().layout(quartersThenSixteenths(), LayoutOptions.defaults());
+        LayoutOptions options = LayoutOptions.defaults();
+        LayoutResult layout = new Engraver().layout(quartersThenSixteenths(), options);
         StaffLayout staff = layout.staves().get(0);
         List<MeasureLayout> measures = staff.measures();
         // Measure 1 = 4 quarters, measure 2 = 16 sixteenths (same total duration).
         double m1Width = measures.get(0).width();
         double m2Width = measures.get(1).width();
-        assertTrue(m2Width > m1Width * 1.5,
-                "16ths measure should be at least 1.5x as wide as a 4-quarter measure; "
-                        + "m1=" + m1Width + " m2=" + m2Width);
+        // The first measure width includes the row-start header (clef/key/time),
+        // so compare note-spacing capacity by removing that reserve.
+        double header = Engraver.headerAdvance(Clef.treble(), KeySignature.cMajor(),
+                TimeSignature.fourFour(), options);
+        double m1ContentWidth = m1Width - header;
+        assertTrue(m2Width > m1ContentWidth * 1.5,
+                "16ths measure content should be at least 1.5x as wide as a 4-quarter content span; "
+                        + "m1Content=" + m1ContentWidth + " m2=" + m2Width + " header=" + header);
     }
 
     @Test
