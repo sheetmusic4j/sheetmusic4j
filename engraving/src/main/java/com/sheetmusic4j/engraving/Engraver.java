@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
@@ -29,7 +31,10 @@ import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
+import com.sheetmusic4j.core.model.Slur;
+import com.sheetmusic4j.core.model.TimeModification;
 import com.sheetmusic4j.core.model.TimeSignature;
+import com.sheetmusic4j.core.model.Tuplet;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.*;
@@ -127,6 +132,18 @@ public final class Engraver {
      * anchor. Words/metronome sit above; dynamics sit below.
      */
     private static final double DIRECTION_OFFSET_GAPS = 1.5;
+
+    /**
+     * Half the maximum opening height (in staff-line gaps) of a crescendo/
+     * diminuendo hairpin.
+     */
+    private static final double HAIRPIN_HALF_HEIGHT_GAPS = 0.8;
+
+    /**
+     * Extra clearance (in staff-line gaps) above the highest notehead in a
+     * tuplet run at which its number/bracket is drawn.
+     */
+    private static final double TUPLET_ABOVE_GAP = 2.0;
 
     /**
      * Multiplier applied to the staff-line gap to derive the direction text
@@ -1151,9 +1168,15 @@ public final class Engraver {
         List<GlyphPlacement> glyphs = new ArrayList<>();
         List<BeamPlacement> beams = new ArrayList<>();
         List<TiePlacement> ties = new ArrayList<>();
+        List<SlurPlacement> slurs = new ArrayList<>();
+        List<TupletPlacement> tuplets = new ArrayList<>();
+        List<HairpinPlacement> hairpins = new ArrayList<>();
 
         Map<Integer, BeamRun> openBeams = new HashMap<>();
         Map<String, PlacedNote> tieCandidates = new HashMap<>();
+        Map<Integer, PlacedNote> slurCandidates = new HashMap<>();
+        Map<Integer, TupletRun> tupletCandidates = new HashMap<>();
+        Map<Integer, WedgeStart> wedgeCandidates = new HashMap<>();
 
         double cursorX = x;
         boolean firstMeasureInRow = true;
@@ -1235,7 +1258,7 @@ public final class Engraver {
                 if (element instanceof Direction direction) {
                     double dirX = anchorX(timedX, timedIdx, fallbackX);
                     if (staffIdx == 0) {
-                        placeDirection(texts, glyphs, direction, dirX, y, options);
+                        placeDirection(texts, glyphs, hairpins, wedgeCandidates, direction, dirX, y, options);
                     }
                 } else if (element instanceof Harmony harmony) {
                     double harmonyX = anchorX(timedX, timedIdx, fallbackX);
@@ -1244,8 +1267,8 @@ public final class Engraver {
                     }
                 } else {
                     double noteX = timedX[timedIdx++];
-                    placeElement(glyphs, beams, ties, openBeams, tieCandidates,
-                            element, noteX, y, currentClef, options);
+                    placeElement(glyphs, beams, ties, slurs, tuplets, openBeams, tieCandidates,
+                            slurCandidates, tupletCandidates, element, noteX, y, currentClef, options);
                     if (staffIdx == 0) {
                         placeLyrics(texts, element, noteX, y, options);
                     }
@@ -1257,7 +1280,7 @@ public final class Engraver {
         }
 
         return new StaffLayout(x, y, cursorX - x, options.staffLineGap(),
-                measureLayouts, glyphs, beams, ties);
+                measureLayouts, glyphs, beams, ties, slurs, tuplets, hairpins);
     }
 
     /**
@@ -1457,14 +1480,18 @@ public final class Engraver {
     }
 
     private void placeElement(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,
+                              List<SlurPlacement> slurs, List<TupletPlacement> tuplets,
                               Map<Integer, BeamRun> openBeams, Map<String, PlacedNote> tieCandidates,
+                              Map<Integer, PlacedNote> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
                               MusicElement element, double noteX, double staffY,
                               Clef clef, LayoutOptions options) {
         if (element instanceof Note note) {
-            placeNote(glyphs, beams, ties, openBeams, tieCandidates, note, noteX, staffY, clef, options);
+            placeNote(glyphs, beams, ties, slurs, tuplets, openBeams, tieCandidates, slurCandidates,
+                    tupletCandidates, note, noteX, staffY, clef, options);
         } else if (element instanceof Chord chord) {
             for (Note note : chord.notes()) {
-                placeNote(glyphs, beams, ties, openBeams, tieCandidates, note, noteX, staffY, clef, options);
+                placeNote(glyphs, beams, ties, slurs, tuplets, openBeams, tieCandidates, slurCandidates,
+                        tupletCandidates, note, noteX, staffY, clef, options);
             }
         } else if (element instanceof Rest rest) {
             double gap = options.staffLineGap();
@@ -1475,6 +1502,8 @@ public final class Engraver {
                 double dx = noteX + gap * 1.2 + i * gap * 0.6;
                 glyphs.add(new GlyphPlacement(dx, y, Glyph.AUG_DOT, restStep));
             }
+            updateTupletCandidates(tupletCandidates, tuplets, rest.tuplets(), rest.timeModification(),
+                    noteX, y, gap);
         }
     }
 
@@ -1485,6 +1514,7 @@ public final class Engraver {
      * Placement#DEFAULT} follows the type-specific convention.
      */
     private void placeDirection(List<TextPlacement> texts, List<GlyphPlacement> glyphs,
+                                List<HairpinPlacement> hairpins, Map<Integer, WedgeStart> wedgeCandidates,
                                 Direction direction, double x, double staffY,
                                 LayoutOptions options) {
         double gap = options.staffLineGap();
@@ -1524,6 +1554,20 @@ public final class Engraver {
                     : staffY - gap * DIRECTION_OFFSET_GAPS - fontSize;
             texts.add(new TextPlacement(rehearsal.label(), x, y, fontSize,
                     TextPlacement.Align.LEFT, MarkingCategory.REHEARSAL, true));
+        } else if (type instanceof DirectionType.Wedge wedge) {
+            double y = side == Placement.BELOW
+                    ? staffY + options.staffHeight() + gap * DIRECTION_OFFSET_GAPS + gap
+                    : staffY - gap * DIRECTION_OFFSET_GAPS - gap;
+            if (wedge.type() == DirectionType.WedgeType.STOP) {
+                WedgeStart start = wedgeCandidates.remove(wedge.number());
+                if (start != null) {
+                    hairpins.add(new HairpinPlacement(start.x(), x, start.y(),
+                            gap * HAIRPIN_HALF_HEIGHT_GAPS, start.crescendo()));
+                }
+            } else {
+                boolean crescendo = wedge.type() == DirectionType.WedgeType.CRESCENDO;
+                wedgeCandidates.put(wedge.number(), new WedgeStart(x, y, crescendo));
+            }
         }
         }
 
@@ -1569,7 +1613,7 @@ public final class Engraver {
         if (raw != null && raw != Placement.DEFAULT) {
             return raw;
         }
-        return direction.type() instanceof DirectionType.Dynamic
+        return direction.type() instanceof DirectionType.Dynamic || direction.type() instanceof DirectionType.Wedge
                 ? Placement.BELOW
                 : Placement.ABOVE;
     }
@@ -1668,7 +1712,9 @@ public final class Engraver {
     }
 
     private void placeNote(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,
+                           List<SlurPlacement> slurs, List<TupletPlacement> tuplets,
                            Map<Integer, BeamRun> openBeams, Map<String, PlacedNote> tieCandidates,
+                           Map<Integer, PlacedNote> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
                            Note note, double noteX, double staffY, Clef clef, LayoutOptions options) {
         double gap = options.staffLineGap();
         int staffStep = staffStep(note.pitch(), clef);
@@ -1693,6 +1739,15 @@ public final class Engraver {
         Glyph stem = stemGlyph(note.type(), staffStep);
         if (stem != null) {
             glyphs.add(new GlyphPlacement(noteX, y, stem, staffStep));
+        }
+
+        // Articulations sit on the side opposite the stem, clear of the notehead.
+        for (Articulation articulation : note.articulations()) {
+            Glyph articulationGlyph = articulation == Articulation.STACCATO
+                    ? Glyph.ARTICULATION_STACCATO
+                    : Glyph.ARTICULATION_ACCENT;
+            double articulationY = stemUp ? y + gap * 1.8 : y - gap * 1.8;
+            glyphs.add(new GlyphPlacement(noteX, articulationY, articulationGlyph, staffStep));
         }
 
         // Augmentation dots.
@@ -1734,6 +1789,25 @@ public final class Engraver {
         if (note.tieStart()) {
             tieCandidates.put(key, new PlacedNote(noteX, y));
         }
+
+        // Slurs: matched by number rather than pitch, since a slur spans a
+        // phrase rather than a single repeated pitch.
+        for (Slur slur : note.slurs()) {
+            if (slur.type() == Slur.Type.STOP) {
+                PlacedNote start = slurCandidates.remove(slur.number());
+                if (start != null) {
+                    boolean curveUp = staffStep >= MIDDLE_LINE_STAFF_STEP;
+                    double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
+                    slurs.add(new SlurPlacement(start.x() + gap * 0.5, start.y() + yShift,
+                            noteX - gap * 0.5, y + yShift, curveUp));
+                }
+            } else {
+                slurCandidates.put(slur.number(), new PlacedNote(noteX, y));
+            }
+        }
+
+        updateTupletCandidates(tupletCandidates, tuplets, note.tuplets(), note.timeModification(),
+                noteX, y, gap);
     }
 
     private static double noteheadHalfWidth(NoteType type, double gap) {
@@ -1865,5 +1939,60 @@ public final class Engraver {
     }
 
     private record PlacedNote(double x, double y) {
+    }
+
+    private record WedgeStart(double x, double y, boolean crescendo) {
+    }
+
+    /**
+     * Mutable state for an open tuplet run: the x of its first element, the
+     * displayed count captured at the start (falls back to the stop
+     * element's own {@link TimeModification} if the start didn't carry
+     * one), whether a bracket line should be drawn, and the running minimum
+     * y seen across every element in the run so the number/bracket clears
+     * the highest notehead.
+     */
+    private static final class TupletRun {
+        final double startX;
+        final int actualNotes;
+        final boolean bracket;
+        double minY;
+
+        TupletRun(double startX, double minY, int actualNotes, boolean bracket) {
+            this.startX = startX;
+            this.minY = minY;
+            this.actualNotes = actualNotes;
+            this.bracket = bracket;
+        }
+    }
+
+    /**
+     * Track an open tuplet run across every element it spans (not just its
+     * start/stop): updates the running minimum y for all currently-open
+     * tuplets, then opens or closes a run per {@code elementTuplets}.
+     */
+    private static void updateTupletCandidates(Map<Integer, TupletRun> tupletCandidates,
+                                               List<TupletPlacement> tuplets,
+                                               List<Tuplet> elementTuplets,
+                                               Optional<TimeModification> timeModification,
+                                               double x, double y, double gap) {
+        for (TupletRun run : tupletCandidates.values()) {
+            run.minY = Math.min(run.minY, y);
+        }
+        for (Tuplet t : elementTuplets) {
+            if (t.type() == Tuplet.Type.START) {
+                int actualNotes = timeModification.map(TimeModification::actualNotes).orElse(0);
+                tupletCandidates.put(t.number(), new TupletRun(x, y, actualNotes, t.bracket()));
+            } else {
+                TupletRun run = tupletCandidates.remove(t.number());
+                if (run != null) {
+                    int number = run.actualNotes > 0
+                            ? run.actualNotes
+                            : timeModification.map(TimeModification::actualNotes).orElse(3);
+                    tuplets.add(new TupletPlacement(run.startX, x,
+                            run.minY - gap * TUPLET_ABOVE_GAP, number, run.bracket));
+                }
+            }
+        }
     }
 }

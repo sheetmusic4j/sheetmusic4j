@@ -22,6 +22,7 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
@@ -46,9 +47,12 @@ import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
+import com.sheetmusic4j.core.model.Slur;
 import com.sheetmusic4j.core.model.Step;
 import com.sheetmusic4j.core.model.Syllabic;
+import com.sheetmusic4j.core.model.TimeModification;
 import com.sheetmusic4j.core.model.TimeSignature;
+import com.sheetmusic4j.core.model.Tuplet;
 
 /**
  * Reads a MusicXML {@code score-partwise} document into a {@link Score}.
@@ -561,8 +565,8 @@ public final class MusicXmlReader {
 
     /**
      * Parse a MusicXML {@code <direction>} block. Returns {@code null} when
-     * the block contains no recognised {@code <direction-type>} child (wedges,
-     * segno/coda, octave shifts — still deferred). The
+     * the block contains no recognised {@code <direction-type>} child
+     * (segno/coda, octave shifts — still deferred). The
      * {@code placement} attribute drives {@link Placement}; when a
      * {@code <direction>} carries multiple {@code <direction-type>} children
      * only the first recognised one wins.
@@ -636,6 +640,19 @@ public final class MusicXmlReader {
                         String label = readText(reader);
                         if (label != null && !label.isEmpty() && result == null) {
                             result = new DirectionType.Rehearsal(label);
+                        }
+                    }
+                    case "wedge" -> {
+                        String wedgeTypeAttr = reader.getAttributeValue(null, "type");
+                        int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
+                        DirectionType.WedgeType wedgeType = switch (wedgeTypeAttr == null ? "" : wedgeTypeAttr) {
+                            case "crescendo" -> DirectionType.WedgeType.CRESCENDO;
+                            case "diminuendo" -> DirectionType.WedgeType.DIMINUENDO;
+                            case "stop" -> DirectionType.WedgeType.STOP;
+                            default -> null;
+                        };
+                        if (wedgeType != null && result == null) {
+                            result = new DirectionType.Wedge(wedgeType, number);
                         }
                     }
                     default -> skipElement(reader);
@@ -838,6 +855,11 @@ public final class MusicXmlReader {
         int staff = 1;
         java.util.List<Beam> beams = new ArrayList<>();
         java.util.List<Lyric> lyrics = new ArrayList<>();
+        java.util.List<Articulation> articulations = new ArrayList<>();
+        java.util.List<Slur> slurs = new ArrayList<>();
+        java.util.List<Tuplet> tuplets = new ArrayList<>();
+        int actualNotes = 0;
+        int normalNotes = 0;
 
         while (reader.hasNext()) {
             int event = reader.next();
@@ -872,6 +894,29 @@ public final class MusicXmlReader {
                             tieStop = true;
                         }
                     }
+                    case "staccato" -> articulations.add(Articulation.STACCATO);
+                    case "accent" -> articulations.add(Articulation.ACCENT);
+                    case "slur" -> {
+                        int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
+                        String slurType = reader.getAttributeValue(null, "type");
+                        if ("start".equals(slurType)) {
+                            slurs.add(new Slur(number, Slur.Type.START));
+                        } else if ("stop".equals(slurType)) {
+                            slurs.add(new Slur(number, Slur.Type.STOP));
+                        }
+                    }
+                    case "tuplet" -> {
+                        int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
+                        String tupletType = reader.getAttributeValue(null, "type");
+                        boolean bracket = !"no".equals(reader.getAttributeValue(null, "bracket"));
+                        if ("start".equals(tupletType)) {
+                            tuplets.add(new Tuplet(number, Tuplet.Type.START, bracket));
+                        } else if ("stop".equals(tupletType)) {
+                            tuplets.add(new Tuplet(number, Tuplet.Type.STOP, bracket));
+                        }
+                    }
+                    case "actual-notes" -> actualNotes = parseIntOr(readText(reader), 0);
+                    case "normal-notes" -> normalNotes = parseIntOr(readText(reader), 0);
                     default -> { /* ignore */ }
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT && "note".equals(reader.getLocalName())) {
@@ -879,11 +924,18 @@ public final class MusicXmlReader {
             }
         }
 
+        TimeModification timeModification = (actualNotes > 0 && normalNotes > 0)
+                ? new TimeModification(actualNotes, normalNotes)
+                : null;
+
         Duration dur = new Duration(Math.max(duration, 0), divisions);
         if (rest) {
-            Rest.Builder rb = Rest.builder().duration(dur).dots(dots);
+            Rest.Builder rb = Rest.builder().duration(dur).dots(dots).tuplets(tuplets);
             if (type != null) {
                 rb.type(type);
+            }
+            if (timeModification != null) {
+                rb.timeModification(timeModification);
             }
             return ParsedNote.rest(rb.build());
         }
@@ -896,12 +948,18 @@ public final class MusicXmlReader {
                 .tieStop(tieStop)
                 .staff(staff)
                 .beams(beams)
-                .lyrics(lyrics);
+                .lyrics(lyrics)
+                .articulations(articulations)
+                .slurs(slurs)
+                .tuplets(tuplets);
         if (accidental != null) {
             nb.displayedAccidental(accidental);
         }
         if (type != null) {
             nb.type(type);
+        }
+        if (timeModification != null) {
+            nb.timeModification(timeModification);
         }
         return ParsedNote.note(nb.build(), chord);
     }

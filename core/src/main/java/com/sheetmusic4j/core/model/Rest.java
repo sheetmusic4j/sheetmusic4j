@@ -1,5 +1,7 @@
 package com.sheetmusic4j.core.model;
 
+import java.util.List;
+
 /**
  * A rest occupying a duration with no pitch.
  */
@@ -8,11 +10,15 @@ public final class Rest implements MusicElement {
     private final Duration duration;
     private final NoteType type;
     private final int dots;
+    private final List<Tuplet> tuplets;
+    private final TimeModification timeModification;
 
     private Rest(Builder builder) {
         this.duration = builder.duration;
         this.type = builder.type;
         this.dots = builder.dots;
+        this.tuplets = List.copyOf(builder.tuplets);
+        this.timeModification = builder.timeModification;
     }
 
     @Override
@@ -28,6 +34,22 @@ public final class Rest implements MusicElement {
         return dots;
     }
 
+    /**
+     * Tuplet bracket endpoints attached to this rest; empty for rests not
+     * part of any tuplet.
+     */
+    public List<Tuplet> tuplets() {
+        return tuplets;
+    }
+
+    /**
+     * The tuplet ratio (MusicXML {@code <time-modification>}) applied to
+     * this rest's written type, when present.
+     */
+    public java.util.Optional<TimeModification> timeModification() {
+        return java.util.Optional.ofNullable(timeModification);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -36,6 +58,8 @@ public final class Rest implements MusicElement {
         private Duration duration;
         private NoteType type;
         private int dots;
+        private java.util.List<Tuplet> tuplets = new java.util.ArrayList<>();
+        private TimeModification timeModification;
 
         public Builder duration(Duration duration) {
             this.duration = duration;
@@ -49,6 +73,21 @@ public final class Rest implements MusicElement {
 
         public Builder dots(int dots) {
             this.dots = dots;
+            return this;
+        }
+
+        public Builder addTuplet(Tuplet tuplet) {
+            this.tuplets.add(tuplet);
+            return this;
+        }
+
+        public Builder tuplets(java.util.List<Tuplet> tuplets) {
+            this.tuplets = new java.util.ArrayList<>(tuplets);
+            return this;
+        }
+
+        public Builder timeModification(TimeModification timeModification) {
+            this.timeModification = timeModification;
             return this;
         }
 

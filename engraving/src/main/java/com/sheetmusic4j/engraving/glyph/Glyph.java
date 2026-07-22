@@ -111,7 +111,15 @@ public enum Glyph {
      * the bottom of a {@link BracketPlacement.BracketShape#BRACKET}
      * bracket.
      */
-    BRACKET_BOTTOM;
+    BRACKET_BOTTOM,
+    /**
+     * SMuFL {@code articStaccatoAbove} glyph (U+E4A2).
+     */
+    ARTICULATION_STACCATO,
+    /**
+     * SMuFL {@code articAccentAbove} glyph (U+E4A0).
+     */
+    ARTICULATION_ACCENT;
 
     /**
      * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.

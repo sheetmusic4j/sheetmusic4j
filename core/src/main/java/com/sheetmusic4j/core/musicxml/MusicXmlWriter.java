@@ -14,6 +14,7 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
@@ -33,7 +34,10 @@ import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
+import com.sheetmusic4j.core.model.Slur;
+import com.sheetmusic4j.core.model.TimeModification;
 import com.sheetmusic4j.core.model.TimeSignature;
+import com.sheetmusic4j.core.model.Tuplet;
 
 /**
  * Writes a {@link Score} as a MusicXML {@code score-partwise} document.
@@ -283,6 +287,9 @@ public final class MusicXmlWriter {
             if (note.displayedAccidental().isPresent()) {
                 w.textElement("accidental", accidentalXml(note.displayedAccidental().get()));
             }
+            if (note.timeModification().isPresent()) {
+                writeTimeModification(w, note.timeModification().get());
+            }
             if (note.staff() > 1) {
                 w.textElement("staff", Integer.toString(note.staff()));
             }
@@ -295,10 +302,46 @@ public final class MusicXmlWriter {
                 w.textElement("text", lyric.text());
                 w.end("lyric");
             }
+            writeNotations(w, note.slurs(), note.tuplets(), note.articulations());
             w.end("note");
         } catch (XMLStreamException e) {
             throw new MusicXmlException("Failed to write note", e);
         }
+    }
+
+    private void writeTimeModification(IndentingWriter w, TimeModification timeModification)
+            throws XMLStreamException {
+        w.start("time-modification");
+        w.textElement("actual-notes", Integer.toString(timeModification.actualNotes()));
+        w.textElement("normal-notes", Integer.toString(timeModification.normalNotes()));
+        w.end("time-modification");
+    }
+
+    private void writeNotations(IndentingWriter w, List<Slur> slurs, List<Tuplet> tuplets,
+                                List<Articulation> articulations) throws XMLStreamException {
+        if (slurs.isEmpty() && tuplets.isEmpty() && articulations.isEmpty()) {
+            return;
+        }
+        w.start("notations");
+        for (Slur slur : slurs) {
+            w.emptyElementWithAttrs("slur",
+                    "number", Integer.toString(slur.number()),
+                    "type", slur.type() == Slur.Type.START ? "start" : "stop");
+        }
+        for (Tuplet tuplet : tuplets) {
+            w.emptyElementWithAttrs("tuplet",
+                    "number", Integer.toString(tuplet.number()),
+                    "type", tuplet.type() == Tuplet.Type.START ? "start" : "stop",
+                    "bracket", tuplet.bracket() ? "yes" : "no");
+        }
+        if (!articulations.isEmpty()) {
+            w.start("articulations");
+            for (Articulation articulation : articulations) {
+                w.emptyElement(articulation == Articulation.STACCATO ? "staccato" : "accent");
+            }
+            w.end("articulations");
+        }
+        w.end("notations");
     }
 
     private void writeDirection(IndentingWriter w, Direction direction) {
@@ -319,6 +362,8 @@ public final class MusicXmlWriter {
                 writeDynamics(w, dynamic);
             } else if (type instanceof DirectionType.Rehearsal rehearsal) {
                 writeRehearsal(w, rehearsal);
+            } else if (type instanceof DirectionType.Wedge wedge) {
+                writeWedge(w, wedge);
             }
             w.end("direction-type");
             w.end("direction");
@@ -362,6 +407,15 @@ public final class MusicXmlWriter {
      */
     private void writeRehearsal(IndentingWriter w, DirectionType.Rehearsal rehearsal) throws XMLStreamException {
         w.textElement("rehearsal", rehearsal.label());
+    }
+
+    private void writeWedge(IndentingWriter w, DirectionType.Wedge wedge) throws XMLStreamException {
+        String type = switch (wedge.type()) {
+            case CRESCENDO -> "crescendo";
+            case DIMINUENDO -> "diminuendo";
+            case STOP -> "stop";
+        };
+        w.emptyElementWithAttrs("wedge", "type", type, "number", Integer.toString(wedge.number()));
     }
 
     /**
@@ -410,6 +464,10 @@ public final class MusicXmlWriter {
             for (int i = 0; i < rest.dots(); i++) {
                 w.emptyElement("dot");
             }
+            if (rest.timeModification().isPresent()) {
+                writeTimeModification(w, rest.timeModification().get());
+            }
+            writeNotations(w, List.of(), rest.tuplets(), List.of());
             w.end("note");
         } catch (XMLStreamException e) {
             throw new MusicXmlException("Failed to write rest", e);
@@ -514,6 +572,19 @@ public final class MusicXmlWriter {
             }
             writer.writeCharacters(text);
             writer.writeEndElement();
+        }
+
+        /**
+         * Write a self-closing element with a variable number of attribute
+         * pairs (name, value, name, value, ...), e.g.
+         * {@code <slur number="1" type="start"/>}.
+         */
+        void emptyElementWithAttrs(String name, String... attrs) throws XMLStreamException {
+            indent();
+            writer.writeEmptyElement(name);
+            for (int i = 0; i + 1 < attrs.length; i += 2) {
+                writer.writeAttribute(attrs[i], attrs[i + 1]);
+            }
         }
         }
 

@@ -18,6 +18,10 @@ public final class Note implements MusicElement {
     private final List<Beam> beams;
     private final List<Lyric> lyrics;
     private final int staff;
+    private final List<Articulation> articulations;
+    private final List<Slur> slurs;
+    private final List<Tuplet> tuplets;
+    private final TimeModification timeModification;
 
     private Note(Builder builder) {
         this.pitch = builder.pitch;
@@ -30,6 +34,10 @@ public final class Note implements MusicElement {
         this.beams = List.copyOf(builder.beams);
         this.lyrics = List.copyOf(builder.lyrics);
         this.staff = builder.staff;
+        this.articulations = List.copyOf(builder.articulations);
+        this.slurs = List.copyOf(builder.slurs);
+        this.tuplets = List.copyOf(builder.tuplets);
+        this.timeModification = builder.timeModification;
     }
 
     public Pitch pitch() {
@@ -97,6 +105,38 @@ public final class Note implements MusicElement {
         return staff;
     }
 
+    /**
+     * Performance articulations (staccato, accent, ...) attached to this
+     * note; empty for notes carrying none.
+     */
+    public List<Articulation> articulations() {
+        return articulations;
+    }
+
+    /**
+     * Slur endpoints attached to this note; empty for notes not part of any
+     * slur. A note may both start and stop different slur numbers.
+     */
+    public List<Slur> slurs() {
+        return slurs;
+    }
+
+    /**
+     * Tuplet bracket endpoints attached to this note; empty for notes not
+     * part of any tuplet.
+     */
+    public List<Tuplet> tuplets() {
+        return tuplets;
+    }
+
+    /**
+     * The tuplet ratio (MusicXML {@code <time-modification>}) applied to
+     * this note's written type, when present.
+     */
+    public java.util.Optional<TimeModification> timeModification() {
+        return java.util.Optional.ofNullable(timeModification);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -112,6 +152,10 @@ public final class Note implements MusicElement {
         private java.util.List<Beam> beams = new java.util.ArrayList<>();
         private java.util.List<Lyric> lyrics = new java.util.ArrayList<>();
         private int staff = 1;
+        private java.util.List<Articulation> articulations = new java.util.ArrayList<>();
+        private java.util.List<Slur> slurs = new java.util.ArrayList<>();
+        private java.util.List<Tuplet> tuplets = new java.util.ArrayList<>();
+        private TimeModification timeModification;
 
         public Builder pitch(Pitch pitch) {
             this.pitch = pitch;
@@ -170,6 +214,41 @@ public final class Note implements MusicElement {
 
         public Builder staff(int staff) {
             this.staff = staff;
+            return this;
+        }
+
+        public Builder addArticulation(Articulation articulation) {
+            this.articulations.add(articulation);
+            return this;
+        }
+
+        public Builder articulations(java.util.List<Articulation> articulations) {
+            this.articulations = new java.util.ArrayList<>(articulations);
+            return this;
+        }
+
+        public Builder addSlur(Slur slur) {
+            this.slurs.add(slur);
+            return this;
+        }
+
+        public Builder slurs(java.util.List<Slur> slurs) {
+            this.slurs = new java.util.ArrayList<>(slurs);
+            return this;
+        }
+
+        public Builder addTuplet(Tuplet tuplet) {
+            this.tuplets.add(tuplet);
+            return this;
+        }
+
+        public Builder tuplets(java.util.List<Tuplet> tuplets) {
+            this.tuplets = new java.util.ArrayList<>(tuplets);
+            return this;
+        }
+
+        public Builder timeModification(TimeModification timeModification) {
+            this.timeModification = timeModification;
             return this;
         }
 

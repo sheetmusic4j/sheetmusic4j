@@ -7,14 +7,17 @@ import com.sheetmusic4j.engraving.placement.BeamPlacement;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
+import com.sheetmusic4j.engraving.placement.HairpinPlacement;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.MeasureLayout;
+import com.sheetmusic4j.engraving.placement.SlurPlacement;
 import com.sheetmusic4j.engraving.layout.StaffLayout;
 import com.sheetmusic4j.engraving.layout.SystemBarline;
 import com.sheetmusic4j.engraving.layout.SystemLayout;
 import com.sheetmusic4j.engraving.placement.TextPlacement;
 import com.sheetmusic4j.engraving.placement.TiePlacement;
+import com.sheetmusic4j.engraving.placement.TupletPlacement;
 
 /**
  * Surface-agnostic painting of a {@link LayoutResult}. All drawing goes through a
@@ -180,6 +183,15 @@ public final class ScorePainter {
         for (TiePlacement tie : staff.ties()) {
             drawTie(surface, staff, tie);
         }
+        for (SlurPlacement slur : staff.slurs()) {
+            drawSlur(surface, slur);
+        }
+        for (TupletPlacement tuplet : staff.tuplets()) {
+            drawTuplet(surface, staff, tuplet);
+        }
+        for (HairpinPlacement hairpin : staff.hairpins()) {
+            drawHairpin(surface, hairpin);
+        }
     }
 
     private void drawGlyph(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
@@ -218,6 +230,17 @@ public final class ScorePainter {
                 if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
                     double d = gap * 0.4;
                     surface.fillOval(glyph.x() - d / 2, glyph.y() - d / 2, d, d);
+                }
+            }
+            case ARTICULATION_STACCATO -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    double d = gap * 0.35;
+                    surface.fillOval(glyph.x() - d / 2, glyph.y() - d / 2, d, d);
+                }
+            }
+            case ARTICULATION_ACCENT -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText(">", glyph.x(), glyph.y() + gap * 0.4);
                 }
             }
             case DYNAMIC_PPP, DYNAMIC_PP, DYNAMIC_P, DYNAMIC_MP, DYNAMIC_MF,
@@ -295,6 +318,63 @@ public final class ScorePainter {
         double midY = ((tie.y1() + tie.y2()) / 2.0) + bend;
         surface.strokeLine(tie.x1(), tie.y1(), midX, midY);
         surface.strokeLine(midX, midY, tie.x2(), tie.y2());
+    }
+
+    /**
+     * Draw a slur as a shallow curve approximated with two lines meeting at
+     * the peak, the same technique {@link #drawTie} uses. Slurs typically
+     * span more horizontal distance than ties, so the bend is proportional
+     * to the span rather than a flat multiple of the staff-line gap.
+     */
+    private void drawSlur(RenderSurface surface, SlurPlacement slur) {
+        double span = Math.abs(slur.x2() - slur.x1());
+        double bend = Math.max(4.0, span * 0.12) * (slur.curveUp() ? -1 : 1);
+        double midX = (slur.x1() + slur.x2()) / 2.0;
+        double midY = ((slur.y1() + slur.y2()) / 2.0) + bend;
+        surface.strokeLine(slur.x1(), slur.y1(), midX, midY);
+        surface.strokeLine(midX, midY, slur.x2(), slur.y2());
+    }
+
+    /**
+     * Draw a tuplet indicator: the displayed count (composed from
+     * {@link Glyph#timeDigit(int)} digit glyphs, matching how the time
+     * signature renders its digits) centered over the run, plus a plain
+     * bracket with a small downward tick at each end when
+     * {@link TupletPlacement#bracket()} is set.
+     */
+    private void drawTuplet(RenderSurface surface, StaffLayout staff, TupletPlacement tuplet) {
+        double gap = staff.lineGap();
+        double digitWidth = gap * 1.1;
+        String digits = Integer.toString(tuplet.number());
+        double midX = (tuplet.x1() + tuplet.x2()) / 2.0;
+        double textWidth = digits.length() * digitWidth;
+        double startX = midX - textWidth / 2.0;
+        if (tuplet.bracket()) {
+            double tick = gap * 0.5;
+            surface.strokeLine(tuplet.x1(), tuplet.y() + tick, tuplet.x1(), tuplet.y());
+            surface.strokeLine(tuplet.x1(), tuplet.y(), startX - gap * 0.3, tuplet.y());
+            surface.strokeLine(startX + textWidth + gap * 0.3, tuplet.y(), tuplet.x2(), tuplet.y());
+            surface.strokeLine(tuplet.x2(), tuplet.y(), tuplet.x2(), tuplet.y() + tick);
+        }
+        for (int i = 0; i < digits.length(); i++) {
+            int digit = digits.charAt(i) - '0';
+            Glyph glyph = Glyph.timeDigit(digit);
+            double x = startX + i * digitWidth;
+            if (!drawSmuflIfAvailable(surface, glyph, new GlyphPlacement(x, tuplet.y(), glyph, 0), gap * 4)) {
+                surface.strokeText(digits.substring(i, i + 1), x, tuplet.y());
+            }
+        }
+    }
+
+    /**
+     * Draw a crescendo/diminuendo hairpin as two diverging (or converging)
+     * lines meeting at the closed end.
+     */
+    private void drawHairpin(RenderSurface surface, HairpinPlacement hairpin) {
+        double closedX = hairpin.crescendo() ? hairpin.x1() : hairpin.x2();
+        double openX = hairpin.crescendo() ? hairpin.x2() : hairpin.x1();
+        surface.strokeLine(closedX, hairpin.y(), openX, hairpin.y() - hairpin.halfHeight());
+        surface.strokeLine(closedX, hairpin.y(), openX, hairpin.y() + hairpin.halfHeight());
     }
 
     /**

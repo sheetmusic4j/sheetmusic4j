@@ -587,7 +587,7 @@ class MusicXmlReaderTest {
         String xml = directionXml("""
                 <direction>
                   <direction-type>
-                    <wedge type="crescendo"/>
+                    <segno/>
                   </direction-type>
                 </direction>
                 """);
