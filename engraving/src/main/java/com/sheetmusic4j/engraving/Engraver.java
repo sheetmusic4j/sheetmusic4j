@@ -1511,7 +1511,8 @@ public final class Engraver {
                               boolean hasStem) {
         if (element instanceof Note note) {
             placeNote(glyphs, beams, ties, slurs, tuplets, stems, openBeams, tieCandidates, slurCandidates,
-                    tupletCandidates, note, noteX, staffY, clef, options, false, true, stemUp, stemTipY, hasStem);
+                    tupletCandidates, note, noteX, staffY, clef, options, false, true, stemUp, stemTipY, hasStem,
+                    true);
         } else if (element instanceof Chord chord) {
             // A stacked chord shares exactly one stem (and one beam/flag)
             // across all its notes, anchored at whichever notehead sits
@@ -1533,26 +1534,30 @@ public final class Engraver {
                     }
                 }
             }
-            // The stem-responsible note is whichever carries the real beam
-            // data when beamed; otherwise the notehead nearest the stem tip
-            // (largest staffStep - i.e. lowest pitch - for stem-up, or
-            // smallest - highest pitch - for stem-down).
-            Note stemNote = beamDataNote;
-            if (stemNote == null) {
-                stemNote = notes.get(0);
-                int nearStep = staffStep(stemNote.pitch(), clef);
-                for (Note note : notes) {
-                    int step = staffStep(note.pitch(), clef);
-                    if (stemUp ? step > nearStep : step < nearStep) {
-                        nearStep = step;
-                        stemNote = note;
-                    }
+            // The stem is drawn once, anchored at whichever notehead is
+            // geometrically nearest the stem tip - the lowest pitch (largest
+            // staffStep) for stem-up, the highest pitch (smallest staffStep)
+            // for stem-down - regardless of which note happens to carry the
+            // real <beam> data. MusicXML tags exactly one representative
+            // note per chord with <beam> elements (commonly always the same
+            // member, e.g. the lowest, irrespective of stem direction), so
+            // that note is NOT reliably the geometric anchor: using it as
+            // the anchor for a stem-down chord would start the stem at the
+            // wrong end, leaving the actual near notehead disconnected
+            // rather than merely under-clearing it.
+            Note stemNote = notes.get(0);
+            int nearStep = staffStep(stemNote.pitch(), clef);
+            for (Note note : notes) {
+                int step = staffStep(note.pitch(), clef);
+                if (stemUp ? step > nearStep : step < nearStep) {
+                    nearStep = step;
+                    stemNote = note;
                 }
             }
             for (Note note : notes) {
                 placeNote(glyphs, beams, ties, slurs, tuplets, stems, openBeams, tieCandidates, slurCandidates,
                         tupletCandidates, note, noteX, staffY, clef, options, chordBeamed, note == stemNote,
-                        stemUp, stemTipY, hasStem);
+                        stemUp, stemTipY, hasStem, note == beamDataNote);
             }
         } else if (element instanceof Rest rest) {
             double gap = options.staffLineGap();
@@ -1585,7 +1590,11 @@ public final class Engraver {
         // reaches, so an ABOVE-placed direction never sits under a beam that
         // extends well past the staff (e.g. for notes on several ledger
         // lines) - a fixed offset from the staff alone can't anticipate that.
-        double aboveFloor = Math.min(staffY, measureTopY - gap * (TUPLET_ABOVE_GAP + 1.5));
+        // Only kicks in when something actually reaches above the staff;
+        // otherwise it must not perturb the normal fixed-offset placement.
+        double aboveFloor = measureTopY < staffY
+                ? measureTopY - gap * (TUPLET_ABOVE_GAP + 1.5)
+                : Double.POSITIVE_INFINITY;
         if (type instanceof DirectionType.Words words) {
             double fontSize = gap * DIRECTION_FONT_SIZE_GAPS;
             double y = side == Placement.BELOW
@@ -1783,7 +1792,7 @@ public final class Engraver {
                            Map<Integer, SlurStart> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
                            Note note, double noteX, double staffY, Clef clef, LayoutOptions options,
                            boolean chordBeamed, boolean isStemResponsible, boolean stemUp,
-                           double stemTipY, boolean hasStem) {
+                           double stemTipY, boolean hasStem, boolean isBeamDataResponsible) {
         double gap = options.staffLineGap();
         int staffStep = staffStep(note.pitch(), clef);
         double y = staffY + staffStep * (gap / 2.0);
@@ -1842,16 +1851,19 @@ public final class Engraver {
         // Beam vs. flag handling. A stacked chord note that carries no
         // <beam> elements of its own (MusicXML only tags one representative
         // note per chord) is still beamed when any other note in the same
-        // chord is - it just contributes nothing further here, since the
-        // representative note's own placeNote call already drives
-        // processBeams for the whole group.
+        // chord is - it just contributes nothing further here, since
+        // whichever note actually carries the beam data drives processBeams
+        // for the whole group. That note is not necessarily the same one
+        // that anchors the drawn stem line (isStemResponsible) - the two are
+        // independent: one is a geometric choice, the other reflects
+        // whatever member of the chord MusicXML happened to tag.
         boolean beamed = note.isBeamed() || chordBeamed;
         if (!beamed && hasStem && isStemResponsible) {
             Glyph flag = flagGlyph(note.type(), stemUp);
             if (flag != null) {
                 glyphs.add(new GlyphPlacement(stemX, stemTipY, flag, staffStep));
             }
-        } else if (note.isBeamed() && hasStem && isStemResponsible) {
+        } else if (note.isBeamed() && hasStem && isBeamDataResponsible) {
             processBeams(beams, openBeams, note.beams(), stemX, stemTipY, stemUp);
         }
 

@@ -205,7 +205,12 @@ public final class ScorePainter {
      * so no further adjustment happens here.
      */
     private void drawStem(RenderSurface surface, StemPlacement stem) {
+        // Slightly thicker than a hairline so the join with a notehead the
+        // stem merely passes through (not its own start point) reads as
+        // solidly connected rather than a fragile single-point tangent.
+        surface.setLineWidth(1.4);
         surface.strokeLine(stem.x(), stem.y1(), stem.x(), stem.y2());
+        surface.setLineWidth(1.0);
     }
 
     private void drawGlyph(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
