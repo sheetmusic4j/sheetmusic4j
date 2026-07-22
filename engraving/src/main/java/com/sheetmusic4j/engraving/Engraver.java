@@ -247,8 +247,9 @@ public final class Engraver {
 
         double firstSystemHeader = maxHeaderAdvanceAtRowStart(parts, 0, options);
         List<Double> sharedWeights = sharedMeasureWeights(parts, measureCount);
+        List<Double> sharedMinWidths = sharedMeasureMinWidths(parts, measureCount, options);
         List<Double> baseWidths = distributeWidths(
-                sharedWeights, Math.max(1.0, staffWidth - firstSystemHeader), options.measureMinWidth());
+                sharedWeights, Math.max(1.0, staffWidth - firstSystemHeader), sharedMinWidths);
         List<int[]> rows = computeRowRanges(baseWidths, staffWidth, firstSystemHeader, parts, options);
 
         List<SystemLayout> systems = new ArrayList<>(rows.size());
@@ -1012,21 +1013,46 @@ public final class Engraver {
     }
 
     /**
-     * Distribute {@code totalWidth} across a list of weight-sized measures,
-     * clamping each measure width to at least {@code min}.
+     * Shared per-measure content-aware minimum widths across all parts: for
+     * each measure index we take the maximum {@link #measureContentMinWidth}
+     * seen in any part, so a measure is never squeezed below what its
+     * busiest part needs.
      */
-    private static List<Double> distributeWidths(List<Double> weights, double totalWidth, double min) {
+    private static List<Double> sharedMeasureMinWidths(List<PartInfo> parts, int measureCount,
+                                                       LayoutOptions options) {
+        List<Double> mins = new ArrayList<>(measureCount);
+        for (int idx = 0; idx < measureCount; idx++) {
+            double max = options.measureMinWidth();
+            for (PartInfo p : parts) {
+                if (idx < p.part().measures().size()) {
+                    max = Math.max(max, measureContentMinWidth(p.part().measures().get(idx), options));
+                }
+            }
+            mins.add(max);
+        }
+        return mins;
+    }
+
+    /**
+     * Distribute {@code totalWidth} across a list of weight-sized measures,
+     * clamping each measure {@code i} to at least {@code mins.get(i)}.
+     */
+    private static List<Double> distributeWidths(List<Double> weights, double totalWidth, List<Double> mins) {
         List<Double> widths = new ArrayList<>(weights.size());
         if (weights.isEmpty()) {
             return widths;
         }
         double sumWeights = 0.0;
-        for (double w : weights) {
-            sumWeights += w;
+        double sumMins = 0.0;
+        for (int i = 0; i < weights.size(); i++) {
+            sumWeights += weights.get(i);
+            sumMins += mins.get(i);
         }
-        double effective = Math.max(totalWidth, min * weights.size());
+        double effective = Math.max(totalWidth, sumMins);
         double sum = 0.0;
-        for (double w : weights) {
+        for (int i = 0; i < weights.size(); i++) {
+            double w = weights.get(i);
+            double min = mins.get(i);
             double raw = sumWeights > 0 ? effective * (w / sumWeights) : effective / weights.size();
             double width = Math.max(min, raw);
             widths.add(width);
@@ -1289,6 +1315,35 @@ public final class Engraver {
     }
 
     /**
+     * Absolute floor for a measure's nominal width, informed by its note
+     * density rather than a single flat constant. A measure packs
+     * {@code n} time-consuming elements, each of which needs at least
+     * {@code MIN_NOTE_ADVANCE_GAPS * gap} of horizontal room (mirroring the
+     * per-note clamp in {@code layoutStaffRow}) plus the two side gaps
+     * ({@code contentStart}/right padding) every measure reserves.
+     *
+     * <p>Without this, a system full of equally dense measures (e.g. a
+     * continuous tuplet accompaniment) would each get an equal — but for
+     * their content, far too small — proportional share of the system
+     * width, and the per-note safety rail would then force massive overflow
+     * past the barlines instead of the row simply breaking sooner.
+     */
+    private static double measureContentMinWidth(Measure measure, LayoutOptions options) {
+        int count = 0;
+        for (MusicElement element : measure.elements()) {
+            if (!(element instanceof Direction) && !(element instanceof Harmony)) {
+                count++;
+            }
+        }
+        if (count == 0) {
+            return options.measureMinWidth();
+        }
+        double gap = options.staffLineGap();
+        double contentFloor = count * MIN_NOTE_ADVANCE_GAPS * gap + 2 * gap;
+        return Math.max(options.measureMinWidth(), contentFloor);
+    }
+
+    /**
      * Horizontal width weight for a single measure element, following the
      * traditional sub-linear duration curve used by OSMD and printed
      * engraving practice: {@code width(d) ∝ d^α} with {@code α ≈ 0.6}.
@@ -1315,28 +1370,28 @@ public final class Engraver {
 
     /**
      * Whether the given element carries a displayed accidental. Mirrors the
-     * detection logic in {@link #placeNote}: an explicit
-     * {@link Note#displayedAccidental()} wins, otherwise any non-zero
-     * chromatic {@code alter} on the pitch counts. For a {@link Chord} the
-     * check is true when any member note qualifies; rests never carry
-     * accidentals.
+     * detection logic in {@link #placeNote}: only an explicit
+     * {@link Note#displayedAccidental()} counts. A non-zero chromatic
+     * {@code alter} on the pitch is <em>not</em> by itself a signal to show
+     * an accidental glyph - {@code alter} just encodes the sounding pitch
+     * (e.g. every B-flat in a piece has {@code alter=-1} whether or not the
+     * key signature already implies the flat), and well-formed MusicXML
+     * always carries an explicit {@code <accidental>} element on notes that
+     * should actually display one. For a {@link Chord} the check is true
+     * when any member note qualifies; rests never carry accidentals.
      */
     private static boolean hasAccidental(MusicElement e) {
         if (e instanceof Note note) {
-            return noteHasAccidental(note);
+            return note.displayedAccidental().isPresent();
         }
         if (e instanceof Chord chord) {
             for (Note note : chord.notes()) {
-                if (noteHasAccidental(note)) {
+                if (note.displayedAccidental().isPresent()) {
                     return true;
                 }
             }
         }
         return false;
-    }
-
-    private static boolean noteHasAccidental(Note note) {
-        return note.displayedAccidental().isPresent() || note.pitch().alter() != 0;
     }
 
     /**

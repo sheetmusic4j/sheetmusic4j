@@ -452,14 +452,18 @@ public final class ScorePainter {
      */
     private void drawBracket(RenderSurface surface, BracketPlacement bracket) {
         double span = bracket.bottomY() - bracket.topY();
-        double midY = (bracket.topY() + bracket.bottomY()) / 2.0;
         switch (bracket.shape()) {
             case BRACE -> {
-                // SMuFL's brace (E000) is a single-size glyph; approximate
-                // stretching by drawing it at the span size, anchored so the
-                // rough vertical centre sits near the group midpoint.
+                // SMuFL's brace (E000) is drawn with the AWT/FX text baseline
+                // convention: at font size = span, Bravura's brace glyph ink
+                // runs from the baseline (y offset 0, its bottom tip) up to
+                // very nearly the full font size above it (its top tip) -
+                // verified via GlyphVector#getVisualBounds() (top ~ -0.997 *
+                // fontSize, bottom ~ 0). So anchoring the baseline at
+                // bracket.bottomY() makes the glyph span almost exactly
+                // [topY, bottomY] with no extra offset needed.
                 boolean drawn = surface.drawSmuflGlyph("\uE000",
-                        bracket.x(), midY + span * 0.25, span);
+                        bracket.x() - 5, bracket.bottomY(), span);
                 if (!drawn) {
                     drawBraceFallback(surface, bracket, span);
                 }
