@@ -23,8 +23,16 @@ public final class ScoreRenderer {
 
     /** Renders the given layout into the supplied JavaFX graphics context. */
     public void render(GraphicsContext gc, LayoutResult layout) {
+        render(gc, layout, gc.getCanvas().getWidth(), gc.getCanvas().getHeight());
+    }
+
+    /**
+     * Renders the given layout into the supplied JavaFX graphics context using
+     * explicit painter bounds in layout units.
+     */
+    public void render(GraphicsContext gc, LayoutResult layout, double width, double height) {
         RenderSurface surface = new FxRenderSurface(gc);
-        painter.paint(surface, layout, gc.getCanvas().getWidth(), gc.getCanvas().getHeight());
+        painter.paint(surface, layout, width, height);
     }
 
     /**

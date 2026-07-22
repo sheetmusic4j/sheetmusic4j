@@ -184,7 +184,7 @@ public final class ScorePainter {
             drawTie(surface, staff, tie);
         }
         for (SlurPlacement slur : staff.slurs()) {
-            drawSlur(surface, slur);
+            drawSlur(surface, staff, slur);
         }
         for (TupletPlacement tuplet : staff.tuplets()) {
             drawTuplet(surface, staff, tuplet);
@@ -272,7 +272,27 @@ public final class ScorePainter {
             }
             case REST_EIGHTH -> {
                 if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
-                    drawEighthRest(surface, staff, glyph);
+                    drawFlaggedRestFallback(surface, staff, glyph, 1);
+                }
+            }
+            case REST_SIXTEENTH -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
+                    drawFlaggedRestFallback(surface, staff, glyph, 2);
+                }
+            }
+            case REST_THIRTY_SECOND -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
+                    drawFlaggedRestFallback(surface, staff, glyph, 3);
+                }
+            }
+            case REST_SIXTY_FOURTH -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
+                    drawFlaggedRestFallback(surface, staff, glyph, 4);
+                }
+            }
+            case REST_128TH -> {
+                if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
+                    drawFlaggedRestFallback(surface, staff, glyph, 5);
                 }
             }
             default -> {
@@ -326,9 +346,14 @@ public final class ScorePainter {
      * span more horizontal distance than ties, so the bend is proportional
      * to the span rather than a flat multiple of the staff-line gap.
      */
-    private void drawSlur(RenderSurface surface, SlurPlacement slur) {
+    private void drawSlur(RenderSurface surface, StaffLayout staff, SlurPlacement slur) {
         double span = Math.abs(slur.x2() - slur.x1());
-        double bend = Math.max(4.0, span * 0.12) * (slur.curveUp() ? -1 : 1);
+        double gap = staff.lineGap();
+        // A slur commonly arcs over/under several notes between its two
+        // endpoints, not just the endpoints themselves - a bend scaled only
+        // to the span (as ties use) can be too shallow to clear the notes
+        // in between, so floor it to a fraction of the staff-line gap too.
+        double bend = Math.max(gap * 1.3, span * 0.12) * (slur.curveUp() ? -1 : 1);
         double midX = (slur.x1() + slur.x2()) / 2.0;
         double midY = ((slur.y1() + slur.y2()) / 2.0) + bend;
         surface.strokeLine(slur.x1(), slur.y1(), midX, midY);
@@ -344,7 +369,11 @@ public final class ScorePainter {
      */
     private void drawTuplet(RenderSurface surface, StaffLayout staff, TupletPlacement tuplet) {
         double gap = staff.lineGap();
-        double digitWidth = gap * 1.1;
+        // Tuplet numbers are drawn much smaller than time-signature digits
+        // (which use a full-staff-height sizeHint of gap*4) - roughly the
+        // same scale as ordinary expression text.
+        double sizeHint = gap * 1.6;
+        double digitWidth = sizeHint * 0.4;
         String digits = Integer.toString(tuplet.number());
         double midX = (tuplet.x1() + tuplet.x2()) / 2.0;
         double textWidth = digits.length() * digitWidth;
@@ -360,7 +389,7 @@ public final class ScorePainter {
             int digit = digits.charAt(i) - '0';
             Glyph glyph = Glyph.timeDigit(digit);
             double x = startX + i * digitWidth;
-            if (!drawSmuflIfAvailable(surface, glyph, new GlyphPlacement(x, tuplet.y(), glyph, 0), gap * 4)) {
+            if (!drawSmuflIfAvailable(surface, glyph, new GlyphPlacement(x, tuplet.y(), glyph, 0), sizeHint)) {
                 surface.strokeText(digits.substring(i, i + 1), x, tuplet.y());
             }
         }
@@ -487,13 +516,24 @@ public final class ScorePainter {
         surface.strokeLine(x - half, top + 2 * gap, x + half, bottom);
     }
 
-    private void drawEighthRest(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph) {
+    /**
+     * Primitive fallback for eighth-and-shorter rests: {@code flagCount}
+     * stacked flag blobs (1 for an eighth rest, 2 for a sixteenth, ...)
+     * joined by a diagonal stroke, approximating the real SMuFL glyph's
+     * zigzag shape closely enough to be unambiguous when Bravura is
+     * unavailable.
+     */
+    private void drawFlaggedRestFallback(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph,
+                                         int flagCount) {
         double gap = staff.lineGap();
         double d = gap * 0.6;
         double x = glyph.x();
-        double y = staff.lineY(2);
-        surface.fillOval(x - d / 2, y - d / 2, d, d);
-        surface.strokeLine(x + d / 2, y, x - d / 2, y + gap * 1.5);
+        double topY = staff.lineY(2) - (flagCount - 1) * gap * 0.7;
+        for (int i = 0; i < flagCount; i++) {
+            double y = topY + i * gap * 0.7;
+            surface.fillOval(x - d / 2, y - d / 2, d, d);
+            surface.strokeLine(x + d / 2, y, x - d / 2, y + gap * 1.5);
+        }
     }
 
     /**

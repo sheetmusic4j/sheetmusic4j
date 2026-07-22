@@ -26,6 +26,10 @@ import com.sheetmusic4j.engraving.glyph.Glyph;
  *   <li>{@code restHalf} = {@code U+E4E4}</li>
  *   <li>{@code restQuarter} = {@code U+E4E5}</li>
  *   <li>{@code rest8th} = {@code U+E4E6}</li>
+ *   <li>{@code rest16th} = {@code U+E4E7}</li>
+ *   <li>{@code rest32nd} = {@code U+E4E8}</li>
+ *   <li>{@code rest64th} = {@code U+E4E9}</li>
+ *   <li>{@code rest128th} = {@code U+E4EA}</li>
  * </ul>
  * All codepoints are in the Basic Multilingual Plane so they fit in a
  * single {@code char}.
@@ -66,6 +70,10 @@ public final class SmuflGlyphs {
             case REST_HALF -> "\uE4E4";
             case REST_QUARTER -> "\uE4E5";
             case REST_EIGHTH -> "\uE4E6";
+            case REST_SIXTEENTH -> "\uE4E7";
+            case REST_THIRTY_SECOND -> "\uE4E8";
+            case REST_SIXTY_FOURTH -> "\uE4E9";
+            case REST_128TH -> "\uE4EA";
             case TIME_DIGIT_0 -> "\uE080";
             case TIME_DIGIT_1 -> "\uE081";
             case TIME_DIGIT_2 -> "\uE082";

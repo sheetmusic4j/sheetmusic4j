@@ -12,6 +12,7 @@ public final class Rest implements MusicElement {
     private final int dots;
     private final List<Tuplet> tuplets;
     private final TimeModification timeModification;
+    private final int staff;
 
     private Rest(Builder builder) {
         this.duration = builder.duration;
@@ -19,6 +20,7 @@ public final class Rest implements MusicElement {
         this.dots = builder.dots;
         this.tuplets = List.copyOf(builder.tuplets);
         this.timeModification = builder.timeModification;
+        this.staff = builder.staff;
     }
 
     @Override
@@ -32,6 +34,14 @@ public final class Rest implements MusicElement {
 
     public int dots() {
         return dots;
+    }
+
+    /**
+     * The staff index (1-based) this rest is assigned to within its part.
+     * Defaults to {@code 1} for single-staff parts.
+     */
+    public int staff() {
+        return staff;
     }
 
     /**
@@ -60,6 +70,7 @@ public final class Rest implements MusicElement {
         private int dots;
         private java.util.List<Tuplet> tuplets = new java.util.ArrayList<>();
         private TimeModification timeModification;
+        private int staff = 1;
 
         public Builder duration(Duration duration) {
             this.duration = duration;
@@ -88,6 +99,11 @@ public final class Rest implements MusicElement {
 
         public Builder timeModification(TimeModification timeModification) {
             this.timeModification = timeModification;
+            return this;
+        }
+
+        public Builder staff(int staff) {
+            this.staff = staff;
             return this;
         }
 

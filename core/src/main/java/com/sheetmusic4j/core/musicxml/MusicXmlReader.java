@@ -899,10 +899,11 @@ public final class MusicXmlReader {
                     case "slur" -> {
                         int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
                         String slurType = reader.getAttributeValue(null, "type");
+                        Placement slurPlacement = Placement.fromXml(reader.getAttributeValue(null, "placement"));
                         if ("start".equals(slurType)) {
-                            slurs.add(new Slur(number, Slur.Type.START));
+                            slurs.add(new Slur(number, Slur.Type.START, slurPlacement));
                         } else if ("stop".equals(slurType)) {
-                            slurs.add(new Slur(number, Slur.Type.STOP));
+                            slurs.add(new Slur(number, Slur.Type.STOP, slurPlacement));
                         }
                     }
                     case "tuplet" -> {
@@ -930,7 +931,7 @@ public final class MusicXmlReader {
 
         Duration dur = new Duration(Math.max(duration, 0), divisions);
         if (rest) {
-            Rest.Builder rb = Rest.builder().duration(dur).dots(dots).tuplets(tuplets);
+            Rest.Builder rb = Rest.builder().duration(dur).dots(dots).tuplets(tuplets).staff(staff);
             if (type != null) {
                 rb.type(type);
             }

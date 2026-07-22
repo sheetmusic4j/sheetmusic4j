@@ -80,6 +80,10 @@ public enum Glyph {
     REST_HALF,
     REST_QUARTER,
     REST_EIGHTH,
+    REST_SIXTEENTH,
+    REST_THIRTY_SECOND,
+    REST_SIXTY_FOURTH,
+    REST_128TH,
     /* -- Dynamics (SMuFL Private Use Area U+E5xx). -------------------- */
     DYNAMIC_PPP,
     DYNAMIC_PP,

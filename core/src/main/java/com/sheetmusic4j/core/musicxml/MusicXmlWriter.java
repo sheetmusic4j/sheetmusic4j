@@ -324,9 +324,17 @@ public final class MusicXmlWriter {
         }
         w.start("notations");
         for (Slur slur : slurs) {
-            w.emptyElementWithAttrs("slur",
-                    "number", Integer.toString(slur.number()),
-                    "type", slur.type() == Slur.Type.START ? "start" : "stop");
+            String placementAttr = slur.placement().xmlValue();
+            if (placementAttr != null) {
+                w.emptyElementWithAttrs("slur",
+                        "number", Integer.toString(slur.number()),
+                        "type", slur.type() == Slur.Type.START ? "start" : "stop",
+                        "placement", placementAttr);
+            } else {
+                w.emptyElementWithAttrs("slur",
+                        "number", Integer.toString(slur.number()),
+                        "type", slur.type() == Slur.Type.START ? "start" : "stop");
+            }
         }
         for (Tuplet tuplet : tuplets) {
             w.emptyElementWithAttrs("tuplet",
@@ -466,6 +474,9 @@ public final class MusicXmlWriter {
             }
             if (rest.timeModification().isPresent()) {
                 writeTimeModification(w, rest.timeModification().get());
+            }
+            if (rest.staff() > 1) {
+                w.textElement("staff", Integer.toString(rest.staff()));
             }
             writeNotations(w, List.of(), rest.tuplets(), List.of());
             w.end("note");

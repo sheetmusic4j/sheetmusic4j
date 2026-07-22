@@ -32,7 +32,8 @@ import javafx.scene.layout.Region;
  * <p>Callers can override the engraving width via {@link #setSystemWidth(double)}
  * (or the {@link #systemWidthProperty()} JavaFX property, e.g. by binding it to
  * a container's width). The default is {@link LayoutOptions#defaults()}
- * {@code .systemWidth()}.
+ * {@code .systemWidth()}. Callers can also scale the rendered result via
+ * {@link #setZoom(double)}.
  */
 public final class SheetView extends Region {
 
@@ -46,6 +47,8 @@ public final class SheetView extends Region {
     private final DoubleProperty systemWidth =
             new SimpleDoubleProperty(this, "systemWidth", LayoutOptions.defaults().systemWidth());
 
+    private final DoubleProperty zoom = new SimpleDoubleProperty(this, "zoom", 1.0);
+
     private final ObservableSet<MarkingCategory> hiddenTextCategories =
             FXCollections.observableSet(EnumSet.noneOf(MarkingCategory.class));
 
@@ -58,11 +61,12 @@ public final class SheetView extends Region {
     public SheetView() {
         getChildren().add(canvas);
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
+        zoom.addListener((obs, oldV, newV) -> rebuild());
         hiddenTextCategories.addListener((SetChangeListener<MarkingCategory>) change -> rebuild());
         bracketsVisible.addListener((obs, oldV, newV) -> rebuild());
         // Initial empty canvas at the default width; setScore replaces it.
-        canvas.setWidth(systemWidth.get());
-        canvas.setHeight(FALLBACK_HEIGHT);
+        canvas.setWidth(systemWidth.get() * zoom.get());
+        canvas.setHeight(FALLBACK_HEIGHT * zoom.get());
         setMinSize(200, 120);
         setPrefSize(canvas.getWidth(), canvas.getHeight());
     }
@@ -99,6 +103,26 @@ public final class SheetView extends Region {
     public void setSystemWidth(double width) {
         if (width > 0) {
             systemWidth.set(width);
+        }
+    }
+
+    /**
+     * Render zoom factor. Values above 1 enlarge the score; values between 0
+     * and 1 shrink it. Changing this triggers a rebuild.
+     */
+    public DoubleProperty zoomProperty() {
+        return zoom;
+    }
+
+    /** @return the current render zoom factor. */
+    public double getZoom() {
+        return zoom.get();
+    }
+
+    /** Update the render zoom factor, if positive. */
+    public void setZoom(double factor) {
+        if (factor > 0) {
+            zoom.set(factor);
         }
     }
 
@@ -141,17 +165,23 @@ public final class SheetView extends Region {
      * discovers the real content dimensions and shows scrollbars.
      */
     private void rebuild() {
+        double zoomFactor = Math.max(zoom.get(), 0.01);
         if (score == null) {
-            canvas.setWidth(systemWidth.get());
-            canvas.setHeight(FALLBACK_HEIGHT);
+            canvas.setWidth(systemWidth.get() * zoomFactor);
+            canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         } else {
             LayoutResult layout = engraver.layout(score, layoutOptions());
-            canvas.setWidth(Math.max(layout.width(), 1.0));
-            canvas.setHeight(Math.max(layout.height(), 1.0));
+            canvas.setWidth(Math.max(layout.width() * zoomFactor, 1.0));
+            canvas.setHeight(Math.max(layout.height() * zoomFactor, 1.0));
             renderer.setHiddenTextCategories(hiddenTextCategories);
             renderer.setBracketsVisible(bracketsVisible.get());
-            renderer.render(canvas.getGraphicsContext2D(), layout);
+            var gc = canvas.getGraphicsContext2D();
+            gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gc.save();
+            gc.scale(zoomFactor, zoomFactor);
+            renderer.render(gc, layout, layout.width(), layout.height());
+            gc.restore();
         }
         setPrefSize(canvas.getWidth(), canvas.getHeight());
         setMinSize(Math.min(200, canvas.getWidth()), Math.min(120, canvas.getHeight()));

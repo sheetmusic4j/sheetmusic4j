@@ -1174,7 +1174,7 @@ public final class Engraver {
 
         Map<Integer, BeamRun> openBeams = new HashMap<>();
         Map<String, PlacedNote> tieCandidates = new HashMap<>();
-        Map<Integer, PlacedNote> slurCandidates = new HashMap<>();
+        Map<Integer, SlurStart> slurCandidates = new HashMap<>();
         Map<Integer, TupletRun> tupletCandidates = new HashMap<>();
         Map<Integer, WedgeStart> wedgeCandidates = new HashMap<>();
 
@@ -1310,7 +1310,10 @@ public final class Engraver {
                 return note.staff();
             }
         }
-        // Rests and Directions inherit the previous staff assignment; default to staff 1.
+        if (element instanceof Rest rest) {
+            return rest.staff();
+        }
+        // Directions carry no explicit staff assignment; default to staff 1.
         return 1;
     }
 
@@ -1482,16 +1485,28 @@ public final class Engraver {
     private void placeElement(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,
                               List<SlurPlacement> slurs, List<TupletPlacement> tuplets,
                               Map<Integer, BeamRun> openBeams, Map<String, PlacedNote> tieCandidates,
-                              Map<Integer, PlacedNote> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
+                              Map<Integer, SlurStart> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
                               MusicElement element, double noteX, double staffY,
                               Clef clef, LayoutOptions options) {
         if (element instanceof Note note) {
             placeNote(glyphs, beams, ties, slurs, tuplets, openBeams, tieCandidates, slurCandidates,
-                    tupletCandidates, note, noteX, staffY, clef, options);
+                    tupletCandidates, note, noteX, staffY, clef, options, false);
         } else if (element instanceof Chord chord) {
+            // MusicXML puts <beam> elements only on one representative note
+            // per chord (usually the first); the other stacked notes carry
+            // an empty beams() list even though the whole chord is beamed.
+            // Without this, those notes are mistaken for unbeamed and each
+            // draws its own stray flag glyph next to the real beam.
+            boolean chordBeamed = false;
+            for (Note note : chord.notes()) {
+                if (note.isBeamed()) {
+                    chordBeamed = true;
+                    break;
+                }
+            }
             for (Note note : chord.notes()) {
                 placeNote(glyphs, beams, ties, slurs, tuplets, openBeams, tieCandidates, slurCandidates,
-                        tupletCandidates, note, noteX, staffY, clef, options);
+                        tupletCandidates, note, noteX, staffY, clef, options, chordBeamed);
             }
         } else if (element instanceof Rest rest) {
             double gap = options.staffLineGap();
@@ -1714,18 +1729,19 @@ public final class Engraver {
     private void placeNote(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,
                            List<SlurPlacement> slurs, List<TupletPlacement> tuplets,
                            Map<Integer, BeamRun> openBeams, Map<String, PlacedNote> tieCandidates,
-                           Map<Integer, PlacedNote> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
-                           Note note, double noteX, double staffY, Clef clef, LayoutOptions options) {
+                           Map<Integer, SlurStart> slurCandidates, Map<Integer, TupletRun> tupletCandidates,
+                           Note note, double noteX, double staffY, Clef clef, LayoutOptions options,
+                           boolean chordBeamed) {
         double gap = options.staffLineGap();
         int staffStep = staffStep(note.pitch(), clef);
         double y = staffY + staffStep * (gap / 2.0);
 
-        // Accidental: prefer the explicit displayed accidental when present
-        // (may be NATURAL), otherwise fall back to a chromatic alter on the pitch.
+        // Accidental: only an explicit displayed accidental is shown (may be
+        // NATURAL). A non-zero chromatic alter on the pitch is not itself a
+        // display signal - it just encodes the sounding pitch, and
+        // well-formed MusicXML always carries an explicit <accidental> on
+        // notes that should actually show one (see hasAccidental()).
         Accidental acc = note.displayedAccidental().orElse(null);
-        if (acc == null && note.pitch().alter() != 0) {
-            acc = note.pitch().accidental();
-        }
         if (acc != null) {
             Glyph accGlyph = accidentalGlyph(acc);
             if (accGlyph != null) {
@@ -1758,8 +1774,13 @@ public final class Engraver {
             glyphs.add(new GlyphPlacement(dx, dy, Glyph.AUG_DOT, dotStep));
         }
 
-        // Beam vs. flag handling.
-        boolean beamed = note.isBeamed();
+        // Beam vs. flag handling. A stacked chord note that carries no
+        // <beam> elements of its own (MusicXML only tags one representative
+        // note per chord) is still beamed when any other note in the same
+        // chord is - it just contributes nothing further here, since the
+        // representative note's own placeNote call already drives
+        // processBeams for the whole group.
+        boolean beamed = note.isBeamed() || chordBeamed;
         if (!beamed && stem != null) {
             Glyph flag = flagGlyph(note.type(), stemUp);
             if (flag != null) {
@@ -1767,7 +1788,7 @@ public final class Engraver {
                 double stemTipX = stemUp ? noteX + noteheadHalfWidth(note.type(), gap) : noteX - noteheadHalfWidth(note.type(), gap);
                 glyphs.add(new GlyphPlacement(stemTipX, stemTipY, flag, staffStep));
             }
-        } else if (beamed && stem != null) {
+        } else if (note.isBeamed() && stem != null) {
             double stemTipX = stemUp ? noteX + noteheadHalfWidth(note.type(), gap) : noteX - noteheadHalfWidth(note.type(), gap);
             double stemTipY = stemUp ? y - gap * STEM_LENGTH_GAPS : y + gap * STEM_LENGTH_GAPS;
             processBeams(beams, openBeams, note.beams(), stemTipX, stemTipY, stemUp);
@@ -1794,15 +1815,25 @@ public final class Engraver {
         // phrase rather than a single repeated pitch.
         for (Slur slur : note.slurs()) {
             if (slur.type() == Slur.Type.STOP) {
-                PlacedNote start = slurCandidates.remove(slur.number());
+                SlurStart start = slurCandidates.remove(slur.number());
                 if (start != null) {
-                    boolean curveUp = staffStep >= MIDDLE_LINE_STAFF_STEP;
+                    // Prefer the explicit MusicXML placement (set on the
+                    // start note); only guess from stem direction when the
+                    // source left it unspecified. Guessing unconditionally
+                    // is wrong for a slur spanning notes of varying pitch -
+                    // it can bend the curve back into the very notes it
+                    // spans instead of arcing clear of them.
+                    boolean curveUp = switch (start.placement()) {
+                        case ABOVE -> true;
+                        case BELOW -> false;
+                        case DEFAULT -> staffStep >= MIDDLE_LINE_STAFF_STEP;
+                    };
                     double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
                     slurs.add(new SlurPlacement(start.x() + gap * 0.5, start.y() + yShift,
                             noteX - gap * 0.5, y + yShift, curveUp));
                 }
             } else {
-                slurCandidates.put(slur.number(), new PlacedNote(noteX, y));
+                slurCandidates.put(slur.number(), new SlurStart(noteX, y, slur.placement()));
             }
         }
 
@@ -1931,7 +1962,11 @@ public final class Engraver {
             case WHOLE, BREVE, LONG, MAXIMA -> Glyph.REST_WHOLE;
             case HALF -> Glyph.REST_HALF;
             case QUARTER -> Glyph.REST_QUARTER;
-            default -> Glyph.REST_EIGHTH;
+            case EIGHTH -> Glyph.REST_EIGHTH;
+            case SIXTEENTH -> Glyph.REST_SIXTEENTH;
+            case THIRTY_SECOND -> Glyph.REST_THIRTY_SECOND;
+            case SIXTY_FOURTH -> Glyph.REST_SIXTY_FOURTH;
+            case HUNDRED_TWENTY_EIGHTH -> Glyph.REST_128TH;
         };
     }
 
@@ -1939,6 +1974,9 @@ public final class Engraver {
     }
 
     private record PlacedNote(double x, double y) {
+    }
+
+    private record SlurStart(double x, double y, Placement placement) {
     }
 
     private record WedgeStart(double x, double y, boolean crescendo) {
