@@ -180,6 +180,42 @@ public final class Engraver {
      */
     private static final double LYRIC_BASELINE_OFFSET_GAPS = 2.2;
 
+    /**
+     * Sub-linear exponent applied to a note's duration (in quarters) when
+     * computing its horizontal width weight. Values between 0.5 and 0.7 give
+     * the traditional engraving "square-root-ish" spacing curve; the default
+     * of 0.6 is close to what OSMD uses.
+     */
+    private static final double NOTE_WIDTH_ALPHA = 0.6;
+
+    /**
+     * Extra weight added to a note's width when it carries a displayed
+     * accidental, in "quarter-note width" units. Reserves space so the
+     * accidental doesn't collide with the previous notehead.
+     */
+    private static final double ACCIDENTAL_RESERVE_WEIGHT = 0.35;
+
+    /**
+     * Extra weight added to a note's width per augmentation dot, in
+     * "quarter-note width" units.
+     */
+    private static final double DOT_RESERVE_WEIGHT = 0.15;
+
+    /**
+     * Minimum horizontal advance per time-consuming element, expressed in
+     * staff-line gaps. Acts as a safety rail for pathologically dense
+     * measures; may push content past the barline (acceptable in the MVP).
+     */
+    private static final double MIN_NOTE_ADVANCE_GAPS = 1.2;
+
+    /**
+     * Left-side shift (in staff-line gaps) applied to a note's x position
+     * when it carries an accidental. This ensures the accidental glyph sits
+     * inside the note's reserved slot rather than colliding with the
+     * previous element.
+     */
+    private static final double ACCIDENTAL_RESERVE_GAPS = 0.9;
+
     public LayoutResult layout(Score score, LayoutOptions options) {
         List<TextPlacement> texts = new ArrayList<>();
         double titleBlockHeight = layoutTitleBlock(score, options, texts);
@@ -1136,12 +1172,34 @@ public final class Engraver {
                 }
             }
             double available = (cursorX + measureWidth) - contentStart - options.staffLineGap();
-            double step = timedElements.isEmpty() ? available : available / timedElements.size();
+            double gap = options.staffLineGap();
+            double minSlot = MIN_NOTE_ADVANCE_GAPS * gap;
             double[] timedX = new double[timedElements.size()];
-            double xCursor = contentStart;
-            for (int i = 0; i < timedElements.size(); i++) {
-                timedX[i] = xCursor;
-                xCursor += step;
+            if (!timedElements.isEmpty()) {
+                double[] weights = new double[timedElements.size()];
+                double sumWeights = 0.0;
+                for (int i = 0; i < timedElements.size(); i++) {
+                    double w = noteWidthWeight(timedElements.get(i));
+                    if (w <= 0) {
+                        w = 1.0;
+                    }
+                    weights[i] = w;
+                    sumWeights += w;
+                }
+                double startCursor = contentStart;
+                for (int i = 0; i < timedElements.size(); i++) {
+                    double slotWidth = sumWeights > 0
+                            ? available * (weights[i] / sumWeights)
+                            : available / timedElements.size();
+                    if (slotWidth < minSlot) {
+                        slotWidth = minSlot;
+                    }
+                    double leftShift = hasAccidental(timedElements.get(i))
+                            ? ACCIDENTAL_RESERVE_GAPS * gap
+                            : 0.0;
+                    timedX[i] = startCursor + leftShift;
+                    startCursor += slotWidth;
+                }
             }
             // Fallback x when the measure has no time-consuming elements at all
             // (rare, but possible for a measure that only carries directions).
@@ -1225,9 +1283,83 @@ public final class Engraver {
     private static double measureWeight(Measure measure) {
         double sum = 0.0;
         for (MusicElement element : measure.elements()) {
-            sum += element.duration().inQuarters();
+            sum += noteWidthWeight(element);
         }
         return sum > 0 ? sum : 1.0;
+    }
+
+    /**
+     * Horizontal width weight for a single measure element, following the
+     * traditional sub-linear duration curve used by OSMD and printed
+     * engraving practice: {@code width(d) ∝ d^α} with {@code α ≈ 0.6}.
+     * Additional weight is reserved for elements carrying an accidental or
+     * augmentation dots so the extra glyphs don't collide with neighbours.
+     *
+     * <p>Zero-duration elements ({@link Direction}, {@link Harmony}) return
+     * {@code 0} — they don't contribute to intra-measure stepping and are
+     * anchored to the x of the next time-consuming element.
+     */
+    private static double noteWidthWeight(MusicElement e) {
+        double d = e.duration().inQuarters();
+        double base = d <= 0 ? 0.0 : Math.pow(d, NOTE_WIDTH_ALPHA);
+        double extras = 0.0;
+        if (hasAccidental(e)) {
+            extras += ACCIDENTAL_RESERVE_WEIGHT;
+        }
+        int dots = dotCount(e);
+        if (dots > 0) {
+            extras += DOT_RESERVE_WEIGHT * dots;
+        }
+        return base + extras;
+    }
+
+    /**
+     * Whether the given element carries a displayed accidental. Mirrors the
+     * detection logic in {@link #placeNote}: an explicit
+     * {@link Note#displayedAccidental()} wins, otherwise any non-zero
+     * chromatic {@code alter} on the pitch counts. For a {@link Chord} the
+     * check is true when any member note qualifies; rests never carry
+     * accidentals.
+     */
+    private static boolean hasAccidental(MusicElement e) {
+        if (e instanceof Note note) {
+            return noteHasAccidental(note);
+        }
+        if (e instanceof Chord chord) {
+            for (Note note : chord.notes()) {
+                if (noteHasAccidental(note)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean noteHasAccidental(Note note) {
+        return note.displayedAccidental().isPresent() || note.pitch().alter() != 0;
+    }
+
+    /**
+     * Number of augmentation dots on the element. For a {@link Chord} the
+     * maximum across all member notes is returned.
+     */
+    private static int dotCount(MusicElement e) {
+        if (e instanceof Note note) {
+            return note.dots();
+        }
+        if (e instanceof Rest rest) {
+            return rest.dots();
+        }
+        if (e instanceof Chord chord) {
+            int max = 0;
+            for (Note note : chord.notes()) {
+                if (note.dots() > max) {
+                    max = note.dots();
+                }
+            }
+            return max;
+        }
+        return 0;
     }
 
     private double placeKeySignature(List<GlyphPlacement> glyphs, KeySignature key, Clef clef,

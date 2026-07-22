@@ -8,6 +8,11 @@ Sheetmusic4J is a Java 21 / JavaFX library for parsing, rendering, and interacti
 
 GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 
+## Inspired by
+
+* https://www.musicxml.com/: The standard open format for exchanging digital sheet music
+* https://github.com/opensheetmusicdisplay/opensheetmusicdisplay: OpenSheetMusicDisplay renders sheet music in MusicXML format in browsers and headless with NodeJS.
+
 ## Modules (build order, each depends only on the ones before it)
 
 1. **`core`** — domain model (`Score`, `Part`, `Measure`, `Attributes`, `Note`, `Chord`, `Rest`, `Pitch`, `Clef`, `KeySignature`, `TimeSignature`, etc.) plus MusicXML read/write (`com.sheetmusic4j.core.musicxml`, StAX-based, XXE-hardened) and MIDI import/export (`com.sheetmusic4j.core.midi`, `javax.sound.midi`). `com.sheetmusic4j.core.io.ScoreFile` is the load/save facade that dispatches by file extension (`.musicxml`/`.xml`/`.mxl` → MusicXML, `.mid`/`.midi` → MIDI). **No JavaFX dependency.**
