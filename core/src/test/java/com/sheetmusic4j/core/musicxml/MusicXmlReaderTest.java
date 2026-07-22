@@ -18,6 +18,7 @@ import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.DynamicMark;
+import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.HarmonyKind;
 import com.sheetmusic4j.core.model.Lyric;
@@ -25,6 +26,7 @@ import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Step;
@@ -785,6 +787,136 @@ class MusicXmlReaderTest {
         assertTrue(first.bass().isPresent());
         assertEquals(Step.D, first.bass().get().step());
         assertEquals(1, first.bass().get().alter());
+    }
+
+    @Test
+    void readsSimpleBracketGroup() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list>
+                    <part-group number=\"1\" type=\"start\">
+                      <group-symbol>bracket</group-symbol>
+                      <group-barline>yes</group-barline>
+                    </part-group>
+                    <score-part id=\"P1\"><part-name>V1</part-name></score-part>
+                    <score-part id=\"P2\"><part-name>V2</part-name></score-part>
+                    <part-group number=\"1\" type=\"stop\"/>
+                  </part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                  <part id=\"P2\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1, score.partGroups().size());
+        PartGroup group = score.partGroups().get(0);
+        assertEquals(GroupSymbol.BRACKET, group.symbol());
+        assertTrue(group.groupBarline());
+        assertEquals(0, group.startPartIndex());
+        assertEquals(1, group.endPartIndex());
+    }
+
+    @Test
+    void readsNestedGroups() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list>
+                    <part-group number=\"1\" type=\"start\">
+                      <group-symbol>bracket</group-symbol>
+                      <group-barline>yes</group-barline>
+                    </part-group>
+                    <score-part id=\"P1\"><part-name>A</part-name></score-part>
+                    <part-group number=\"2\" type=\"start\">
+                      <group-symbol>brace</group-symbol>
+                      <group-barline>no</group-barline>
+                    </part-group>
+                    <score-part id=\"P2\"><part-name>B</part-name></score-part>
+                    <score-part id=\"P3\"><part-name>C</part-name></score-part>
+                    <part-group number=\"2\" type=\"stop\"/>
+                    <part-group number=\"1\" type=\"stop\"/>
+                  </part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                  <part id=\"P2\"><measure number=\"1\"/></part>
+                  <part id=\"P3\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(2, score.partGroups().size());
+        // Inner group finishes first — stop-order determines document order.
+        PartGroup inner = score.partGroups().get(0);
+        PartGroup outer = score.partGroups().get(1);
+        assertEquals(GroupSymbol.BRACE, inner.symbol());
+        assertEquals(1, inner.startPartIndex());
+        assertEquals(2, inner.endPartIndex());
+        assertEquals(GroupSymbol.BRACKET, outer.symbol());
+        assertEquals(0, outer.startPartIndex());
+        assertEquals(2, outer.endPartIndex());
+        assertTrue(outer.contains(inner));
+        assertTrue(!inner.contains(outer));
+    }
+
+    @Test
+    void readsGroupName() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list>
+                    <part-group number=\"1\" type=\"start\">
+                      <group-name>Horns in F</group-name>
+                      <group-abbreviation>Hn.</group-abbreviation>
+                      <group-symbol>brace</group-symbol>
+                      <group-barline>no</group-barline>
+                    </part-group>
+                    <score-part id=\"P1\"><part-name>H1</part-name></score-part>
+                    <score-part id=\"P2\"><part-name>H2</part-name></score-part>
+                    <part-group number=\"1\" type=\"stop\"/>
+                  </part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                  <part id=\"P2\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1, score.partGroups().size());
+        PartGroup group = score.partGroups().get(0);
+        assertEquals("Horns in F", group.name());
+        assertEquals("Hn.", group.abbreviation());
+    }
+
+    @Test
+    void unclosedGroupIsDropped() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list>
+                    <part-group number=\"1\" type=\"start\">
+                      <group-symbol>bracket</group-symbol>
+                    </part-group>
+                    <score-part id=\"P1\"><part-name>Voice</part-name></score-part>
+                  </part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertTrue(score.partGroups().isEmpty(),
+                "unclosed <part-group start> must be silently dropped");
+    }
+
+    @Test
+    void stopWithoutStartIsDropped() {
+        String xml = """
+                <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+                <score-partwise version=\"4.0\">
+                  <part-list>
+                    <score-part id=\"P1\"><part-name>Voice</part-name></score-part>
+                    <part-group number=\"7\" type=\"stop\"/>
+                  </part-list>
+                  <part id=\"P1\"><measure number=\"1\"/></part>
+                </score-partwise>
+                """;
+        Score score = new MusicXmlReader().read(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        assertTrue(score.partGroups().isEmpty(),
+                "orphan <part-group stop> must be silently dropped");
     }
 
     @Test

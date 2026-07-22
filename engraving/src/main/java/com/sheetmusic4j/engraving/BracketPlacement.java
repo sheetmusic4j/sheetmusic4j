@@ -26,14 +26,18 @@ public record BracketPlacement(double x, double topY, double bottomY, BracketSha
         /** Curly brace ("{"), used for grand-staff (piano) grouping. */
         BRACE,
         /**
-         * Square bracket with curled ends, conventionally used for
-         * instrument families in orchestral scores. Reserved for a
-         * follow-up task.
+         * Square bracket with ornamental curled tips, conventionally used
+         * for instrument families in orchestral scores.
          */
         BRACKET,
         /**
-         * Plain vertical line, used when the source explicitly requests a
-         * bracket style of {@code line}. Reserved for a follow-up task.
+         * Plain rectangular bracket without ornamental tips. Matches
+         * MusicXML's {@code <group-symbol>square</group-symbol>}.
+         */
+        SQUARE,
+        /**
+         * Single thin vertical line without serifs, used when the source
+         * explicitly requests a bracket style of {@code line}.
          */
         LINE
     }

@@ -128,6 +128,11 @@ public final class SheetDemoApp extends Application {
         showDiff.setOnAction(e -> showDiffTab());
         viewMenu.getItems().add(showDiff);
 
+        CheckMenuItem showBrackets = new CheckMenuItem("Show group brackets");
+        showBrackets.setSelected(true);
+        showBrackets.setOnAction(e -> sheetView.setBracketsVisible(showBrackets.isSelected()));
+        viewMenu.getItems().add(showBrackets);
+
         Menu textMenu = new Menu("Text");
         CheckMenuItem showTitles = new CheckMenuItem("Show titles");
         showTitles.setSelected(true);

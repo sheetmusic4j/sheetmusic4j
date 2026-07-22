@@ -14,12 +14,14 @@ public final class Score {
     private final String movementTitle;
     private final List<Creator> creators;
     private final List<Part> parts;
+    private final List<PartGroup> partGroups;
 
     private Score(Builder builder) {
         this.workTitle = builder.workTitle;
         this.movementTitle = builder.movementTitle;
         this.creators = List.copyOf(builder.creators);
         this.parts = List.copyOf(builder.parts);
+        this.partGroups = List.copyOf(builder.partGroups);
     }
 
     public Optional<String> workTitle() {
@@ -38,6 +40,17 @@ public final class Score {
         return parts;
     }
 
+    /**
+     * Immutable, document-order list of {@link PartGroup part groups}
+     * declared inside the source {@code <part-list>}. Outer groups appear
+     * before nested inner groups.
+     *
+     * @return the (possibly empty) list of part groups
+     */
+    public List<PartGroup> partGroups() {
+        return partGroups;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -47,6 +60,7 @@ public final class Score {
         private String movementTitle;
         private final List<Creator> creators = new ArrayList<>();
         private final List<Part> parts = new ArrayList<>();
+        private final List<PartGroup> partGroups = new ArrayList<>();
 
         public Builder workTitle(String workTitle) {
             this.workTitle = workTitle;
@@ -102,6 +116,22 @@ public final class Score {
         public Builder parts(List<Part> parts) {
             this.parts.clear();
             this.parts.addAll(parts);
+            return this;
+        }
+
+        /**
+         * Append a {@link PartGroup} to the score. Groups should be added in
+         * document order so that outer groups precede their nested inner
+         * groups; the engraver relies on this ordering when laying out
+         * multiple bracket columns.
+         *
+         * @param group the group to add (silently ignored when {@code null})
+         * @return this builder for chaining
+         */
+        public Builder addPartGroup(PartGroup group) {
+            if (group != null) {
+                this.partGroups.add(group);
+            }
             return this;
         }
 

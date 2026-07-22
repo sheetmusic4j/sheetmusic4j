@@ -8,7 +8,9 @@ import com.sheetmusic4j.engraving.LayoutOptions;
 import com.sheetmusic4j.engraving.LayoutResult;
 import com.sheetmusic4j.engraving.MarkingCategory;
 
+import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableSet;
@@ -46,6 +48,9 @@ public final class SheetView extends Region {
     private final ObservableSet<MarkingCategory> hiddenTextCategories =
             FXCollections.observableSet(EnumSet.noneOf(MarkingCategory.class));
 
+    private final BooleanProperty bracketsVisible =
+            new SimpleBooleanProperty(this, "bracketsVisible", true);
+
     private Score score;
 
     /** Creates an empty score view at the default engraving width. */
@@ -53,6 +58,7 @@ public final class SheetView extends Region {
         getChildren().add(canvas);
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
         hiddenTextCategories.addListener((SetChangeListener<MarkingCategory>) change -> rebuild());
+        bracketsVisible.addListener((obs, oldV, newV) -> rebuild());
         // Initial empty canvas at the default width; setScore replaces it.
         canvas.setWidth(systemWidth.get());
         canvas.setHeight(FALLBACK_HEIGHT);
@@ -106,6 +112,28 @@ public final class SheetView extends Region {
     }
 
     /**
+     * JavaFX property controlling whether {@link com.sheetmusic4j.engraving.BracketPlacement
+     * bracket placements} (both implicit grand-staff braces and
+     * {@code <part-group>}-driven brackets) are drawn. Defaults to
+     * {@code true}; mutations trigger a rebuild.
+     *
+     * @return the writable brackets-visible property
+     */
+    public BooleanProperty bracketsVisibleProperty() {
+        return bracketsVisible;
+    }
+
+    /** @return {@code true} when brackets are currently drawn. */
+    public boolean isBracketsVisible() {
+        return bracketsVisible.get();
+    }
+
+    /** Update the bracket visibility flag, triggering a rebuild. */
+    public void setBracketsVisible(boolean visible) {
+        bracketsVisible.set(visible);
+    }
+
+    /**
      * Recompute the layout for the current score, resize the canvas to the
      * layout's content extent, and redraw. Also updates the region's
      * preferred/min sizes so a wrapping {@link javafx.scene.control.ScrollPane}
@@ -121,6 +149,7 @@ public final class SheetView extends Region {
             canvas.setWidth(Math.max(layout.width(), 1.0));
             canvas.setHeight(Math.max(layout.height(), 1.0));
             renderer.setHiddenTextCategories(hiddenTextCategories);
+            renderer.setBracketsVisible(bracketsVisible.get());
             renderer.render(canvas.getGraphicsContext2D(), layout);
         }
         setPrefSize(canvas.getWidth(), canvas.getHeight());

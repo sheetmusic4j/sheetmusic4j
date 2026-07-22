@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.junit.jupiter.api.Test;
 
+import com.sheetmusic4j.core.model.GroupSymbol;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.musicxml.MusicXmlReader;
 
@@ -66,6 +68,48 @@ class EngraverRealSamplesTest {
         // At least 2 PART_LABEL placements per row (Voice + Piano).
         assertTrue(partLabelCount(layout) >= 2 * layout.systems().size(),
                 "expected at least 2 part labels per row, got " + partLabelCount(layout));
+    }
+
+    @Test
+    void mozartTrioHasOrchestralBracket() {
+        Path p = findSample("MozartTrio.musicxml");
+        assumeTrue(p != null, "MozartTrio.musicxml not on the test classpath");
+
+        Score score = new MusicXmlReader().read(p);
+        assertEquals(1, score.partGroups().size(),
+                "expected exactly one part group, got " + score.partGroups());
+        PartGroup group = score.partGroups().get(0);
+        assertEquals(GroupSymbol.BRACKET, group.symbol());
+        assertEquals(0, group.startPartIndex());
+        assertEquals(score.parts().size() - 1, group.endPartIndex());
+        assertTrue(group.groupBarline(),
+                "MozartTrio group must have <group-barline>yes</group-barline>");
+
+        LayoutResult layout = layoutOf(score);
+        assertNotNull(layout);
+        for (SystemLayout system : layout.systems()) {
+            long bracketCount = system.brackets().stream()
+                    .filter(b -> b.shape() == BracketPlacement.BracketShape.BRACKET)
+                    .count();
+            assertEquals(1, bracketCount,
+                    "every system must carry exactly one orchestral bracket, got " + system.brackets());
+        }
+    }
+
+    @Test
+    void actorPreludeHasNestedGroups() {
+        Path p = findSample("ActorPreludeSample.musicxml");
+        assumeTrue(p != null, "ActorPreludeSample.musicxml not on the test classpath");
+
+        Score score = new MusicXmlReader().read(p);
+        assertTrue(score.partGroups().size() >= 2,
+                "expected at least the outer bracket + one nested brace, got " + score.partGroups());
+        boolean hasOuterBracket = score.partGroups().stream()
+                .anyMatch(g -> g.symbol() == GroupSymbol.BRACKET);
+        boolean hasNestedBrace = score.partGroups().stream()
+                .anyMatch(g -> g.symbol() == GroupSymbol.BRACE);
+        assertTrue(hasOuterBracket, "expected at least one BRACKET group");
+        assertTrue(hasNestedBrace, "expected at least one BRACE group (e.g. Horns 1/2)");
     }
 
     @Test

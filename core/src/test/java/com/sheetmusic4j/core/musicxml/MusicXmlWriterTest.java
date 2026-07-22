@@ -15,6 +15,7 @@ import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.DynamicMark;
+import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.HarmonyKind;
 import com.sheetmusic4j.core.model.Lyric;
@@ -23,6 +24,7 @@ import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Score;
@@ -290,6 +292,44 @@ class MusicXmlWriterTest {
         Direction reRehearsal = (Direction) elements.get(0);
         assertEquals(Placement.ABOVE, reRehearsal.placement());
         assertEquals(new DirectionType.Rehearsal("A"), reRehearsal.type());
+    }
+
+    @Test
+    void roundTripPreservesPartGroups() {
+        Score original = Score.builder()
+                .addPart(Part.builder("P1").name("A").build())
+                .addPart(Part.builder("P2").name("B").build())
+                .addPart(Part.builder("P3").name("C").build())
+                .addPartGroup(new PartGroup(1, 0, 2, GroupSymbol.BRACKET, true,
+                        null, null))
+                .addPartGroup(new PartGroup(2, 1, 1, GroupSymbol.BRACE, false,
+                        "Horns in F", "Hn."))
+                .build();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new MusicXmlWriter().write(original, out);
+        Score reparsed = new MusicXmlReader().read(new ByteArrayInputStream(out.toByteArray()));
+
+        assertEquals(3, reparsed.parts().size());
+        assertEquals(2, reparsed.partGroups().size());
+
+        PartGroup outer = reparsed.partGroups().stream()
+                .filter(g -> g.symbol() == GroupSymbol.BRACKET)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0, outer.startPartIndex());
+        assertEquals(2, outer.endPartIndex());
+        assertEquals(true, outer.groupBarline());
+
+        PartGroup inner = reparsed.partGroups().stream()
+                .filter(g -> g.symbol() == GroupSymbol.BRACE)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(1, inner.startPartIndex());
+        assertEquals(1, inner.endPartIndex());
+        assertEquals(false, inner.groupBarline());
+        assertEquals("Horns in F", inner.name());
+        assertEquals("Hn.", inner.abbreviation());
     }
 
     private void assertSameElement(MusicElement a, MusicElement b) {

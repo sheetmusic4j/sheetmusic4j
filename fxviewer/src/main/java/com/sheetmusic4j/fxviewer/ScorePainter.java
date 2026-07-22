@@ -37,8 +37,28 @@ public final class ScorePainter {
     private final EnumSet<MarkingCategory> hiddenCategories =
             EnumSet.noneOf(MarkingCategory.class);
 
+    private boolean bracketsVisible = true;
+
     /** Creates a painter for rendering a layout onto any {@link RenderSurface}. */
     public ScorePainter() {
+    }
+
+    /**
+     * Toggle drawing of all {@link BracketPlacement bracket placements}
+     * (both implicit grand-staff braces and explicit {@code <part-group>}
+     * brackets). When {@code false}, all brackets are skipped during
+     * paint; the layout is unchanged so brackets snap back into place
+     * whenever the flag is re-enabled.
+     *
+     * @param visible whether brackets should be drawn
+     */
+    public void setBracketsVisible(boolean visible) {
+        this.bracketsVisible = visible;
+    }
+
+    /** Whether {@link BracketPlacement bracket placements} are drawn. */
+    public boolean isBracketsVisible() {
+        return bracketsVisible;
     }
 
     /**
@@ -92,11 +112,13 @@ public final class ScorePainter {
             for (SystemBarline barline : system.barlines()) {
                 drawSystemBarline(surface, barline);
             }
-            for (BracketPlacement bracket : system.brackets()) {
-                drawBracket(surface, bracket);
+            if (bracketsVisible) {
+                for (BracketPlacement bracket : system.brackets()) {
+                    drawBracket(surface, bracket);
+                }
             }
-        }
-        }
+            }
+            }
 
         /**
         * Whether the given category should be skipped by the current painter.
@@ -411,14 +433,22 @@ public final class ScorePainter {
     }
 
     /**
-     * Draw a grouping mark (brace / bracket / line) at the left edge of a
-     * system. {@link BracketPlacement.BracketShape#BRACE} is rendered via
-     * the SMuFL {@code brace} glyph when a font is available, with a
-     * primitive vertical line + serif fallback otherwise.
-     * {@link BracketPlacement.BracketShape#BRACKET} and
-     * {@link BracketPlacement.BracketShape#LINE} are reserved for a
-     * follow-up task and currently render as a plain vertical line so the
-     * switch is exhaustive.
+     * Draw a grouping mark (brace / bracket / square bracket / line) at
+     * the left edge of a system.
+     * <ul>
+     *   <li>{@link BracketPlacement.BracketShape#BRACE} — SMuFL {@code brace}
+     *       glyph when available, otherwise a primitive vertical line +
+     *       serif fallback.</li>
+     *   <li>{@link BracketPlacement.BracketShape#BRACKET} — thick vertical
+     *       stroke plus SMuFL {@code bracketTop} / {@code bracketBottom}
+     *       ornamental tips (falling back to short square serifs when
+     *       Bravura is missing).</li>
+     *   <li>{@link BracketPlacement.BracketShape#SQUARE} — thick vertical
+     *       stroke with plain square serifs at each end (no ornamental
+     *       tips).</li>
+     *   <li>{@link BracketPlacement.BracketShape#LINE} — a single thin
+     *       vertical line, no serifs.</li>
+     * </ul>
      */
     private void drawBracket(RenderSurface surface, BracketPlacement bracket) {
         double span = bracket.bottomY() - bracket.topY();
@@ -434,7 +464,9 @@ public final class ScorePainter {
                     drawBraceFallback(surface, bracket, span);
                 }
             }
-            case BRACKET, LINE -> drawBracketLineFallback(surface, bracket);
+            case BRACKET -> drawBracketWithOrnaments(surface, bracket, span);
+            case SQUARE -> drawSquareBracket(surface, bracket, span);
+            case LINE -> drawBracketLineFallback(surface, bracket);
         }
     }
 
@@ -455,9 +487,55 @@ public final class ScorePainter {
     }
 
     /**
-     * Fallback for the not-yet-emitted {@link BracketPlacement.BracketShape#BRACKET}
-     * and {@link BracketPlacement.BracketShape#LINE} shapes. Renders a
-     * plain vertical line so downstream painters remain exhaustive.
+     * Draw a canonical orchestral bracket: a thick vertical line with a
+     * small overshoot at each end plus the SMuFL {@code bracketTop} /
+     * {@code bracketBottom} ornamental tips. When Bravura is unavailable,
+     * falls back to short horizontal serifs so the shape still reads as a
+     * bracket rather than a plain vertical line.
+     */
+    private void drawBracketWithOrnaments(RenderSurface surface, BracketPlacement bracket, double span) {
+        double x = bracket.x();
+        // Overshoot each end by 0.4 of an approximated staff-line gap so
+        // the bracket visually "caps" the outermost staff lines.
+        double gapEstimate = Math.max(4.0, span * 0.05);
+        double overshoot = gapEstimate * 0.4;
+        double thickness = gapEstimate * 0.4;
+        double topExtended = bracket.topY() - overshoot;
+        double bottomExtended = bracket.bottomY() + overshoot;
+        surface.fillRect(x - thickness / 2.0, topExtended, thickness,
+                bottomExtended - topExtended);
+        boolean topDrawn = surface.drawSmuflGlyph("\uE003", x, bracket.topY(), span);
+        boolean bottomDrawn = surface.drawSmuflGlyph("\uE004", x, bracket.bottomY(), span);
+        if (!topDrawn || !bottomDrawn) {
+            double serif = gapEstimate * 0.9;
+            if (!topDrawn) {
+                surface.strokeLine(x, topExtended, x + serif, topExtended);
+            }
+            if (!bottomDrawn) {
+                surface.strokeLine(x, bottomExtended, x + serif, bottomExtended);
+            }
+        }
+    }
+
+    /**
+     * Draw a plain rectangular "square" bracket: same thick vertical
+     * stroke as {@link #drawBracketWithOrnaments} but with unadorned
+     * horizontal serifs at each end instead of SMuFL ornamental tips.
+     */
+    private void drawSquareBracket(RenderSurface surface, BracketPlacement bracket, double span) {
+        double x = bracket.x();
+        double gapEstimate = Math.max(4.0, span * 0.05);
+        double thickness = gapEstimate * 0.4;
+        double serif = gapEstimate * 0.9;
+        surface.fillRect(x - thickness / 2.0, bracket.topY(), thickness,
+                bracket.bottomY() - bracket.topY());
+        surface.strokeLine(x, bracket.topY(), x + serif, bracket.topY());
+        surface.strokeLine(x, bracket.bottomY(), x + serif, bracket.bottomY());
+    }
+
+    /**
+     * Draw a thin single-line grouping stroke for
+     * {@link BracketPlacement.BracketShape#LINE}.
      */
     private void drawBracketLineFallback(RenderSurface surface, BracketPlacement bracket) {
         surface.strokeLine(bracket.x(), bracket.topY(), bracket.x(), bracket.bottomY());

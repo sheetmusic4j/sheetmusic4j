@@ -10,11 +10,13 @@ import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
 import com.sheetmusic4j.core.model.Duration;
+import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Step;
@@ -115,6 +117,34 @@ class EngraverGrandStaffBraceTest {
         for (BracketPlacement br : brackets) {
             assertEquals(BracketPlacement.BracketShape.BRACE, br.shape());
         }
+    }
+
+    @Test
+    void pianoBraceCoexistsWithOrchestralBracket() {
+        Score score = Score.builder()
+                .addPart(voicePart("P1", "V1"))
+                .addPart(voicePart("P2", "V2"))
+                .addPart(grandStaffPiano("P3", "Piano"))
+                .addPartGroup(new PartGroup(1, 0, 2, GroupSymbol.BRACKET, false,
+                        null, null))
+                .build();
+        LayoutResult layout = new Engraver().layout(score, LayoutOptions.defaults());
+        SystemLayout system = layout.systems().get(0);
+        List<BracketPlacement> brackets = system.brackets();
+        BracketPlacement brace = null;
+        BracketPlacement bracket = null;
+        for (BracketPlacement b : brackets) {
+            if (b.shape() == BracketPlacement.BracketShape.BRACE) {
+                brace = b;
+            } else if (b.shape() == BracketPlacement.BracketShape.BRACKET) {
+                bracket = b;
+            }
+        }
+        assertEquals(2, brackets.size(), "expected exactly 2 brackets, got " + brackets);
+        assertTrue(brace != null && bracket != null,
+                "expected both a BRACE and a BRACKET, got " + brackets);
+        assertTrue(bracket.x() < brace.x(),
+                "orchestral bracket (" + bracket.x() + ") must be left of piano brace (" + brace.x() + ")");
     }
 
     @Test

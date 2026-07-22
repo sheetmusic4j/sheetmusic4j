@@ -96,7 +96,18 @@ public enum Glyph {
      * SMuFL {@code brace} glyph (U+E000). Drawn at the left edge of a
      * multi-staff part to visually group its staves.
      */
-    BRACE;
+    BRACE,
+    /**
+     * SMuFL {@code bracketTop} glyph (U+E003). Ornamental tip drawn at the
+     * top of a {@link BracketPlacement.BracketShape#BRACKET} bracket.
+     */
+    BRACKET_TOP,
+    /**
+     * SMuFL {@code bracketBottom} glyph (U+E004). Ornamental tip drawn at
+     * the bottom of a {@link BracketPlacement.BracketShape#BRACKET}
+     * bracket.
+     */
+    BRACKET_BOTTOM;
 
     /**
      * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.

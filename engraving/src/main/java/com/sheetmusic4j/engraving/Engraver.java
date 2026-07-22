@@ -15,6 +15,7 @@ import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.DynamicMark;
+import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
@@ -23,6 +24,7 @@ import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
@@ -148,6 +150,14 @@ public final class Engraver {
     private static final double PART_LABEL_FONT_SIZE_GAPS = 1.4;
 
     /**
+     * Horizontal spacing (in staff-line gaps) between adjacent bracket
+     * columns emitted by {@code <part-group>}. Each column sits
+     * {@code (depthFromInside + 1) * gap * BRACKET_COLUMN_STEP_GAPS} to the
+     * left of {@code contentLeft}.
+     */
+    private static final double BRACKET_COLUMN_STEP_GAPS = 1.2;
+
+    /**
      * Character-to-em ratio used by both {@link ScorePainter}'s alignment
      * fallback and {@link #computeLabelReserve}. Keep in sync with the value
      * in {@code ScorePainter.drawText}.
@@ -176,7 +186,9 @@ public final class Engraver {
                     options.topMargin() + titleBlockHeight + options.staffHeight());
         }
 
-        double labelReserve = computeLabelReserve(score, options);
+        int[] groupNestingDepths = computeGroupNestingDepths(score);
+        int maxGroupNestingDepth = maxOrMinusOne(groupNestingDepths);
+        double labelReserve = computeLabelReserve(score, options, maxGroupNestingDepth);
         double contentLeft = options.leftMargin() + labelReserve;
         double staffWidth = options.systemWidth() - contentLeft - options.rightMargin();
 
@@ -212,6 +224,11 @@ public final class Engraver {
 
             List<StaffLayout> stavesForRow = new ArrayList<>();
             List<BracketPlacement> bracketsForRow = new ArrayList<>();
+            // Per-part first/last staff layouts for this row, indexed by
+            // score.parts() position. Used to resolve per-group bracket
+            // spans after all parts have been laid out.
+            StaffLayout[] partFirstStaves = new StaffLayout[score.parts().size()];
+            StaffLayout[] partLastStaves = new StaffLayout[score.parts().size()];
             double staffTop = y;
             boolean rowHasAboveDirections = false;
             boolean rowHasHarmony = false;
@@ -232,7 +249,8 @@ public final class Engraver {
             if (rowHasHarmony) {
                 staffTop += options.staffLineGap() * HARMONY_ABOVE_RESERVE_GAPS;
             }
-            for (PartInfo p : parts) {
+            for (int partIdx = 0; partIdx < parts.size(); partIdx++) {
+                PartInfo p = parts.get(partIdx);
                 StaffLayout firstStaffOfPart = null;
                 StaffLayout lastStaffOfPart = null;
                 for (int staffIdx = 0; staffIdx < p.staveCount(); staffIdx++) {
@@ -256,6 +274,8 @@ public final class Engraver {
                                 lastStaffOfPart.lineY(STAFF_LINES - 1),
                                 BracketPlacement.BracketShape.BRACE));
                     }
+                    partFirstStaves[partIdx] = firstStaffOfPart;
+                    partLastStaves[partIdx] = lastStaffOfPart;
                 }
                 double belowReserve = 0.0;
                 if (p.hasLyrics()) {
@@ -278,6 +298,9 @@ public final class Engraver {
                         lastStaff.lineY(STAFF_LINES - 1),
                         SystemBarline.LineStyle.THIN));
             }
+            emitGroupBracketsAndBarlines(score.partGroups(), groupNestingDepths,
+                    maxGroupNestingDepth, partFirstStaves, partLastStaves,
+                    contentLeft, options, rowIdx, bracketsForRow, barlinesForRow, texts);
             systems.add(new SystemLayout(0, y, options.systemWidth(),
                     stavesForRow, barlinesForRow, bracketsForRow));
             y = staffTop;
@@ -651,19 +674,29 @@ public final class Engraver {
 
     /**
      * Compute the horizontal space to reserve to the left of every system
-     * for part-name / part-abbreviation labels. Returns {@code 0} when no
-     * part carries a non-blank name or abbreviation, so single-part
-     * unlabeled scores keep their pre-existing layout.
+     * for part-name / part-abbreviation labels and the bracket column.
+     * Returns {@code 0} when no part carries a non-blank name or
+     * abbreviation and there are no {@link PartGroup part groups}, so
+     * single-part unlabeled scores keep their pre-existing layout.
      *
-     * <p>Width estimate matches the {@code 0.55 * fontSize * length}
-     * heuristic used by {@link ScorePainter} for right/center alignment,
-     * then adds a small padding so labels never abut the system barline.
+     * <p>Width estimate for labels matches the
+     * {@code 0.55 * fontSize * length} heuristic used by
+     * {@link ScorePainter} for right/center alignment, then adds a small
+     * padding so labels never abut the system barline. Group-name /
+     * abbreviation lengths participate in the same longest-label search.
+     * When any group is declared we additionally reserve room for the
+     * bracket columns themselves, sized so the outermost column sits
+     * {@code (maxGroupNestingDepth + 1) * gap * BRACKET_COLUMN_STEP_GAPS}
+     * to the left of {@code contentLeft}.
      *
-     * @param score   the score to inspect
-     * @param options layout options; used for staff-line gap only
+     * @param score                  the score to inspect
+     * @param options                layout options; used for staff-line gap only
+     * @param maxGroupNestingDepth   max container count across all groups
+     *                               ({@code -1} when the score has none)
      * @return non-negative reserve in layout units
      */
-    private static double computeLabelReserve(Score score, LayoutOptions options) {
+    private static double computeLabelReserve(Score score, LayoutOptions options,
+                                              int maxGroupNestingDepth) {
         double gap = options.staffLineGap();
         double fontSize = gap * PART_LABEL_FONT_SIZE_GAPS;
         int longest = 0;
@@ -671,11 +704,183 @@ public final class Engraver {
             longest = Math.max(longest, labelLength(part.name()));
             longest = Math.max(longest, labelLength(part.abbreviation()));
         }
-        if (longest == 0) {
-            return 0.0;
+        for (PartGroup group : score.partGroups()) {
+            longest = Math.max(longest, labelLength(group.name()));
+            longest = Math.max(longest, labelLength(group.abbreviation()));
         }
-        return longest * LABEL_CHAR_WIDTH_RATIO * fontSize
-                + gap * PART_LABEL_TRAILING_PAD_GAPS;
+        double labelReserve = 0.0;
+        if (longest > 0) {
+            labelReserve = longest * LABEL_CHAR_WIDTH_RATIO * fontSize
+                    + gap * PART_LABEL_TRAILING_PAD_GAPS;
+        }
+        double bracketReserve = 0.0;
+        if (maxGroupNestingDepth >= 0) {
+            bracketReserve = (maxGroupNestingDepth + 1) * gap * BRACKET_COLUMN_STEP_GAPS;
+        }
+        return labelReserve + bracketReserve;
+    }
+
+    /**
+     * Compute the nesting depth of every {@link PartGroup} in
+     * {@link Score#partGroups()}. A group's depth equals the number of
+     * other groups whose part range fully contains it — outermost groups
+     * have depth 0 and innermost groups have the maximum depth.
+     *
+     * @param score the score to inspect
+     * @return array parallel to {@code score.partGroups()}; empty when the
+     *         score carries no groups
+     */
+    private static int[] computeGroupNestingDepths(Score score) {
+        List<PartGroup> groups = score.partGroups();
+        int[] depths = new int[groups.size()];
+        for (int i = 0; i < groups.size(); i++) {
+            int count = 0;
+            for (int j = 0; j < groups.size(); j++) {
+                if (i != j && groups.get(j).contains(groups.get(i))) {
+                    count++;
+                }
+            }
+            depths[i] = count;
+        }
+        return depths;
+    }
+
+    /**
+     * Maximum entry of the array, or {@code -1} when the array is empty.
+     */
+    private static int maxOrMinusOne(int[] values) {
+        int max = -1;
+        for (int v : values) {
+            if (v > max) {
+                max = v;
+            }
+        }
+        return max;
+    }
+
+    /**
+     * Emit bracket placements, optional group barlines, and group-name
+     * labels for every {@link PartGroup} that intersects the current row.
+     * Nesting: outer groups (fewest containers) sit furthest to the left,
+     * inner groups sit closer to the staff. A group barline coinciding
+     * exactly with the previously-emitted system left barline is skipped
+     * to avoid drawing the same line twice.
+     *
+     * @param groups             all part groups declared on the score
+     * @param nestingDepths      per-group container count (see
+     *                           {@link #computeGroupNestingDepths(Score)})
+     * @param maxNestingDepth    largest value in {@code nestingDepths}
+     * @param partFirstStaves    first staff of each part in this row
+     *                           (null when the part has no staves in the row)
+     * @param partLastStaves     last staff of each part in this row
+     * @param contentLeft        x of the staff content edge / system barline
+     * @param options            layout options (for the staff-line gap)
+     * @param rowIdx             0-based row index (row 0 uses full names)
+     * @param brackets           output list of bracket placements
+     * @param barlines           output list of system barlines
+     * @param texts              output list of text placements
+     */
+    private static void emitGroupBracketsAndBarlines(List<PartGroup> groups, int[] nestingDepths,
+                                                     int maxNestingDepth,
+                                                     StaffLayout[] partFirstStaves,
+                                                     StaffLayout[] partLastStaves,
+                                                     double contentLeft, LayoutOptions options,
+                                                     int rowIdx,
+                                                     List<BracketPlacement> brackets,
+                                                     List<SystemBarline> barlines,
+                                                     List<TextPlacement> texts) {
+        if (groups.isEmpty()) {
+            return;
+        }
+        double gap = options.staffLineGap();
+        double fontSize = gap * PART_LABEL_FONT_SIZE_GAPS;
+        // Pre-capture the system left barline (if any) so we can skip a
+        // group barline that would draw exactly the same segment.
+        SystemBarline systemLeftBarline = barlines.isEmpty() ? null : barlines.get(0);
+
+        for (int i = 0; i < groups.size(); i++) {
+            PartGroup group = groups.get(i);
+            StaffLayout firstStaff = firstStaffInGroup(group, partFirstStaves);
+            StaffLayout lastStaff = lastStaffInGroup(group, partLastStaves);
+            if (firstStaff == null || lastStaff == null) {
+                continue;
+            }
+            double topY = firstStaff.lineY(0);
+            double bottomY = lastStaff.lineY(STAFF_LINES - 1);
+            // Depth from the innermost group inwards: innermost = 0.
+            int depthFromInside = maxNestingDepth - nestingDepths[i];
+            double columnX = contentLeft - (depthFromInside + 1) * gap * BRACKET_COLUMN_STEP_GAPS;
+
+            BracketPlacement.BracketShape shape = shapeFor(group.symbol());
+            if (shape != null) {
+                brackets.add(new BracketPlacement(columnX, topY, bottomY, shape));
+            }
+            if (group.groupBarline()) {
+                boolean overlapsSystemBarline = systemLeftBarline != null
+                        && Math.abs(systemLeftBarline.x() - contentLeft) < 1e-6
+                        && Math.abs(systemLeftBarline.topY() - topY) < 1e-6
+                        && Math.abs(systemLeftBarline.bottomY() - bottomY) < 1e-6;
+                if (!overlapsSystemBarline) {
+                    barlines.add(new SystemBarline(contentLeft, topY, bottomY,
+                            SystemBarline.LineStyle.THIN));
+                }
+            }
+            String labelText;
+            if (rowIdx == 0) {
+                labelText = group.name();
+            } else {
+                labelText = group.abbreviation() != null ? group.abbreviation() : group.name();
+            }
+            if (labelText != null && !labelText.isBlank()) {
+                double labelY = (topY + bottomY) / 2.0 + fontSize / 2.0;
+                texts.add(new TextPlacement(labelText, columnX, labelY,
+                        fontSize, TextPlacement.Align.RIGHT, MarkingCategory.PART_LABEL));
+            }
+        }
+    }
+
+    /**
+     * Map a MusicXML {@link GroupSymbol} to an engraved
+     * {@link BracketPlacement.BracketShape}. Returns {@code null} when the
+     * source requested {@link GroupSymbol#NONE}, which suppresses bracket
+     * rendering entirely for that group.
+     */
+    private static BracketPlacement.BracketShape shapeFor(GroupSymbol symbol) {
+        return switch (symbol) {
+            case BRACKET -> BracketPlacement.BracketShape.BRACKET;
+            case BRACE -> BracketPlacement.BracketShape.BRACE;
+            case SQUARE -> BracketPlacement.BracketShape.SQUARE;
+            case LINE -> BracketPlacement.BracketShape.LINE;
+            case NONE -> null;
+        };
+    }
+
+    /**
+     * First staff belonging to any part inside the group's inclusive part
+     * range that has a staff in this row.
+     */
+    private static StaffLayout firstStaffInGroup(PartGroup group, StaffLayout[] partFirstStaves) {
+        int end = Math.min(group.endPartIndex(), partFirstStaves.length - 1);
+        for (int idx = Math.max(0, group.startPartIndex()); idx <= end; idx++) {
+            if (partFirstStaves[idx] != null) {
+                return partFirstStaves[idx];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Last staff belonging to any part inside the group's inclusive part
+     * range that has a staff in this row.
+     */
+    private static StaffLayout lastStaffInGroup(PartGroup group, StaffLayout[] partLastStaves) {
+        int end = Math.min(group.endPartIndex(), partLastStaves.length - 1);
+        for (int idx = end; idx >= Math.max(0, group.startPartIndex()); idx--) {
+            if (partLastStaves[idx] != null) {
+                return partLastStaves[idx];
+            }
+        }
+        return null;
     }
 
     /**

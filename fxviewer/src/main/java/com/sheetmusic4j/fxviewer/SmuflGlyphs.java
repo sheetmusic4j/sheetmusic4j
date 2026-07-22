@@ -92,6 +92,8 @@ public final class SmuflGlyphs {
             case DYNAMIC_RF -> "\uE53C";
             case DYNAMIC_RFZ -> "\uE53D";
             case BRACE -> "\uE000";
+            case BRACKET_TOP -> "\uE003";
+            case BRACKET_BOTTOM -> "\uE004";
             default -> null;
             };
             }
@@ -126,6 +128,7 @@ public final class SmuflGlyphs {
                     DYNAMIC_FP, DYNAMIC_SF, DYNAMIC_RF -> 2.4;
             case DYNAMIC_PPP, DYNAMIC_FFF, DYNAMIC_SFZ, DYNAMIC_RFZ -> 3.2;
             case BRACE -> 0.6;
+            case BRACKET_TOP, BRACKET_BOTTOM -> 0.7;
             default -> 0.0;
             };
         // 1 em = 4 staff spaces in SMuFL, so staffSpaces / 4 = fraction of the em/sizeHint.

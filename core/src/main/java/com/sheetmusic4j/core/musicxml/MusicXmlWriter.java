@@ -21,6 +21,7 @@ import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
+import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
@@ -28,6 +29,7 @@ import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
@@ -90,21 +92,89 @@ public final class MusicXmlWriter {
             w.end("identification");
         }
 
-        w.start("part-list");
+        writePartList(w, score);
+
         for (Part part : score.parts()) {
+            writePart(w, part);
+        }
+        w.end("score-partwise");
+    }
+
+    /**
+     * Emit the {@code <part-list>} block, interleaving {@code <part-group>}
+     * start/stop sentinels around the {@code <score-part>} entries so the
+     * nesting captured in {@link Score#partGroups()} round-trips through the
+     * writer. Groups are emitted in document order (outer first); stops
+     * fire in reverse start-order so nesting closes LIFO.
+     */
+    private void writePartList(IndentingWriter w, Score score) throws XMLStreamException {
+        w.start("part-list");
+        // Sort defensively by (startPartIndex ascending, endPartIndex
+        // descending) so nested inner groups always follow their
+        // enclosing outer group.
+        List<PartGroup> groups = new java.util.ArrayList<>(score.partGroups());
+        groups.sort((a, b) -> {
+            int cmp = Integer.compare(a.startPartIndex(), b.startPartIndex());
+            if (cmp != 0) {
+                return cmp;
+            }
+            return Integer.compare(b.endPartIndex(), a.endPartIndex());
+        });
+        List<Part> parts = score.parts();
+        for (int i = 0; i < parts.size(); i++) {
+            for (PartGroup group : groups) {
+                if (group.startPartIndex() == i) {
+                    writePartGroupStart(w, group);
+                }
+            }
+            Part part = parts.get(i);
             w.start("score-part", "id", part.id());
             w.textElement("part-name", part.name() != null ? part.name() : part.id());
             if (part.abbreviation() != null) {
                 w.textElement("part-abbreviation", part.abbreviation());
             }
             w.end("score-part");
+            // Close inner groups first: iterate in reverse start-order.
+            for (int j = groups.size() - 1; j >= 0; j--) {
+                PartGroup group = groups.get(j);
+                if (group.endPartIndex() == i) {
+                    writePartGroupStop(w, group);
+                }
+            }
         }
         w.end("part-list");
+    }
 
-        for (Part part : score.parts()) {
-            writePart(w, part);
+    /**
+     * Emit a single {@code <part-group type="start">} block with any
+     * declared {@code <group-name>}, {@code <group-abbreviation>},
+     * {@code <group-symbol>}, and {@code <group-barline>} children.
+     */
+    private void writePartGroupStart(IndentingWriter w, PartGroup group) throws XMLStreamException {
+        w.start("part-group",
+                "number", Integer.toString(group.number()),
+                "type", "start");
+        if (group.name() != null && !group.name().isBlank()) {
+            w.textElement("group-name", group.name());
         }
-        w.end("score-partwise");
+        if (group.abbreviation() != null && !group.abbreviation().isBlank()) {
+            w.textElement("group-abbreviation", group.abbreviation());
+        }
+        if (group.symbol() != GroupSymbol.NONE) {
+            w.textElement("group-symbol", group.symbol().xmlValue());
+        }
+        w.textElement("group-barline", group.groupBarline() ? "yes" : "no");
+        w.end("part-group");
+    }
+
+    /**
+     * Emit a single self-closed {@code <part-group type="stop"/>} tag.
+     */
+    private void writePartGroupStop(IndentingWriter w, PartGroup group) throws XMLStreamException {
+        w.indent();
+        w.writer.writeEmptyElement("part-group");
+        w.writer.writeAttribute("number", Integer.toString(group.number()));
+        w.writer.writeAttribute("type", "stop");
     }
 
     private void writePart(IndentingWriter w, Part part) throws XMLStreamException {

@@ -32,6 +32,7 @@ import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.DynamicMark;
+import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.HarmonyKind;
 import com.sheetmusic4j.core.model.KeySignature;
@@ -40,6 +41,7 @@ import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
+import com.sheetmusic4j.core.model.PartGroup;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
@@ -172,6 +174,14 @@ public final class MusicXmlReader {
         Map<String, ScorePartInfo> scoreParts = new LinkedHashMap<>();
         Map<String, Part.Builder> partBuilders = new LinkedHashMap<>();
         List<String> partOrder = new ArrayList<>();
+        // Groups pending a matching type="stop" sentinel. In canonical
+        // formatting <part-group start> appears immediately before the
+        // <score-part>s it wraps and <part-group stop> immediately after,
+        // so "startIndex = current partOrder.size()" and "endIndex =
+        // partOrder.size() - 1 at stop" together yield inclusive part
+        // ranges. Malformed groups (stop without start, unclosed at EOF)
+        // are silently dropped.
+        Map<Integer, PendingGroup> openGroups = new LinkedHashMap<>();
 
         while (reader.hasNext()) {
             int event = reader.next();
@@ -183,6 +193,7 @@ public final class MusicXmlReader {
                     case "identification" -> readIdentification(reader, score);
                     case "credit" -> readCredit(reader, score);
                     case "score-part" -> readScorePart(reader, scoreParts);
+                    case "part-group" -> handlePartGroup(reader, score, openGroups, partOrder.size());
                     case "part" -> {
                         String id = reader.getAttributeValue(null, "id");
                         ScorePartInfo info = scoreParts.get(id);
@@ -202,6 +213,95 @@ public final class MusicXmlReader {
             score.addPart(partBuilders.get(id).build());
         }
         return score.build();
+    }
+
+    /**
+     * Handle a single {@code <part-group>} element. On {@code type="start"}
+     * records a {@link PendingGroup} keyed by the group number; on
+     * {@code type="stop"} closes the matching pending group and appends the
+     * resulting {@link PartGroup} to the score. Malformed cases (stop
+     * without start, missing type attribute, unknown type) are dropped
+     * without throwing.
+     *
+     * @param reader       the XML reader positioned on the start element
+     * @param score        the target score builder
+     * @param openGroups   currently pending group starts, keyed by number
+     * @param currentIndex the index of the next {@code <score-part>} that
+     *                     will follow (i.e. {@code partOrder.size()})
+     */
+    private void handlePartGroup(XMLStreamReader reader, Score.Builder score,
+                                 Map<Integer, PendingGroup> openGroups, int currentIndex)
+            throws XMLStreamException {
+        int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
+        String type = reader.getAttributeValue(null, "type");
+        ParsedPartGroup parsed = readPartGroup(reader);
+        if ("start".equalsIgnoreCase(type)) {
+            openGroups.put(number, new PendingGroup(
+                    number, currentIndex, parsed.symbol, parsed.barline,
+                    parsed.name, parsed.abbreviation));
+        } else if ("stop".equalsIgnoreCase(type)) {
+            PendingGroup pending = openGroups.remove(number);
+            if (pending == null) {
+                // Malformed input — drop silently.
+                return;
+            }
+            int endIndex = currentIndex - 1;
+            if (endIndex < pending.startIndex) {
+                // Empty group (no score-parts in between) — drop.
+                return;
+            }
+            score.addPartGroup(new PartGroup(
+                    pending.number, pending.startIndex, endIndex,
+                    pending.symbol, pending.barline, pending.name, pending.abbreviation));
+        }
+    }
+
+    /**
+     * Read the body of a {@code <part-group>} element up to its matching
+     * end tag, collecting the optional child elements the model cares
+     * about.
+     */
+    private ParsedPartGroup readPartGroup(XMLStreamReader reader) throws XMLStreamException {
+        String name = null;
+        String abbreviation = null;
+        GroupSymbol symbol = GroupSymbol.NONE;
+        boolean barline = false;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                switch (reader.getLocalName()) {
+                    case "group-name" -> name = readText(reader);
+                    case "group-abbreviation" -> abbreviation = readText(reader);
+                    case "group-symbol" -> symbol = GroupSymbol.fromXml(readText(reader));
+                    case "group-barline" -> {
+                        String text = readText(reader);
+                        barline = text != null && text.trim().equalsIgnoreCase("yes");
+                    }
+                    default -> skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT
+                    && "part-group".equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        return new ParsedPartGroup(symbol, barline, name, abbreviation);
+    }
+
+    /**
+     * Transient record capturing the payload of a single {@code <part-group>}
+     * element (without its number/type attributes, which drive the
+     * pairing logic).
+     */
+    private record ParsedPartGroup(GroupSymbol symbol, boolean barline,
+                                   String name, String abbreviation) {
+    }
+
+    /**
+     * Bookkeeping for a {@code <part-group type="start"/>} awaiting its
+     * matching stop sentinel.
+     */
+    private record PendingGroup(int number, int startIndex, GroupSymbol symbol,
+                                boolean barline, String name, String abbreviation) {
     }
 
     /**

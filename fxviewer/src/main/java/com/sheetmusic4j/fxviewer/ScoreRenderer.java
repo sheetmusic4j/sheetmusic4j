@@ -38,4 +38,19 @@ public final class ScoreRenderer {
     public Set<MarkingCategory> getHiddenTextCategories() {
         return painter.getHiddenCategories();
     }
-}
+
+    /**
+     * Toggle the visibility of all {@link com.sheetmusic4j.engraving.BracketPlacement bracket placements}
+     * on the underlying painter. See {@link ScorePainter#setBracketsVisible(boolean)}.
+     *
+     * @param visible whether brackets should be drawn
+     */
+    public void setBracketsVisible(boolean visible) {
+        painter.setBracketsVisible(visible);
+    }
+
+    /** @return whether brackets are currently drawn by the underlying painter. */
+    public boolean isBracketsVisible() {
+        return painter.isBracketsVisible();
+    }
+    }

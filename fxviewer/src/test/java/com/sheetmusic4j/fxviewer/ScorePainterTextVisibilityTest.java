@@ -9,11 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
+import com.sheetmusic4j.engraving.BracketPlacement;
 import com.sheetmusic4j.engraving.Glyph;
 import com.sheetmusic4j.engraving.GlyphPlacement;
 import com.sheetmusic4j.engraving.LayoutResult;
 import com.sheetmusic4j.engraving.MarkingCategory;
 import com.sheetmusic4j.engraving.StaffLayout;
+import com.sheetmusic4j.engraving.SystemBarline;
 import com.sheetmusic4j.engraving.SystemLayout;
 import com.sheetmusic4j.engraving.TextPlacement;
 
@@ -184,6 +186,32 @@ class ScorePainterTextVisibilityTest {
         painter.paint(hidden, layout, 500, 200);
         assertTrue(hidden.textsDrawn.isEmpty(),
                 "instrument label must be skipped when PART_LABEL category is hidden");
+    }
+
+    @Test
+    void hidingBracketsSkipsAllBracketPlacements() {
+        StaffLayout staff = new StaffLayout(0, 100, 500, 10.0,
+                List.of(), List.of(), List.of(), List.of());
+        List<BracketPlacement> brackets = List.of(
+                new BracketPlacement(10, 100, 150, BracketPlacement.BracketShape.BRACE),
+                new BracketPlacement(4, 100, 150, BracketPlacement.BracketShape.BRACKET));
+        SystemLayout system = new SystemLayout(0, 100, 500, List.of(staff),
+                List.<SystemBarline>of(), brackets);
+        LayoutResult layout = new LayoutResult(List.of(system), List.of(), 500, 200);
+
+        RecordingSurface visible = new RecordingSurface();
+        new ScorePainter().paint(visible, layout, 500, 200);
+        int visibleStrokes = visible.strokeLineCount;
+
+        RecordingSurface hidden = new RecordingSurface();
+        ScorePainter painter = new ScorePainter();
+        painter.setBracketsVisible(false);
+        painter.paint(hidden, layout, 500, 200);
+        assertTrue(hidden.strokeLineCount < visibleStrokes,
+                "hiding brackets must reduce stroke count (visible=" + visibleStrokes
+                        + ", hidden=" + hidden.strokeLineCount + ")");
+        // Staff lines must still be drawn even when brackets are hidden.
+        assertTrue(hidden.strokeLineCount > 0);
     }
 
     @Test
