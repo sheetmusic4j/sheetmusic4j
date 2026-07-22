@@ -400,7 +400,11 @@ public final class ScorePainter {
         double clearance = gap * 0.8;
         double midY;
         if (slur.curveUp()) {
-            double defaultPeak = avgY - Math.max(gap * 1.3, span * 0.12);
+            // Anchored to the leading (start) note's own height, not the
+            // average with the end note - a slur curving above shouldn't
+            // have its default depth pulled around by wherever the phrase
+            // happens to land, which can be a very different pitch.
+            double defaultPeak = slur.y1() - Math.max(gap * 1.3, span * 0.12);
             midY = Math.min(defaultPeak, slur.clearY() - clearance);
         } else {
             double defaultPeak = avgY + Math.max(gap * 1.3, span * 0.12);
