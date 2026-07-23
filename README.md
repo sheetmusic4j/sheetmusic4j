@@ -1,7 +1,7 @@
 # Sheetmusic4J :: A Java (FX) library for rendering and interacting with sheet music.
 
-[![Build](https://github.com/sheetmusic4j/sheetmusic4j/actions/workflows/maven.yml/badge.svg)](https://github.com/sheetmusic4j/sheetmusic4j/actions/workflows/maven.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/com.sheetmusic4j/sheetmusic4j.svg?label=Maven%20Central)](https://central.sonatype.com/search?q=g:com.sheetmusic4j)
+[![Build](https://github.com/sheetmusic4j/sheetmusic4j/actions/workflows/ci.yml/badge.svg)](https://github.com/sheetmusic4j/sheetmusic4j/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/com.sheetmusic4j/core.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/com.sheetmusic4j/core)
 [![License](https://img.shields.io/github/license/sheetmusic4j/sheetmusic4j?label=License)](http://www.apache.org/licenses/LICENSE-2.0)
 [![Site](https://img.shields.io/badge/Website-sheetmusic4j.com-green)](https://sheetmusic4j.com)
 
