@@ -20,6 +20,8 @@
 
     <properties>
         <exec.mainClass>com.sheetmusic4j.fxdemo.SheetDemoApp</exec.mainClass>
+        <!-- Demo application: inherits maven-deploy-plugin skip=true from the parent POM,
+             so it is NOT published to Maven Central. -->
     </properties>
 
     <dependencies>

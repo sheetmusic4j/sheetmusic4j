@@ -25,4 +25,17 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-</project>
+
+    <build>
+        <plugins>
+            <!-- Opt in to Maven Central publishing (parent defaults to skip=true). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>false</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    </project>
