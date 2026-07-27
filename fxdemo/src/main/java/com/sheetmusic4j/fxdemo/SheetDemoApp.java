@@ -46,6 +46,8 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -85,6 +87,7 @@ public final class SheetDemoApp extends Application {
             List.of(".png", ".jpg", ".jpeg", ".gif", ".bmp");
 
     private static final double TREE_DIVIDER = 0.18;
+    private static final Log log = LogFactory.getLog(SheetDemoApp.class);
 
     private final SheetView sheetView = new SheetView();
     private final PDFView pdfView = new PDFView();
@@ -553,7 +556,7 @@ public final class SheetDemoApp extends Application {
     private Path createReportDirectory() throws IOException {
         String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
                 .format(java.time.LocalDateTime.now());
-        Path dir = Path.of("target", "sheetmusic4j-reports", "report-" + stamp);
+        Path dir = Path.of( "reports", "report-" + stamp);
         Files.createDirectories(dir);
         return dir;
     }
@@ -576,6 +579,7 @@ public final class SheetDemoApp extends Application {
                 + "  \"previewImage\": " + jsonString(previewImage != null ? previewImage.getFileName().toString() : null) + "\n"
                 + "}\n";
         Files.writeString(dir.resolve("report.json"), json);
+        log.info("Report written to " + dir.toAbsolutePath());
     }
 
     private static String jsonString(String value) {
