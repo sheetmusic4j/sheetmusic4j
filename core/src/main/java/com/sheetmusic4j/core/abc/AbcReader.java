@@ -128,6 +128,13 @@ public final class AbcReader {
         List<List<String>> out = new ArrayList<>();
         List<String> current = null;
         for (String raw : lines) {
+            if (raw.stripLeading().startsWith("%")) {
+                // Pure comment line (full-line %/%% directive): ignored, and
+                // must NOT be treated as a blank separator line below, since
+                // stripping its content would otherwise make it look blank
+                // and prematurely terminate the tune it appears inside of.
+                continue;
+            }
             String stripped = stripInlineComment(raw);
             if (isBlank(stripped)) {
                 if (current != null && !current.isEmpty()) {
@@ -141,12 +148,6 @@ public final class AbcReader {
                 current = new ArrayList<>();
                 out.add(current);
                 current.add(stripped);
-            } else if (stripped.startsWith("%%") || stripped.startsWith("%")) {
-                // File-level style/comment lines outside a tune are ignored.
-                if (current != null) {
-                    // If we're inside a tune the comment was already stripped;
-                    // nothing more to do.
-                }
             } else if (current != null) {
                 current.add(stripped);
             }

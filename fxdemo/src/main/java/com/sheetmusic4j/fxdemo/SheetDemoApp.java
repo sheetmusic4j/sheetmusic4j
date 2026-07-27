@@ -114,8 +114,6 @@ public final class SheetDemoApp extends Application {
     private final Button generateReferenceButton = new Button("Compare against PDF");
 
     private SplitPane split;
-    private BorderPane pdfPane;
-    private BorderPane imagePane;
     private BorderPane treePane;
     private TreeView<Path> resourceTree;
     private Path resourcesRoot;
@@ -194,7 +192,7 @@ public final class SheetDemoApp extends Application {
 
         List<String> args = getParameters().getRaw();
         if (!args.isEmpty()) {
-            openFile(Path.of(args.get(0)));
+            openFile(Path.of(args.getFirst()));
         } else {
             updateDebug(null, Optional.empty());
         }
@@ -314,6 +312,7 @@ public final class SheetDemoApp extends Application {
     }
 
     private SplitPane buildContent() {
+        BorderPane imagePane;
         scoreScroll = new ScrollPane(sheetView);
         // Do NOT fit the view to the viewport: SheetView is content-sized so
         // the ScrollPane can discover the real score dimensions and show
