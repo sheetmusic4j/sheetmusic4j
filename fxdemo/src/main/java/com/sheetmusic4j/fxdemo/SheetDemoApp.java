@@ -37,6 +37,7 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
@@ -48,6 +49,9 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TreeCell;
+import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeView;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
@@ -64,17 +68,8 @@ import javafx.util.Duration;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.stream.Stream;
 
 /**
@@ -96,7 +91,7 @@ public final class SheetDemoApp extends Application {
 
     /** Extensions the resource tree lists as loadable scores. */
     private static final List<String> SCORE_EXTENSIONS =
-            List.of(".musicxml", ".xml", ".mxl", ".mid", ".midi");
+            List.of(".musicxml", ".xml", ".mxl", ".mid", ".midi", ".abc");
     /** Extensions the resource tree lists as directly previewable images. */
     private static final List<String> IMAGE_EXTENSIONS =
             List.of(".png", ".jpg", ".jpeg", ".gif", ".bmp");
@@ -454,30 +449,13 @@ public final class SheetDemoApp extends Application {
     }
 
     /**
-     * Dispatches a resource-tree file selection: known score formats load into the
-     * {@link SheetView}; PDFs and images show in the preview pane instead.
+     * Dispatches a resource-tree file selection. The tree only ever lists
+     * score files (see {@link #SCORE_EXTENSIONS}), so this simply loads it.
      *
      * @param path selected file path
      */
     private void openTreeSelection(Path path) {
-        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (SCORE_EXTENSIONS.stream().anyMatch(name::endsWith)) {
-            openFile(path);
-        } else if (name.endsWith(".pdf")) {
-            showPreviewPdf(path);
-        } else if (IMAGE_EXTENSIONS.stream().anyMatch(name::endsWith)) {
-            showPreviewImage(path);
-        }
-    }
-
-    private void showPreviewPdf(Path pdfPath) {
-        try (InputStream in = Files.newInputStream(pdfPath)) {
-            pdfView.load(in);
-            showPreviewNode(pdfView);
-            statusLabel.setText("Preview: " + pdfPath.toAbsolutePath());
-        } catch (IOException | RuntimeException ex) {
-            showError("Failed to preview PDF", pdfPath + "\n\n" + ex.getMessage());
-        }
+        openFile(path);
     }
 
     private void showPreviewImage(Path imagePath) {
@@ -642,7 +620,14 @@ public final class SheetDemoApp extends Application {
             currentScore = score;
             sheetView.setScore(score);
             Optional<Path> pdf = PdfSibling.existingPathFor(path);
-            showPdfSibling(pdf);
+            Optional<Path> image = pdf.isPresent() ? Optional.empty() : ImageSibling.existingPathFor(path);
+            if (pdf.isPresent()) {
+                showPdfSibling(pdf);
+            } else if (image.isPresent()) {
+                showPreviewImage(image.get());
+            } else {
+                removePreview();
+            }
             updateDebug(score, pdf);
             stage.setTitle("Sheetmusic4J Demo - " + path.getFileName());
             generateReferenceButton.setDisable(pdf.isEmpty());
@@ -905,8 +890,9 @@ public final class SheetDemoApp extends Application {
     /**
      * Lazily-populated {@link TreeItem} backed by a filesystem {@link Path}. Directory
      * children are listed only when first expanded, and are filtered to
-     * subdirectories plus files this demo knows how to open or preview (see
-     * {@link #SCORE_EXTENSIONS} and {@link #IMAGE_EXTENSIONS}, plus {@code .pdf}).
+     * subdirectories plus files this demo knows how to open (see
+     * {@link #SCORE_EXTENSIONS}). PDFs and images are shown as reference previews
+     * alongside a loaded score, not as selectable tree entries.
      */
     private static final class PathTreeItem extends TreeItem<Path> {
 
@@ -935,9 +921,7 @@ public final class SheetDemoApp extends Application {
                 return true;
             }
             String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-            return name.endsWith(".pdf")
-                    || SCORE_EXTENSIONS.stream().anyMatch(name::endsWith)
-                    || IMAGE_EXTENSIONS.stream().anyMatch(name::endsWith);
+            return SCORE_EXTENSIONS.stream().anyMatch(name::endsWith);
         }
 
         private static List<TreeItem<Path>> listChildren(Path dir) {
