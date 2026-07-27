@@ -256,6 +256,13 @@ public final class Engraver {
      */
     private static final double DOT_TRAILING_PAD_GAPS = 0.5;
 
+    /**
+     * Maximum ratio, within a single weighting context (a measure's
+     * elements, or a row's measures), between the largest and smallest
+     * width weight. See {@link #capWeightRatio}.
+     */
+    private static final double MAX_WEIGHT_RATIO = 4.0;
+
     public LayoutResult layout(Score score, LayoutOptions options) {
         List<TextPlacement> texts = new ArrayList<>();
         List<NoteAnchor> anchors = new ArrayList<>();
@@ -1380,13 +1387,16 @@ public final class Engraver {
             double[] timedX = new double[timedElements.size()];
             if (!timedElements.isEmpty()) {
                 double[] weights = new double[timedElements.size()];
-                double sumWeights = 0.0;
                 for (int i = 0; i < timedElements.size(); i++) {
                     double w = noteWidthWeight(timedElements.get(i));
                     if (w <= 0) {
                         w = 1.0;
                     }
                     weights[i] = w;
+                }
+                capWeightRatio(weights);
+                double sumWeights = 0.0;
+                for (double w : weights) {
                     sumWeights += w;
                 }
                 double startCursor = contentStart;
@@ -1507,11 +1517,48 @@ public final class Engraver {
     }
 
     private static double measureWeight(Measure measure) {
+        List<MusicElement> elements = measure.elements();
+        double[] weights = new double[elements.size()];
+        for (int i = 0; i < elements.size(); i++) {
+            weights[i] = noteWidthWeight(elements.get(i));
+        }
+        capWeightRatio(weights);
         double sum = 0.0;
-        for (MusicElement element : measure.elements()) {
-            sum += noteWidthWeight(element);
+        for (double w : weights) {
+            sum += w;
         }
         return sum > 0 ? sum : 1.0;
+    }
+
+    /**
+     * Clamp every positive value in {@code weights} to at most {@link
+     * #MAX_WEIGHT_RATIO} times the smallest positive value present.
+     *
+     * <p>Note width weight grows with duration ({@code d^0.6}), which is
+     * correct engraving practice — but within one measure this can swing
+     * far enough that a single very long note (e.g. a triple-dotted quarter)
+     * claims several times the horizontal room a neighbouring very short
+     * note (e.g. a 32nd) gets, reading as a wide empty gap next to a
+     * cramped one rather than a smooth "longer note, more room" gradient.
+     * Capping the ratio keeps the direction of the effect (longer still
+     * gets more space) while bounding how extreme the spread can get.
+     */
+    private static void capWeightRatio(double[] weights) {
+        double min = Double.MAX_VALUE;
+        for (double w : weights) {
+            if (w > 0 && w < min) {
+                min = w;
+            }
+        }
+        if (min == Double.MAX_VALUE) {
+            return;
+        }
+        double ceiling = min * MAX_WEIGHT_RATIO;
+        for (int i = 0; i < weights.length; i++) {
+            if (weights[i] > ceiling) {
+                weights[i] = ceiling;
+            }
+        }
     }
 
     /**

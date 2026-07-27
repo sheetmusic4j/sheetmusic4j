@@ -496,13 +496,12 @@ public final class AbcReader {
             currentMeasure = new PendingMeasure(measureNumber);
             pendingElements = currentMeasure.elements;
             if (!firstMeasureFlushed && lineMeasures.isEmpty()) {
-                Attributes attributes = Attributes.builder()
+                currentMeasure.attributes = Attributes.builder()
                         .divisions(DIVISIONS)
                         .keySignature(key)
                         .timeSignature(timeSignature)
                         .clef(Clef.treble())
                         .build();
-                currentMeasure.attributes = attributes;
                 if (pendingTempo != null) {
                     currentMeasure.elements.add(new Direction(pendingTempo,
                             com.sheetmusic4j.core.model.Placement.ABOVE));
