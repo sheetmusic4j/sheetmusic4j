@@ -249,6 +249,13 @@ public final class Engraver {
      */
     private static final double ACCIDENTAL_RESERVE_GAPS = 0.9;
 
+    /**
+     * Trailing padding (in staff-line gaps) reserved after the rightmost
+     * augmentation dot, so the dot's own glyph width doesn't touch the next
+     * notehead.
+     */
+    private static final double DOT_TRAILING_PAD_GAPS = 0.5;
+
     public LayoutResult layout(Score score, LayoutOptions options) {
         List<TextPlacement> texts = new ArrayList<>();
         List<NoteAnchor> anchors = new ArrayList<>();
@@ -1370,7 +1377,6 @@ public final class Engraver {
             }
             double available = (cursorX + measureWidth) - contentStart - options.staffLineGap();
             double gap = options.staffLineGap();
-            double minSlot = MIN_NOTE_ADVANCE_GAPS * gap;
             double[] timedX = new double[timedElements.size()];
             if (!timedElements.isEmpty()) {
                 double[] weights = new double[timedElements.size()];
@@ -1388,8 +1394,9 @@ public final class Engraver {
                     double slotWidth = sumWeights > 0
                             ? available * (weights[i] / sumWeights)
                             : available / timedElements.size();
-                    if (slotWidth < minSlot) {
-                        slotWidth = minSlot;
+                    double slot = minSlotFor(timedElements.get(i), gap);
+                    if (slotWidth < slot) {
+                        slotWidth = slot;
                     }
                     double leftShift = hasAccidental(timedElements.get(i))
                             ? ACCIDENTAL_RESERVE_GAPS * gap
@@ -1522,18 +1529,36 @@ public final class Engraver {
      * past the barlines instead of the row simply breaking sooner.
      */
     private static double measureContentMinWidth(Measure measure, LayoutOptions options) {
+        double gap = options.staffLineGap();
         int count = 0;
+        double contentFloor = 2 * gap;
         for (MusicElement element : measure.elements()) {
             if (!(element instanceof Direction) && !(element instanceof Harmony)) {
                 count++;
+                contentFloor += minSlotFor(element, gap);
             }
         }
         if (count == 0) {
             return options.measureMinWidth();
         }
-        double gap = options.staffLineGap();
-        double contentFloor = count * MIN_NOTE_ADVANCE_GAPS * gap + 2 * gap;
         return Math.max(options.measureMinWidth(), contentFloor);
+    }
+
+    /**
+     * Minimum horizontal slot an element needs, in pixels: normally just
+     * {@code MIN_NOTE_ADVANCE_GAPS * gap}, but widened for augmentation dots
+     * so the dot(s) — drawn starting at {@code noteX + 1.2 * gap} and spaced
+     * {@code 0.6 * gap} apart, see the dot loop in {@code placeNote} — have
+     * room before the next element's slot begins.
+     */
+    private static double minSlotFor(MusicElement element, double gap) {
+        double slot = MIN_NOTE_ADVANCE_GAPS * gap;
+        int dots = dotCount(element);
+        if (dots > 0) {
+            double dotsExtent = gap * (1.2 + (dots - 1) * 0.6 + DOT_TRAILING_PAD_GAPS);
+            slot = Math.max(slot, dotsExtent);
+        }
+        return slot;
     }
 
     /**

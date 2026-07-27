@@ -13,6 +13,7 @@ import java.util.Map;
 
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Creator;
@@ -204,7 +205,7 @@ public final class AbcReader {
         }
 
         // Body phase.
-        BodyParser body = new BodyParser(header);
+        BodyParser body = new BodyParser(header, fallbackIndex == 1);
         while (cursor < tuneLines.size()) {
             String line = tuneLines.get(cursor);
             cursor++;
@@ -441,15 +442,25 @@ public final class AbcReader {
         private boolean inChord;
         private final List<Note> chordNotes = new ArrayList<>();
 
+        // Beam grouping: notes accumulated since the last beam break (a rest,
+        // whitespace, bar line, or a note too long to beam). Flushed into
+        // Beam entries once the group is known to be complete.
+        private final List<Note> beamGroup = new ArrayList<>();
+
         // Within-measure explicit accidentals; keyed by pitch-letter+octave.
         private final Map<String, Integer> measureAccidentals = new HashMap<>();
 
         // Post-tune W: text lines collected while parsing the body.
         private final List<String> postTuneText = new ArrayList<>();
 
-        BodyParser(TuneHeader header) {
+        BodyParser(TuneHeader header, boolean isPrimaryTune) {
             String id = "P" + header.referenceNumber;
-            this.part = Part.builder(id).name(header.title);
+            // The primary tune's title already renders as the score's work
+            // title (see AbcReader#parseTune); reusing it as the part name
+            // too would print it a second time as a per-system staff label.
+            // Later tunes in a multi-tune file have no such heading, so their
+            // titles double as the part label that tells them apart.
+            this.part = Part.builder(id).name(isPrimaryTune ? null : header.title);
             this.unitLength = header.unitLength != null
                     ? header.unitLength
                     : defaultUnitLength(header.timeSignature);
@@ -471,6 +482,7 @@ public final class AbcReader {
 
         void finish() {
             closeChordIfOpen();
+            flushBeamGroup();
             closeMeasure();
             commitLine();
         }
@@ -714,10 +726,11 @@ public final class AbcReader {
             while (i < n) {
                 char c = work.charAt(i);
                 if (c == ' ' || c == '\t') {
-                    // Beam break — we simply consume; beam grouping is
-                    // approximated by "adjacent same-flag notes" downstream.
+                    // Whitespace is the primary ABC beam break: end whatever
+                    // beam group is in progress.
                     i++;
                     lastWasNote = false;
+                    flushBeamGroup();
                     continue;
                 }
                 if (c == '%') {
@@ -736,6 +749,7 @@ public final class AbcReader {
                         i++;
                     }
                     closeChordIfOpen();
+                    flushBeamGroup();
                     // A bar in the middle of a body closes the current
                     // measure and starts a new one.
                     closeMeasure();
@@ -880,15 +894,30 @@ public final class AbcReader {
                 }
                 if (c == '>' || c == '<') {
                     // Broken rhythm applied to the just-emitted note and the
-                    // next note.
-                    if (lastWasNote) {
-                        applyBrokenRhythmLeft(c);
-                        // Also queue the multiplier for the next note.
-                        nextLengthMultiplier = c == '>'
-                                ? new AbcNoteLength.Fraction(1, 2)
-                                : new AbcNoteLength.Fraction(3, 2);
+                    // next note. Repeating the marker (">>", "<<<", ...)
+                    // double/triple-dots instead of just single-dotting, so
+                    // count the run of identical markers and apply the
+                    // compound ratio once rather than the single-dot ratio
+                    // once per character.
+                    char marker = c;
+                    int j = i;
+                    while (j < n && work.charAt(j) == marker) {
+                        j++;
                     }
-                    i++;
+                    int count = Math.min(j - i, 20);
+                    if (lastWasNote) {
+                        int pow = 1 << count;
+                        AbcNoteLength.Fraction longer = AbcNoteLength.Fraction.of(2 * pow - 1, pow);
+                        AbcNoteLength.Fraction shorter = AbcNoteLength.Fraction.of(1, pow);
+                        if (marker == '>') {
+                            applyBrokenRhythmLeft(longer);
+                            nextLengthMultiplier = shorter;
+                        } else {
+                            applyBrokenRhythmLeft(shorter);
+                            nextLengthMultiplier = longer;
+                        }
+                    }
+                    i = j;
                     continue;
                 }
                 if (c == '-') {
@@ -915,6 +944,8 @@ public final class AbcReader {
                     i = parsed.consumed;
                     if (parsed.isRest) {
                         emitRest(parsed);
+                        // A rest breaks the beam group it interrupts.
+                        flushBeamGroup();
                     } else {
                         emitNote(parsed);
                     }
@@ -924,6 +955,7 @@ public final class AbcReader {
                 // Unknown character — skip conservatively.
                 i++;
             }
+            flushBeamGroup();
         }
 
         private boolean pendingSlurStart;
@@ -1099,8 +1131,9 @@ public final class AbcReader {
                 effective = effective.times(tupletNormalNotes, tupletActualNotes);
             }
             Duration duration = toDuration(effective);
-            Rest rest = Rest.builder().duration(duration).build();
-            pendingElements.add(rest);
+            Rest.Builder rb = Rest.builder().duration(duration);
+            setTypeAndDots(rb, duration);
+            pendingElements.add(rb.build());
             lyricNoteAnchors.add(null);
         }
 
@@ -1129,6 +1162,7 @@ public final class AbcReader {
             Note.Builder b = Note.builder()
                     .pitch(pitch)
                     .duration(duration);
+            setTypeAndDots(b, duration);
             if (parsed.explicitAccidental) {
                 b.displayedAccidental(Accidental.fromAlter(parsed.alter));
             }
@@ -1152,6 +1186,7 @@ public final class AbcReader {
             } else {
                 pendingElements.add(note);
                 lyricNoteAnchors.add(note);
+                addToBeamGroup(note);
             }
         }
 
@@ -1167,25 +1202,31 @@ public final class AbcReader {
                 Note only = chordNotes.get(0);
                 pendingElements.add(only);
                 lyricNoteAnchors.add(only);
+                addToBeamGroup(only);
             } else {
                 Chord chord = new Chord(chordNotes);
                 pendingElements.add(chord);
                 lyricNoteAnchors.add(chordNotes.get(0));
+                // MusicXML tags exactly one representative note per chord
+                // with <beam> data (see Engraver#placeElement); mirror that
+                // here by beaming only the chord's first note.
+                addToBeamGroup(chordNotes.get(0));
             }
             chordNotes.clear();
         }
 
-        private void applyBrokenRhythmLeft(char op) {
-            AbcNoteLength.Fraction mul = op == '>'
-                    ? new AbcNoteLength.Fraction(3, 2)
-                    : new AbcNoteLength.Fraction(1, 2);
+        private void applyBrokenRhythmLeft(AbcNoteLength.Fraction mul) {
             // Find the last emitted note/rest and rescale its duration.
             for (int i = pendingElements.size() - 1; i >= 0; i--) {
                 MusicElement el = pendingElements.get(i);
                 if (el instanceof Note note) {
                     Duration scaled = scale(note.duration(), mul);
-                    Note replaced = rebuildNote(note, nb -> nb.duration(scaled));
+                    Note replaced = rebuildNote(note, nb -> {
+                        nb.duration(scaled);
+                        setTypeAndDots(nb, scaled);
+                    });
                     pendingElements.set(i, replaced);
+                    updateBeamGroupReference(note, replaced);
                     // Update lyric anchor too if the same note reference.
                     for (int j = 0; j < lyricNoteAnchors.size(); j++) {
                         if (lyricNoteAnchors.get(j) == note) {
@@ -1196,19 +1237,123 @@ public final class AbcReader {
                 }
                 if (el instanceof Rest rest) {
                     Duration scaled = scale(rest.duration(), mul);
-                    Rest replaced = Rest.builder().duration(scaled).build();
-                    pendingElements.set(i, replaced);
+                    Rest.Builder rb = Rest.builder().duration(scaled);
+                    setTypeAndDots(rb, scaled);
+                    pendingElements.set(i, rb.build());
                     return;
                 }
                 if (el instanceof Chord chord) {
                     List<Note> newNotes = new ArrayList<>();
                     for (Note note : chord.notes()) {
                         Duration scaled = scale(note.duration(), mul);
-                        newNotes.add(rebuildNote(note, nb -> nb.duration(scaled)));
+                        newNotes.add(rebuildNote(note, nb -> {
+                            nb.duration(scaled);
+                            setTypeAndDots(nb, scaled);
+                        }));
                     }
                     pendingElements.set(i, new Chord(newNotes));
+                    if (!chord.notes().isEmpty()) {
+                        updateBeamGroupReference(chord.notes().get(0), newNotes.get(0));
+                    }
                     return;
                 }
+            }
+        }
+
+        /**
+         * Add a note to the beam group in progress, or flush the group first
+         * if the note is too long to beam (a quarter note or longer).
+         */
+        private void addToBeamGroup(Note note) {
+            if (beamLevelsFor(note.type()) >= 1) {
+                beamGroup.add(note);
+            } else {
+                flushBeamGroup();
+            }
+        }
+
+        /** Keep the beam group's reference in sync after a note is rebuilt in place. */
+        private void updateBeamGroupReference(Note original, Note replaced) {
+            if (!beamGroup.isEmpty() && beamGroup.get(beamGroup.size() - 1) == original) {
+                beamGroup.set(beamGroup.size() - 1, replaced);
+            }
+        }
+
+        /**
+         * Turn the accumulated beam group into {@link Beam} entries and
+         * splice the rebuilt notes back into {@code pendingElements}. A
+         * group of fewer than two notes is left unbeamed (a lone eligible
+         * note just gets a flag).
+         *
+         * <p>Beam levels follow the same convention as MusicXML {@code
+         * <beam number="N">}: level 1 is the primary beam spanning the whole
+         * group, level 2 the secondary beam needed by sixteenths, etc. A
+         * note needing a level that a neighbour doesn't gets a hook instead
+         * of a shared beam segment for that level.
+         */
+        private void flushBeamGroup() {
+            int size = beamGroup.size();
+            if (size < 2) {
+                beamGroup.clear();
+                return;
+            }
+            int[] levels = new int[size];
+            int maxLevel = 0;
+            for (int i = 0; i < size; i++) {
+                levels[i] = beamLevelsFor(beamGroup.get(i).type());
+                maxLevel = Math.max(maxLevel, levels[i]);
+            }
+            List<List<Beam>> perNoteBeams = new ArrayList<>();
+            for (int i = 0; i < size; i++) {
+                perNoteBeams.add(new ArrayList<>());
+            }
+            for (int level = 1; level <= maxLevel; level++) {
+                addBeamLevelRuns(levels, level, perNoteBeams);
+            }
+            for (int i = 0; i < size; i++) {
+                List<Beam> beams = perNoteBeams.get(i);
+                if (beams.isEmpty()) {
+                    continue;
+                }
+                Note original = beamGroup.get(i);
+                Note replaced = rebuildNote(original, nb -> nb.beams(beams));
+                if (replaceIn(pendingElements, original, replaced)) {
+                    for (int j = 0; j < lyricNoteAnchors.size(); j++) {
+                        if (lyricNoteAnchors.get(j) == original) {
+                            lyricNoteAnchors.set(j, replaced);
+                        }
+                    }
+                }
+            }
+            beamGroup.clear();
+        }
+
+        /** Assign one beam level's BEGIN/CONTINUE/END runs (or hooks for isolated notes). */
+        private static void addBeamLevelRuns(int[] levels, int level, List<List<Beam>> perNoteBeams) {
+            int size = levels.length;
+            int i = 0;
+            while (i < size) {
+                if (levels[i] < level) {
+                    i++;
+                    continue;
+                }
+                int start = i;
+                int end = i;
+                while (end + 1 < size && levels[end + 1] >= level) {
+                    end++;
+                }
+                if (end > start) {
+                    perNoteBeams.get(start).add(new Beam(level, Beam.State.BEGIN));
+                    for (int k = start + 1; k < end; k++) {
+                        perNoteBeams.get(k).add(new Beam(level, Beam.State.CONTINUE));
+                    }
+                    perNoteBeams.get(end).add(new Beam(level, Beam.State.END));
+                } else {
+                    boolean hasPrevInGroup = start > 0;
+                    Beam.State hookState = hasPrevInGroup ? Beam.State.BACKWARD_HOOK : Beam.State.FORWARD_HOOK;
+                    perNoteBeams.get(start).add(new Beam(level, hookState));
+                }
+                i = end + 1;
             }
         }
 
@@ -1307,6 +1452,56 @@ public final class AbcReader {
                 case 5, 7, 9 -> compound ? 3 : 2;
                 default -> 2;
             };
+        }
+
+        /**
+         * Number of beam lines a note of this type needs (1 for an eighth, 2
+         * for a sixteenth, ...); {@code 0} for a quarter note or longer,
+         * meaning it cannot be part of a beamed group at all.
+         */
+        private static int beamLevelsFor(NoteType type) {
+            int diff = type.ordinal() - NoteType.EIGHTH.ordinal();
+            return diff >= 0 ? diff + 1 : 0;
+        }
+
+        /** The written note type and dot count closest to a duration expressed in quarters. */
+        private record TypeAndDots(NoteType type, int dots) {
+        }
+
+        /**
+         * Picks the (type, dots) pair whose value is closest to {@code
+         * quarters}, checking up to 3 dots per candidate type. Unlike
+         * {@link NoteType#fromQuarterValue}, this accounts for dots so a
+         * dotted eighth is reported as {@code (EIGHTH, 1)} rather than the
+         * dot-less closest type.
+         */
+        private static TypeAndDots typeAndDotsFor(double quarters) {
+            NoteType bestType = NoteType.QUARTER;
+            int bestDots = 0;
+            double bestDiff = Double.MAX_VALUE;
+            for (NoteType type : NoteType.values()) {
+                double value = type.quarterValue();
+                for (int dots = 0; dots <= 3; dots++) {
+                    double diff = Math.abs(value - quarters);
+                    if (diff < bestDiff - 1e-9) {
+                        bestDiff = diff;
+                        bestType = type;
+                        bestDots = dots;
+                    }
+                    value += type.quarterValue() / (1 << (dots + 1));
+                }
+            }
+            return new TypeAndDots(bestType, bestDots);
+        }
+
+        private static void setTypeAndDots(Note.Builder b, Duration duration) {
+            TypeAndDots td = typeAndDotsFor(duration.inQuarters());
+            b.type(td.type()).dots(td.dots());
+        }
+
+        private static void setTypeAndDots(Rest.Builder b, Duration duration) {
+            TypeAndDots td = typeAndDotsFor(duration.inQuarters());
+            b.type(td.type()).dots(td.dots());
         }
     }
 

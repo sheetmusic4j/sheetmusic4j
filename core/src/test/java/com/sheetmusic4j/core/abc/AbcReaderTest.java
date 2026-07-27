@@ -9,15 +9,18 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
+import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Slur;
@@ -111,6 +114,73 @@ class AbcReaderTest {
         // Under L:1/8 (divisions=96): eighth = 48. Dotted eighth = 72. Sixteenth = 24.
         assertEquals(72, notes.get(0).duration().value());
         assertEquals(24, notes.get(1).duration().value());
+    }
+
+    @Test
+    void brokenRhythmNotesGetDottedTypeAndBeam() {
+        // A dotted eighth followed by a sixteenth: both should render with
+        // their proper written type/dots (not just the right raw duration)
+        // and should be beamed together as a pair.
+        String abc = "X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nA>B|\n";
+        List<Note> notes = notesOf(read(abc).parts().get(0));
+        assertEquals(2, notes.size());
+
+        Note dottedEighth = notes.get(0);
+        assertEquals(NoteType.EIGHTH, dottedEighth.type());
+        assertEquals(1, dottedEighth.dots());
+        assertEquals(List.of(new Beam(1, Beam.State.BEGIN)), dottedEighth.beams());
+
+        Note sixteenth = notes.get(1);
+        assertEquals(NoteType.SIXTEENTH, sixteenth.type());
+        assertEquals(0, sixteenth.dots());
+        assertEquals(
+                List.of(new Beam(1, Beam.State.END), new Beam(2, Beam.State.BACKWARD_HOOK)),
+                sixteenth.beams());
+    }
+
+    @Test
+    void plainEighthNotesAreBeamedWhenAdjacent() {
+        String abc = "X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nABC D|\n";
+        List<Note> notes = notesOf(read(abc).parts().get(0));
+        assertEquals(4, notes.size());
+        assertEquals(new Beam(1, Beam.State.BEGIN), notes.get(0).beams().get(0));
+        assertEquals(new Beam(1, Beam.State.CONTINUE), notes.get(1).beams().get(0));
+        assertEquals(new Beam(1, Beam.State.END), notes.get(2).beams().get(0));
+        // Separated by a space from the first three, so it stands alone (unbeamed).
+        assertTrue(notes.get(3).beams().isEmpty());
+    }
+
+    @Test
+    void restBreaksBeamGroup() {
+        String abc = "X:1\nT:Test\nM:4/4\nL:1/8\nK:C\nABzCD|\n";
+        List<Note> notes = notesOf(read(abc).parts().get(0));
+        assertEquals(4, notes.size());
+        // A, B beamed together; the rest between B and C breaks the group so
+        // C, D form their own separate pair rather than one run of four.
+        assertEquals(new Beam(1, Beam.State.BEGIN), notes.get(0).beams().get(0));
+        assertEquals(new Beam(1, Beam.State.END), notes.get(1).beams().get(0));
+        assertEquals(new Beam(1, Beam.State.BEGIN), notes.get(2).beams().get(0));
+        assertEquals(new Beam(1, Beam.State.END), notes.get(3).beams().get(0));
+    }
+
+    @Test
+    void singleTuneTitleIsNotAlsoUsedAsPartName() {
+        String abc = "X:1\nT:Broken rhythm markers\nM:3/4\nK:C\nA B C|\n";
+        Score score = read(abc);
+        assertEquals("Broken rhythm markers", score.workTitle().orElse(null));
+        // The title already renders once as the score heading; reusing it as
+        // the part's name would draw it a second time as a staff label.
+        assertNull(score.parts().get(0).name());
+    }
+
+    @Test
+    void secondTuneInMultiTuneFileKeepsItsTitleAsPartLabel() {
+        String abc = "X:1\nT:First\nM:4/4\nK:C\nA B C D|\n\nX:2\nT:Second\nM:4/4\nK:C\nE F G A|\n";
+        Score score = read(abc);
+        assertEquals(2, score.parts().size());
+        assertEquals("First", score.workTitle().orElse(null));
+        assertNull(score.parts().get(0).name());
+        assertEquals("Second", score.parts().get(1).name());
     }
 
     @Test
