@@ -339,6 +339,17 @@ public final class Engraver {
             StaffLayout[] partFirstStaves = new StaffLayout[score.parts().size()];
             StaffLayout[] partLastStaves = new StaffLayout[score.parts().size()];
             double staffTop = y;
+            String sectionTitle = sectionTitleAt(parts, start);
+            if (sectionTitle != null && options.showTitleTexts()) {
+                double gap = options.staffLineGap();
+                double fontSize = gap * 1.8;
+                texts.add(new TextPlacement(sectionTitle, options.systemWidth() / 2.0, staffTop + fontSize,
+                        fontSize, TextPlacement.Align.CENTER, MarkingCategory.SUBTITLE));
+                // Clear not just the text itself but a typical beamed run's
+                // stem height above the staff below it (the row's actual
+                // note positions aren't known yet at this point).
+                staffTop += fontSize + gap * 4.5;
+            }
             boolean rowHasAboveDirections = false;
             boolean rowHasHarmony = false;
             for (PartInfo p : parts) {
@@ -1332,7 +1343,7 @@ public final class Engraver {
         double cursor = header;
         for (int i = 0; i < n; i++) {
             double w = baseWidths.get(i);
-            if (i > start && cursor + w > staffWidth + 1e-6) {
+            if (i > start && (cursor + w > staffWidth + 1e-6 || forcesBreak(parts, i))) {
                 rows.add(new int[]{start, i});
                 start = i;
                 header = maxHeaderAdvanceAtRowStart(parts, start, options);
@@ -1343,6 +1354,39 @@ public final class Engraver {
         }
         rows.add(new int[]{start, n});
         return rows;
+    }
+
+    /**
+     * Whether any part explicitly requires a fresh system to start at
+     * measure index {@code i} (e.g. an ABC mid-tune section title), rather
+     * than being packed onto the end of the previous row.
+     */
+    private static boolean forcesBreak(List<PartInfo> parts, int i) {
+        for (PartInfo p : parts) {
+            List<Measure> measures = p.part().measures();
+            if (i < measures.size() && measures.get(i).forceSystemBreak()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The section title (ABC mid-tune {@code T:}) carried by any part's
+     * measure at index {@code i}, the row's first measure - or {@code null}
+     * if none of them start a new section there.
+     */
+    private static String sectionTitleAt(List<PartInfo> parts, int i) {
+        for (PartInfo p : parts) {
+            List<Measure> measures = p.part().measures();
+            if (i < measures.size()) {
+                String title = measures.get(i).sectionTitle().orElse(null);
+                if (title != null) {
+                    return title;
+                }
+            }
+        }
+        return null;
     }
 
     /**

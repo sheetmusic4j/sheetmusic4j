@@ -16,6 +16,8 @@ public final class Measure {
     private final Barline barline;
     private final boolean leadingRepeatStart;
     private final String ending;
+    private final String sectionTitle;
+    private final boolean forceSystemBreak;
 
     private Measure(Builder builder) {
         this.number = builder.number;
@@ -24,6 +26,8 @@ public final class Measure {
         this.barline = builder.barline;
         this.leadingRepeatStart = builder.leadingRepeatStart;
         this.ending = builder.ending;
+        this.sectionTitle = builder.sectionTitle;
+        this.forceSystemBreak = builder.forceSystemBreak;
     }
 
     /**
@@ -89,6 +93,27 @@ public final class Measure {
     }
 
     /**
+     * A section title (ABC mid-tune {@code T:} field) to display above the
+     * system this measure starts, or empty if this measure starts no new
+     * section.
+     *
+     * @return the section title, or empty if not set
+     */
+    public Optional<String> sectionTitle() {
+        return Optional.ofNullable(sectionTitle);
+    }
+
+    /**
+     * Whether the engraver must start a new system at this measure rather
+     * than packing it onto the end of the previous row.
+     *
+     * @return {@code true} if this measure must begin a new system
+     */
+    public boolean forceSystemBreak() {
+        return forceSystemBreak;
+    }
+
+    /**
      * Creates a new builder for a measure with the given number.
      *
      * @param number the 1-based measure number
@@ -106,6 +131,8 @@ public final class Measure {
         private Barline barline;
         private boolean leadingRepeatStart;
         private String ending;
+        private String sectionTitle;
+        private boolean forceSystemBreak;
 
         private Builder(int number) {
             this.number = number;
@@ -176,6 +203,29 @@ public final class Measure {
          */
         public Builder ending(String ending) {
             this.ending = ending;
+            return this;
+        }
+
+        /**
+         * Sets the section title to display above the system this measure starts.
+         *
+         * @param sectionTitle the section title, or {@code null} for none
+         * @return this builder
+         */
+        public Builder sectionTitle(String sectionTitle) {
+            this.sectionTitle = sectionTitle;
+            return this;
+        }
+
+        /**
+         * Marks this measure as requiring a new system (rather than being
+         * packed onto the end of the previous row).
+         *
+         * @param forceSystemBreak whether to force a system break at this measure
+         * @return this builder
+         */
+        public Builder forceSystemBreak(boolean forceSystemBreak) {
+            this.forceSystemBreak = forceSystemBreak;
             return this;
         }
 

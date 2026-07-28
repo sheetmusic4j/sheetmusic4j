@@ -235,10 +235,10 @@ public final class AbcReader {
                         w = w.substring(1);
                     }
                     body.addPostTuneText(w);
-                } else if (field == 'K' || field == 'M' || field == 'L' || field == 'Q') {
+                } else if (field == 'K' || field == 'M' || field == 'L' || field == 'Q' || field == 'T') {
                     body.applyMidTuneField(field, value.trim());
                 }
-                // Other mid-tune info fields (V:, T:, N:, ...) are ignored.
+                // Other mid-tune info fields (V:, N:, ...) are ignored.
                 continue;
             }
             body.parseLine(line);
@@ -679,6 +679,10 @@ public final class AbcReader {
                 if (pm.ending != null) {
                     b.ending(pm.ending);
                 }
+                if (pm.sectionTitle != null) {
+                    b.sectionTitle(pm.sectionTitle);
+                }
+                b.forceSystemBreak(pm.forceSystemBreak);
                 part.addMeasure(b.build());
                 firstMeasureFlushed = true;
             }
@@ -713,6 +717,8 @@ public final class AbcReader {
             Barline barline;
             boolean leadingRepeatStart;
             String ending;
+            String sectionTitle;
+            boolean forceSystemBreak;
 
             PendingMeasure(int number) {
                 this.number = number;
@@ -743,6 +749,18 @@ public final class AbcReader {
                     DirectionType.Metronome m = parseTempo(value);
                     if (m != null) {
                         pendingElements.add(new Direction(m, com.sheetmusic4j.core.model.Placement.ABOVE));
+                    }
+                }
+                case 'T' -> {
+                    // A mid-tune T: is a section title: displayed above the
+                    // system that starts with the current measure (already
+                    // open and still empty - T: only ever appears at a
+                    // measure boundary), forced onto a fresh row so the
+                    // title reads as a heading rather than floating over
+                    // mid-line content.
+                    if (!value.isBlank() && currentMeasure != null) {
+                        currentMeasure.sectionTitle = value;
+                        currentMeasure.forceSystemBreak = true;
                     }
                 }
                 default -> {
