@@ -635,8 +635,12 @@ public final class Engraver {
             // with the title text. Chord symbols sit further from the staff
             // than the reserve added for them at row layout time accounts
             // for (see HARMONY_OFFSET_GAPS vs. HARMONY_ABOVE_RESERVE_GAPS),
-            // so the first row needs its own, larger, clearance.
-            double breathing = gap;
+            // so the first row needs its own, larger, clearance. Even the
+            // baseline (no special markings) case needs more than a single
+            // gap: an ordinary high note's stem - more so with multiple
+            // flags (sixteenth/thirty-second/...) - can reach close enough
+            // to the staff top to collide with the title text otherwise.
+            double breathing = gap * 2.2;
             if (hasAboveStaffArticulation(score)) {
                 breathing = Math.max(breathing, gap * 2.5);
             }
