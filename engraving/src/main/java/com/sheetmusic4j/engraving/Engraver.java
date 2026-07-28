@@ -9,6 +9,7 @@ import java.util.Optional;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
@@ -1496,6 +1497,23 @@ public final class Engraver {
                     measure.ending().orElse(null)));
 
             double contentStart = cursorX + options.staffLineGap();
+            // A repeat-start mark (bare "|:") or the right-hand dots of a
+            // combined end+start repeat ("::") on the *previous* measure
+            // both draw repeat dots just past this measure's left edge (see
+            // ScorePainter#drawBarline); reserve the same clearance the
+            // first-measure-in-row branch below already gives its own
+            // leading repeat mark, or the dots land on top of - and the
+            // first note collides with - that clearance-free content start.
+            boolean midRowRepeatClearance = !firstMeasureInRow && measure.leadingRepeatStart();
+            if (!midRowRepeatClearance && !firstMeasureInRow && idx > 0) {
+                Barline previousBarline = part.measures().get(idx - 1).barline().orElse(null);
+                midRowRepeatClearance = previousBarline != null
+                        && (previousBarline.repeat() == Barline.Repeat.FORWARD
+                            || previousBarline.repeat() == Barline.Repeat.BOTH);
+            }
+            if (midRowRepeatClearance) {
+                contentStart = cursorX + options.staffLineGap() * 1.6;
+            }
             if (firstMeasureInRow) {
                 double clefY = y + clefAnchorLineIndex(currentClef) * options.staffLineGap();
                 // A leading repeat-start mark (thick line + dots) is drawn at
