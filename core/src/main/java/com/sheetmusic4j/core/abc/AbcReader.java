@@ -1682,6 +1682,7 @@ public final class AbcReader {
                     Note replaced = rebuildNote(note, nb -> nb.addSlur(
                             new Slur(1, Slur.Type.STOP, com.sheetmusic4j.core.model.Placement.DEFAULT)));
                     pendingElements.set(i, replaced);
+                    updateBeamGroupReference(note, replaced);
                     for (int j = 0; j < lyricNoteAnchors.size(); j++) {
                         if (lyricNoteAnchors.get(j) == note) {
                             lyricNoteAnchors.set(j, replaced);
@@ -1717,6 +1718,7 @@ public final class AbcReader {
                 if (el instanceof Note note) {
                     Note replaced = rebuildNote(note, nb -> nb.tieStart(true));
                     pendingElements.set(i, replaced);
+                    updateBeamGroupReference(note, replaced);
                     for (int j = 0; j < lyricNoteAnchors.size(); j++) {
                         if (lyricNoteAnchors.get(j) == note) {
                             lyricNoteAnchors.set(j, replaced);
