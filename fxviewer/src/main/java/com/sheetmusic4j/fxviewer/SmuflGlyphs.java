@@ -71,6 +71,7 @@ public final class SmuflGlyphs {
             case NOTEHEAD_WHOLE -> "\uE0A2";
             case NOTEHEAD_HALF -> "\uE0A3";
             case NOTEHEAD_BLACK -> "\uE0A4";
+            case NOTEHEAD_BREVE -> "\uE0A0";
             case FLAG_8TH_UP -> "\uE240";
             case FLAG_8TH_DOWN -> "\uE241";
             case FLAG_16TH_UP -> "\uE242";
@@ -142,6 +143,7 @@ public final class SmuflGlyphs {
         double staffSpaces = switch (glyph) {
             case NOTEHEAD_BLACK, NOTEHEAD_HALF -> 1.18;
             case NOTEHEAD_WHOLE -> 1.5;
+            case NOTEHEAD_BREVE -> 2.2;
             case TIME_DIGIT_0, TIME_DIGIT_1, TIME_DIGIT_2, TIME_DIGIT_3, TIME_DIGIT_4,
                  TIME_DIGIT_5, TIME_DIGIT_6, TIME_DIGIT_7, TIME_DIGIT_8, TIME_DIGIT_9 -> 1.4;
             case ACCIDENTAL_FLAT -> 0.9;

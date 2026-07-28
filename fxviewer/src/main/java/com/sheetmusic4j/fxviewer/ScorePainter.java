@@ -137,6 +137,18 @@ public final class ScorePainter {
             case NOTEHEAD_BLACK -> surface.fillOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
             case NOTEHEAD_HALF, NOTEHEAD_WHOLE ->
                     surface.strokeOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
+            case NOTEHEAD_BREVE -> {
+                // A hollow rectangle with short vertical ticks at each side
+                // (the "double whole note" convention), wider than a
+                // regular whole note.
+                double w = headW * 1.6;
+                double tick = headH * 0.4;
+                surface.strokeRect(glyph.x() - w / 2, glyph.y() - headH / 2, w, headH);
+                surface.strokeLine(glyph.x() - w / 2, glyph.y() - headH / 2 - tick,
+                        glyph.x() - w / 2, glyph.y() + headH / 2 + tick);
+                surface.strokeLine(glyph.x() + w / 2, glyph.y() - headH / 2 - tick,
+                        glyph.x() + w / 2, glyph.y() + headH / 2 + tick);
+            }
             default -> {
             }
         }
@@ -191,7 +203,7 @@ public final class ScorePainter {
 
     private static boolean isNoteheadGlyph(Glyph glyph) {
         return switch (glyph) {
-            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE -> true;
+            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE, NOTEHEAD_BREVE -> true;
             default -> false;
         };
     }
@@ -561,7 +573,7 @@ public final class ScorePainter {
     private void drawGlyphInner(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph,
                                 double gap, double headW, double headH, double sizeHint, Glyph g) {
         switch (g) {
-            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE -> {
+            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE, NOTEHEAD_BREVE -> {
                 if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
                     drawNoteheadPrimitive(surface, g, glyph, headW, headH);
                 }

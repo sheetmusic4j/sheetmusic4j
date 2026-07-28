@@ -15,6 +15,12 @@ public enum Glyph {
     NOTEHEAD_HALF,
     NOTEHEAD_BLACK,
     /**
+     * Double-whole ("breve") notehead: a hollow rectangle with short
+     * vertical ticks at each side. Also used for the rarer long/maxima
+     * types, which this engraver does not distinguish visually.
+     */
+    NOTEHEAD_BREVE,
+    /**
      * Stem going up (from the right side of the notehead).
      */
     STEM_UP,

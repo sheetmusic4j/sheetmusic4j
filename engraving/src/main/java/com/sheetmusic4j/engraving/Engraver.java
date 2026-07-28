@@ -2437,7 +2437,8 @@ public final class Engraver {
 
     private static Glyph noteheadGlyph(NoteType type) {
         return switch (type) {
-            case WHOLE, BREVE, LONG, MAXIMA -> Glyph.NOTEHEAD_WHOLE;
+            case WHOLE -> Glyph.NOTEHEAD_WHOLE;
+            case BREVE, LONG, MAXIMA -> Glyph.NOTEHEAD_BREVE;
             case HALF -> Glyph.NOTEHEAD_HALF;
             default -> Glyph.NOTEHEAD_BLACK;
         };
