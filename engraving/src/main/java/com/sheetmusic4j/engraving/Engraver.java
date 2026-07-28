@@ -646,6 +646,9 @@ public final class Engraver {
             if (hasGraceNotes(score)) {
                 breathing = Math.max(breathing, gap * 3.2);
             }
+            if (hasTuplets(score)) {
+                breathing = Math.max(breathing, gap * 3.0);
+            }
             consumed += breathing;
         }
         return consumed;
@@ -662,6 +665,35 @@ public final class Engraver {
                     for (MusicElement element : measure.elements()) {
                         if (element instanceof Note note && !note.graceNotes().isEmpty()) {
                             return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Whether any note/rest in the score carries a tuplet marking - its
+         * number is drawn above the tuplet run's highest stem (see
+         * {@link #TUPLET_ABOVE_GAP}), which needs its own clearance below
+         * the title block just like the other above-staff marks here.
+         */
+        private static boolean hasTuplets(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        if (element instanceof Note note && !note.tuplets().isEmpty()) {
+                            return true;
+                        }
+                        if (element instanceof Rest rest && !rest.tuplets().isEmpty()) {
+                            return true;
+                        }
+                        if (element instanceof Chord chord) {
+                            for (Note note : chord.notes()) {
+                                if (!note.tuplets().isEmpty()) {
+                                    return true;
+                                }
+                            }
                         }
                     }
                 }
