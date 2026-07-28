@@ -76,6 +76,12 @@ public final class SmuflGlyphs {
             case FLAG_8TH_DOWN -> "\uE241";
             case FLAG_16TH_UP -> "\uE242";
             case FLAG_16TH_DOWN -> "\uE243";
+            case FLAG_32ND_UP -> "\uE244";
+            case FLAG_32ND_DOWN -> "\uE245";
+            case FLAG_64TH_UP -> "\uE246";
+            case FLAG_64TH_DOWN -> "\uE247";
+            case FLAG_128TH_UP -> "\uE248";
+            case FLAG_128TH_DOWN -> "\uE249";
             case ACCIDENTAL_FLAT -> "\uE260";
             case ACCIDENTAL_NATURAL -> "\uE261";
             case ACCIDENTAL_SHARP -> "\uE262";

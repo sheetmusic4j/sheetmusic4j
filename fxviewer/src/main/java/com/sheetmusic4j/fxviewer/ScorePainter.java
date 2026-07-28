@@ -587,7 +587,9 @@ public final class ScorePainter {
                 double sx = glyph.x() - headW / 2;
                 surface.strokeLine(sx, glyph.y(), sx, glyph.y() + gap * STEM_LENGTH_GAPS);
             }
-            case FLAG_8TH_UP, FLAG_8TH_DOWN, FLAG_16TH_UP, FLAG_16TH_DOWN -> {
+            case FLAG_8TH_UP, FLAG_8TH_DOWN, FLAG_16TH_UP, FLAG_16TH_DOWN,
+                 FLAG_32ND_UP, FLAG_32ND_DOWN, FLAG_64TH_UP, FLAG_64TH_DOWN,
+                 FLAG_128TH_UP, FLAG_128TH_DOWN -> {
                 // Flags rely on the SMuFL font; when absent we draw nothing
                 // (a missing flag is preferable to an incorrect primitive).
                 drawSmuflIfAvailable(surface, g, glyph, sizeHint);

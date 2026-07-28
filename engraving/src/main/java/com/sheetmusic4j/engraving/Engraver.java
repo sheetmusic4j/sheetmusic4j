@@ -2545,8 +2545,10 @@ public final class Engraver {
     static Glyph flagGlyph(NoteType type, boolean stemUp) {
         return switch (type) {
             case EIGHTH -> stemUp ? Glyph.FLAG_8TH_UP : Glyph.FLAG_8TH_DOWN;
-            case SIXTEENTH, THIRTY_SECOND, SIXTY_FOURTH, HUNDRED_TWENTY_EIGHTH ->
-                    stemUp ? Glyph.FLAG_16TH_UP : Glyph.FLAG_16TH_DOWN;
+            case SIXTEENTH -> stemUp ? Glyph.FLAG_16TH_UP : Glyph.FLAG_16TH_DOWN;
+            case THIRTY_SECOND -> stemUp ? Glyph.FLAG_32ND_UP : Glyph.FLAG_32ND_DOWN;
+            case SIXTY_FOURTH -> stemUp ? Glyph.FLAG_64TH_UP : Glyph.FLAG_64TH_DOWN;
+            case HUNDRED_TWENTY_EIGHTH -> stemUp ? Glyph.FLAG_128TH_UP : Glyph.FLAG_128TH_DOWN;
             default -> null;
         };
     }

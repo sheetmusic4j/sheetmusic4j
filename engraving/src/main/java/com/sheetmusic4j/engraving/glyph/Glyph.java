@@ -50,6 +50,30 @@ public enum Glyph {
      */
     FLAG_16TH_DOWN,
     /**
+     * Flag for an unbeamed thirty-second note with an upward stem.
+     */
+    FLAG_32ND_UP,
+    /**
+     * Flag for an unbeamed thirty-second note with a downward stem.
+     */
+    FLAG_32ND_DOWN,
+    /**
+     * Flag for an unbeamed sixty-fourth note with an upward stem.
+     */
+    FLAG_64TH_UP,
+    /**
+     * Flag for an unbeamed sixty-fourth note with a downward stem.
+     */
+    FLAG_64TH_DOWN,
+    /**
+     * Flag for an unbeamed hundred-twenty-eighth note with an upward stem.
+     */
+    FLAG_128TH_UP,
+    /**
+     * Flag for an unbeamed hundred-twenty-eighth note with a downward stem.
+     */
+    FLAG_128TH_DOWN,
+    /**
      * A beam segment connecting the stem tips of two or more beamed notes.
      * Positioning is carried by {@link BeamPlacement} rather than a
      * {@link GlyphPlacement}, so this value is a marker only.
