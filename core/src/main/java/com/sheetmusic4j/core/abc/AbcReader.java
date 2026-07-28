@@ -255,6 +255,9 @@ public final class AbcReader {
         if (score.build().workTitle().isEmpty() && header.title != null) {
             score.workTitle(header.title);
         }
+        if (score.build().movementTitle().isEmpty() && header.subtitle != null) {
+            score.movementTitle(header.subtitle);
+        }
         if (header.composer != null && !score.hasCreatorRole("composer")) {
             Creator creator = Creator.of("composer", header.composer);
             if (creator != null) {
@@ -288,9 +291,13 @@ public final class AbcReader {
             case 'T' -> {
                 if (header.title == null) {
                     header.title = value;
+                } else if (header.subtitle == null) {
+                    // A second T: line is the tune's subtitle (an
+                    // alternative title); rendered as its own line below
+                    // the main title.
+                    header.subtitle = value;
                 } else {
-                    // Additional T: lines are treated as subtitles — appended.
-                    header.title = header.title + " " + value;
+                    header.subtitle = header.subtitle + " / " + value;
                 }
             }
             case 'C' -> header.composer = value;
@@ -482,6 +489,7 @@ public final class AbcReader {
     private static final class TuneHeader {
         int referenceNumber = 1;
         String title;
+        String subtitle;
         String composer;
         TimeSignature timeSignature;
         AbcNoteLength.Fraction unitLength;
