@@ -9,7 +9,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
@@ -22,6 +24,8 @@ import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Duration;
+import com.sheetmusic4j.core.model.Harmony;
+import com.sheetmusic4j.core.model.HarmonyKind;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
@@ -372,6 +376,106 @@ public final class AbcReader {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * Shorthand chord-quality tokens (as written after the root letter in an
+     * ABC guitar-chord string, e.g. {@code "Gm7"} -> {@code "m7"}) mapped to
+     * the matching {@link HarmonyKind}. Mirrors common lead-sheet notation;
+     * an unrecognised suffix falls back to {@link HarmonyKind#OTHER} with
+     * the raw text kept as a {@link Harmony#textOverride()}.
+     */
+    private static final Map<String, HarmonyKind> CHORD_QUALITY_ALIASES = Map.ofEntries(
+            Map.entry("", HarmonyKind.MAJOR),
+            Map.entry("maj", HarmonyKind.MAJOR),
+            Map.entry("m", HarmonyKind.MINOR),
+            Map.entry("min", HarmonyKind.MINOR),
+            Map.entry("-", HarmonyKind.MINOR),
+            Map.entry("7", HarmonyKind.DOMINANT_SEVENTH),
+            Map.entry("dom7", HarmonyKind.DOMINANT_SEVENTH),
+            Map.entry("maj7", HarmonyKind.MAJOR_SEVENTH),
+            Map.entry("m7", HarmonyKind.MINOR_SEVENTH),
+            Map.entry("min7", HarmonyKind.MINOR_SEVENTH),
+            Map.entry("dim", HarmonyKind.DIMINISHED),
+            Map.entry("dim7", HarmonyKind.DIMINISHED_SEVENTH),
+            Map.entry("aug", HarmonyKind.AUGMENTED),
+            Map.entry("+", HarmonyKind.AUGMENTED),
+            Map.entry("6", HarmonyKind.MAJOR_SIXTH),
+            Map.entry("m6", HarmonyKind.MINOR_SIXTH),
+            Map.entry("min6", HarmonyKind.MINOR_SIXTH),
+            Map.entry("maj9", HarmonyKind.MAJOR_NINTH),
+            Map.entry("m9", HarmonyKind.MINOR_NINTH),
+            Map.entry("min9", HarmonyKind.MINOR_NINTH),
+            Map.entry("9", HarmonyKind.DOMINANT_NINTH),
+            Map.entry("sus4", HarmonyKind.SUSPENDED_FOURTH),
+            Map.entry("sus", HarmonyKind.SUSPENDED_FOURTH),
+            Map.entry("sus2", HarmonyKind.SUSPENDED_SECOND),
+            Map.entry("5", HarmonyKind.POWER),
+            Map.entry("m7b5", HarmonyKind.HALF_DIMINISHED),
+            Map.entry("dim7b5", HarmonyKind.HALF_DIMINISHED));
+
+    /**
+     * Parse an ABC guitar-chord string (the content of a {@code "..."}
+     * annotation) into a {@link Harmony}, or {@code null} if it doesn't look
+     * like a chord symbol (e.g. free text like {@code "Fine"} or a
+     * positioned annotation like {@code "^turn"}) - such strings are simply
+     * dropped, matching pre-existing behaviour for non-chord annotations.
+     */
+    private static Harmony parseChordSymbol(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String s = raw.trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        String bassText = null;
+        int slash = s.indexOf('/');
+        if (slash >= 0) {
+            bassText = s.substring(slash + 1).trim();
+            s = s.substring(0, slash).trim();
+        }
+        ChordRoot root = parseChordRoot(s);
+        if (root == null) {
+            return null;
+        }
+        Harmony.Bass bass = null;
+        if (bassText != null && !bassText.isEmpty()) {
+            ChordRoot b = parseChordRoot(bassText);
+            if (b != null) {
+                bass = new Harmony.Bass(b.step, b.alter);
+            }
+        }
+        HarmonyKind kind = CHORD_QUALITY_ALIASES.get(root.suffix.toLowerCase(Locale.ROOT));
+        String textOverride = null;
+        if (kind == null) {
+            kind = HarmonyKind.OTHER;
+            textOverride = root.suffix;
+        }
+        return new Harmony(new Harmony.Root(root.step, root.alter), kind,
+                Optional.ofNullable(bass), Optional.ofNullable(textOverride));
+    }
+
+    /** A parsed chord-symbol root or slash-bass letter: step + accidental + remaining suffix. */
+    private record ChordRoot(Step step, int alter, String suffix) {
+    }
+
+    private static ChordRoot parseChordRoot(String s) {
+        if (s.isEmpty()) {
+            return null;
+        }
+        char letter = s.charAt(0);
+        if (letter < 'A' || letter > 'G') {
+            return null;
+        }
+        Step step = Step.valueOf(String.valueOf(letter));
+        int i = 1;
+        int alter = 0;
+        if (i < s.length() && (s.charAt(i) == '#' || s.charAt(i) == 'b')) {
+            alter = s.charAt(i) == '#' ? 1 : -1;
+            i++;
+        }
+        return new ChordRoot(step, alter, s.substring(i));
     }
 
     /** Header fields collected before the first body line. */
@@ -928,9 +1032,15 @@ public final class AbcReader {
                     continue;
                 }
                 if (c == '"') {
-                    // Guitar chord annotation or annotation string — skip to
-                    // closing '"'.
+                    // Guitar chord symbol (e.g. "Gm7") or a positioned
+                    // annotation string (e.g. "^fine", free text) - only the
+                    // former renders; annotations are otherwise dropped.
                     int close = work.indexOf('"', i + 1);
+                    String content = close < 0 ? work.substring(i + 1) : work.substring(i + 1, close);
+                    Harmony harmony = parseChordSymbol(content);
+                    if (harmony != null) {
+                        pendingElements.add(harmony);
+                    }
                     i = close < 0 ? n : close + 1;
                     continue;
                 }

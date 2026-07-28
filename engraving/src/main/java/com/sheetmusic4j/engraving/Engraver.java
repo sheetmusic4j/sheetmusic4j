@@ -580,12 +580,40 @@ public final class Engraver {
         }
 
         if (consumed > 0) {
-            // A little breathing space between the title block and the first staff;
-            // a bit more when the score carries marks drawn above the staff
-            // (bowings, ornaments) so they don't collide with the title text.
-            consumed += hasAboveStaffArticulation(score) ? gap * 2.5 : gap;
+            // A little breathing space between the title block and the first
+            // staff; more when the score carries marks drawn above the staff
+            // (bowings, ornaments) or chord symbols, so they don't collide
+            // with the title text. Chord symbols sit further from the staff
+            // than the reserve added for them at row layout time accounts
+            // for (see HARMONY_OFFSET_GAPS vs. HARMONY_ABOVE_RESERVE_GAPS),
+            // so the first row needs its own, larger, clearance.
+            double breathing = gap;
+            if (hasAboveStaffArticulation(score)) {
+                breathing = Math.max(breathing, gap * 2.5);
+            }
+            if (hasHarmony(score)) {
+                breathing = Math.max(breathing, gap * 2.7);
+            }
+            consumed += breathing;
         }
         return consumed;
+        }
+
+        /**
+         * Whether any measure in the score carries a chord-symbol
+         * annotation — see the comment above where this is used.
+         */
+        private static boolean hasHarmony(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        if (element instanceof Harmony) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
         /**
