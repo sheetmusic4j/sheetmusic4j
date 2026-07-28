@@ -258,6 +258,23 @@ public final class Engraver {
     private static final double DOT_TRAILING_PAD_GAPS = 0.5;
 
     /**
+     * Horizontal spacing (in staff-line gaps) between consecutive grace
+     * noteheads within one run, and per grace note reserved as a left-side
+     * shift before the main note - see {@link #buildGraceNotePlacement}. A
+     * run of {@code n} grace notes reaches back {@code n} times this many
+     * gaps from the main note, so that same distance must be reserved as
+     * the main note's left shift or the run collides with whatever
+     * precedes it (previous note, or the barline).
+     */
+    private static final double GRACE_NOTE_SPACING_GAPS = 1.7;
+
+    /**
+     * Extra weight added to a note's width per grace note it carries, in
+     * "quarter-note width" units, mirroring {@link #ACCIDENTAL_RESERVE_WEIGHT}.
+     */
+    private static final double GRACE_NOTE_RESERVE_WEIGHT = 0.25;
+
+    /**
      * Maximum ratio, within a single weighting context (a measure's
      * elements, or a row's measures), between the largest and smallest
      * width weight. See {@link #capWeightRatio}.
@@ -1541,6 +1558,10 @@ public final class Engraver {
                     double leftShift = hasAccidental(timedElements.get(i))
                             ? ACCIDENTAL_RESERVE_GAPS * gap
                             : 0.0;
+                    int graceNotes = graceNoteCount(timedElements.get(i));
+                    if (graceNotes > 0) {
+                        leftShift += GRACE_NOTE_SPACING_GAPS * graceNotes * gap;
+                    }
                     timedX[i] = startCursor + leftShift;
                     startCursor += slotWidth;
                 }
@@ -1738,6 +1759,11 @@ public final class Engraver {
             double dotsExtent = gap * (1.2 + (dots - 1) * 0.6 + DOT_TRAILING_PAD_GAPS);
             slot = Math.max(slot, dotsExtent);
         }
+        int graceNotes = graceNoteCount(element);
+        if (graceNotes > 0) {
+            double graceExtent = gap * (GRACE_NOTE_SPACING_GAPS * graceNotes + 1.0);
+            slot = Math.max(slot, graceExtent);
+        }
         return slot;
     }
 
@@ -1762,6 +1788,10 @@ public final class Engraver {
         int dots = dotCount(e);
         if (dots > 0) {
             extras += DOT_RESERVE_WEIGHT * dots;
+        }
+        int graceNotes = graceNoteCount(e);
+        if (graceNotes > 0) {
+            extras += GRACE_NOTE_RESERVE_WEIGHT * graceNotes;
         }
         return base + extras;
     }
@@ -1813,6 +1843,15 @@ public final class Engraver {
             return max;
         }
         return 0;
+    }
+
+    /**
+     * Number of grace notes attached ahead of the element (only {@link Note}
+     * carries these). Used to reserve enough of the note's own slot for the
+     * grace-note run to fit within, see {@link #buildGraceNotePlacement}.
+     */
+    private static int graceNoteCount(MusicElement e) {
+        return e instanceof Note note ? note.graceNotes().size() : 0;
     }
 
     private double placeKeySignature(List<GlyphPlacement> glyphs, KeySignature key, Clef clef,
@@ -2149,7 +2188,7 @@ public final class Engraver {
         double gap = options.staffLineGap();
         List<Pitch> pitches = note.graceNotes();
         int count = pitches.size();
-        double spacing = gap * 1.7;
+        double spacing = gap * GRACE_NOTE_SPACING_GAPS;
         List<Double> xs = new ArrayList<>(count);
         List<Double> ys = new ArrayList<>(count);
         double minY = Double.MAX_VALUE;
