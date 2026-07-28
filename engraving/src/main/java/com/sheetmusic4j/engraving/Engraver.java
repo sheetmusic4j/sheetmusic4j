@@ -248,8 +248,27 @@ public final class Engraver {
      * when it carries an accidental. This ensures the accidental glyph sits
      * inside the note's reserved slot rather than colliding with the
      * previous element.
+     *
+     * <p>The accidental itself is drawn centered {@code gap * 1.5} to the
+     * left of the note (see {@code placeNote}'s accidental placement) and
+     * its own glyph then extends roughly another half-gap further left at
+     * this layout's font size (see {@code SmuflGlyphs#halfAdvanceWidth} for
+     * {@code ACCIDENTAL_FLAT}/{@code ACCIDENTAL_SHARP}/{@code
+     * ACCIDENTAL_NATURAL}) - this value must clear that whole reach, or the
+     * accidental collides with the previous element regardless of how much
+     * the note itself gets shifted.
      */
-    private static final double ACCIDENTAL_RESERVE_GAPS = 0.9;
+    private static final double ACCIDENTAL_RESERVE_GAPS = 2.0;
+
+    /**
+     * Left-side shift for a note whose accidental is a double sharp/flat:
+     * {@link #ACCIDENTAL_RESERVE_GAPS} sized for the narrower single
+     * accidentals, but a double glyph draws almost twice as wide (see
+     * {@code SmuflGlyphs#halfAdvanceWidth} for {@code
+     * ACCIDENTAL_DOUBLE_FLAT}/{@code ACCIDENTAL_DOUBLE_SHARP}) and needs
+     * more room to stay clear of the previous element.
+     */
+    private static final double DOUBLE_ACCIDENTAL_RESERVE_GAPS = 2.4;
 
     /**
      * Trailing padding (in staff-line gaps) reserved after the rightmost
@@ -1574,7 +1593,8 @@ public final class Engraver {
                         slotWidth = slot;
                     }
                     double leftShift = hasAccidental(timedElements.get(i))
-                            ? ACCIDENTAL_RESERVE_GAPS * gap
+                            ? (isDoubleAccidental(timedElements.get(i))
+                                ? DOUBLE_ACCIDENTAL_RESERVE_GAPS : ACCIDENTAL_RESERVE_GAPS) * gap
                             : 0.0;
                     int graceNotes = graceNoteCount(timedElements.get(i));
                     if (graceNotes > 0) {
@@ -1838,6 +1858,29 @@ public final class Engraver {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether the element's displayed accidental is a double sharp/flat -
+     * these draw almost twice as wide as the other accidentals and need
+     * more reserved space, see {@link #DOUBLE_ACCIDENTAL_RESERVE_GAPS}.
+     */
+    private static boolean isDoubleAccidental(MusicElement e) {
+        if (e instanceof Note note) {
+            return isDouble(note.displayedAccidental().orElse(null));
+        }
+        if (e instanceof Chord chord) {
+            for (Note note : chord.notes()) {
+                if (isDouble(note.displayedAccidental().orElse(null))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDouble(Accidental accidental) {
+        return accidental == Accidental.DOUBLE_SHARP || accidental == Accidental.DOUBLE_FLAT;
     }
 
     /**
