@@ -1012,6 +1012,28 @@ public final class AbcReader {
                     lastWasNote = false;
                     continue;
                 }
+                if (c == '[' && i + 1 < n && Character.isDigit(work.charAt(i + 1))) {
+                    // A first/second-ending marker ("[1", "[2", ...) landing
+                    // at the start of a fresh line, with no preceding bar
+                    // token on this same line for the bar-line scan above to
+                    // fuse it with (the usual case, e.g. "...D2:|[1 ...", is
+                    // already handled there). currentMeasure was already
+                    // started - by the previous line's closing bar - and
+                    // stamped with the *previous* ending label before this
+                    // marker was seen, so it needs updating directly too, not
+                    // just currentEndingLabel for measures still to come.
+                    int j = i + 1;
+                    while (j < n && Character.isDigit(work.charAt(j))) {
+                        j++;
+                    }
+                    currentEndingLabel = work.substring(i + 1, j);
+                    if (currentMeasure != null) {
+                        currentMeasure.ending = currentEndingLabel;
+                    }
+                    i = j;
+                    lastWasNote = false;
+                    continue;
+                }
                 if (c == '[') {
                     // Start of a chord.
                     closeChordIfOpen();
