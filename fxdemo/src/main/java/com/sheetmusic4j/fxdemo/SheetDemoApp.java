@@ -334,7 +334,15 @@ public final class SheetDemoApp extends Application {
                         : Optional.empty();
                 updateDebug(currentScore, pdf);
             }
+            updateScoreViewport();
         });
+        // SheetView only ever materializes a Canvas window around whatever
+        // viewportTop/viewportHeight say is visible (see its class javadoc),
+        // so it must be told the scroll position - both when the user
+        // scrolls and whenever the content's own height changes (which
+        // changes how vvalue's 0..1 fraction maps to a pixel offset).
+        scoreScroll.vvalueProperty().addListener((obs, oldV, newV) -> updateScoreViewport());
+        sheetView.heightProperty().addListener((obs, oldV, newV) -> updateScoreViewport());
         scorePane = new BorderPane(scoreScroll);
         scorePane.setTop(buildScoreToolbar());
 
@@ -618,6 +626,7 @@ public final class SheetDemoApp extends Application {
             currentFile = path;
             currentScore = score;
             sheetView.setScore(score);
+            updateScoreViewport();
             Optional<Path> pdf = PdfSibling.existingPathFor(path);
             Optional<Path> image = pdf.isPresent() ? Optional.empty() : ImageSibling.existingPathFor(path);
             if (pdf.isPresent()) {
@@ -714,6 +723,26 @@ public final class SheetDemoApp extends Application {
      */
     private double currentViewportWidth() {
         return lastViewportWidth > 0 ? lastViewportWidth : DIFF_WIDTH;
+    }
+
+    /**
+     * Translates {@code scoreScroll}'s current scroll position/viewport size
+     * into the local pixel units {@link SheetView} expects and pushes them
+     * into {@link SheetView#viewportTopProperty()}/
+     * {@link SheetView#viewportHeightProperty()}, so its internal Canvas
+     * window follows scrolling for scores too tall to fit in one Canvas.
+     */
+    private void updateScoreViewport() {
+        var bounds = scoreScroll.getViewportBounds();
+        if (bounds == null || bounds.getHeight() <= 0) {
+            return;
+        }
+        double viewportHeight = bounds.getHeight();
+        double contentHeight = sheetView.getHeight();
+        double maxScroll = Math.max(0, contentHeight - viewportHeight);
+        double top = scoreScroll.getVvalue() * maxScroll;
+        sheetView.setViewportHeight(viewportHeight);
+        sheetView.setViewportTop(top);
     }
 
     private void generateReferenceAsync() {
