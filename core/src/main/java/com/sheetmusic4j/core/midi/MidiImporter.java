@@ -120,6 +120,7 @@ public final class MidiImporter {
     private Part buildPart(String id, String name, List<TimedNote> notes, int divisions) {
         Part.Builder part = Part.builder(id).name(name);
         long measureTicks = Math.round(timeSignature.measureLengthInQuarters() * divisions);
+        long articulationFloorTicks = Math.max(1, divisions / 32);
 
         long totalTicks = 0;
         for (TimedNote note : notes) {
@@ -149,15 +150,27 @@ public final class MidiImporter {
                     measure.addElement(Rest.builder()
                             .duration(new Duration((int) restTicks, divisions))
                             .build());
-                    cursor = timed.startTick;
                 }
-                long noteEnd = Math.min(timed.startTick + timed.durationTicks, measureEnd);
+
+                // Notated duration runs until the next note-on (or the end of the
+                // measure); MIDI exporters commonly shorten the sounding note-off by a
+                // few percent for playback articulation, which must not be mistaken
+                // for a genuine written rest.
+                long slotEnd = noteIndex + 1 < notes.size()
+                        ? Math.min(notes.get(noteIndex + 1).startTick, measureEnd)
+                        : measureEnd;
+                long soundingEnd = Math.min(Math.min(timed.startTick + timed.durationTicks, measureEnd), slotEnd);
+                long articulationGap = slotEnd - soundingEnd;
+                long tolerance = Math.max(articulationFloorTicks,
+                        Math.round((slotEnd - timed.startTick) * 0.15));
+                long noteEnd = articulationGap <= tolerance ? slotEnd : soundingEnd;
+
                 long dur = Math.max(1, noteEnd - timed.startTick);
                 measure.addElement(Note.builder()
                         .pitch(Pitch.fromMidiNumber(timed.key))
                         .duration(new Duration((int) dur, divisions))
                         .build());
-                cursor = timed.startTick + dur;
+                cursor = noteEnd;
                 if (timed.startTick + timed.durationTicks <= measureEnd) {
                     noteIndex++;
                 } else {

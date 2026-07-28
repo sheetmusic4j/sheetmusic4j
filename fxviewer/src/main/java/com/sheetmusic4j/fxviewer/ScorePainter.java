@@ -1,6 +1,7 @@
 package com.sheetmusic4j.fxviewer;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
@@ -8,6 +9,7 @@ import com.sheetmusic4j.engraving.layout.*;
 import com.sheetmusic4j.engraving.placement.*;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -135,6 +137,18 @@ public final class ScorePainter {
             case NOTEHEAD_BLACK -> surface.fillOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
             case NOTEHEAD_HALF, NOTEHEAD_WHOLE ->
                     surface.strokeOval(glyph.x() - headW / 2, glyph.y() - headH / 2, headW, headH);
+            case NOTEHEAD_BREVE -> {
+                // A hollow rectangle with short vertical ticks at each side
+                // (the "double whole note" convention), wider than a
+                // regular whole note.
+                double w = headW * 1.6;
+                double tick = headH * 0.4;
+                surface.strokeRect(glyph.x() - w / 2, glyph.y() - headH / 2, w, headH);
+                surface.strokeLine(glyph.x() - w / 2, glyph.y() - headH / 2 - tick,
+                        glyph.x() - w / 2, glyph.y() + headH / 2 + tick);
+                surface.strokeLine(glyph.x() + w / 2, glyph.y() - headH / 2 - tick,
+                        glyph.x() + w / 2, glyph.y() + headH / 2 + tick);
+            }
             default -> {
             }
         }
@@ -189,7 +203,7 @@ public final class ScorePainter {
 
     private static boolean isNoteheadGlyph(Glyph glyph) {
         return switch (glyph) {
-            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE -> true;
+            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE, NOTEHEAD_BREVE -> true;
             default -> false;
         };
     }
@@ -376,8 +390,10 @@ public final class ScorePainter {
                 drawSystemBarline(surface, barline);
             }
             if (bracketsVisible) {
+                double systemGap = system.staves().isEmpty() ? referenceLineGap(layout)
+                        : system.staves().get(0).lineGap();
                 for (BracketPlacement bracket : system.brackets()) {
-                    drawBracket(surface, bracket);
+                    drawBracket(surface, bracket, systemGap);
                 }
             }
         }
@@ -463,10 +479,12 @@ public final class ScorePainter {
         }
 
         for (MeasureLayout measure : staff.measures()) {
-            double top = staff.lineY(0);
-            double bottom = staff.lineY(STAFF_LINES - 1);
-            surface.strokeLine(measure.right(), top, measure.right(), bottom);
+            if (measure.leadingRepeatStart()) {
+                drawBarline(surface, staff, measure.x(), new Barline(Barline.Style.REGULAR, Barline.Repeat.FORWARD));
+            }
+            drawBarline(surface, staff, measure.right(), measure.barline());
         }
+        drawEndingBrackets(surface, staff);
 
         for (GlyphPlacement glyph : staff.glyphs()) {
             if (hiddenCategories.contains(glyph.category())) {
@@ -502,6 +520,9 @@ public final class ScorePainter {
         }
         for (HairpinPlacement hairpin : staff.hairpins()) {
             drawHairpin(surface, hairpin);
+        }
+        for (GraceNotePlacement grace : staff.graceNotes()) {
+            drawGraceNotes(surface, staff, grace);
         }
         for (StemPlacement stem : staff.stems()) {
             drawStem(surface, stem);
@@ -554,7 +575,7 @@ public final class ScorePainter {
     private void drawGlyphInner(RenderSurface surface, StaffLayout staff, GlyphPlacement glyph,
                                 double gap, double headW, double headH, double sizeHint, Glyph g) {
         switch (g) {
-            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE -> {
+            case NOTEHEAD_BLACK, NOTEHEAD_HALF, NOTEHEAD_WHOLE, NOTEHEAD_BREVE -> {
                 if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
                     drawNoteheadPrimitive(surface, g, glyph, headW, headH);
                 }
@@ -568,7 +589,9 @@ public final class ScorePainter {
                 double sx = glyph.x() - headW / 2;
                 surface.strokeLine(sx, glyph.y(), sx, glyph.y() + gap * STEM_LENGTH_GAPS);
             }
-            case FLAG_8TH_UP, FLAG_8TH_DOWN, FLAG_16TH_UP, FLAG_16TH_DOWN -> {
+            case FLAG_8TH_UP, FLAG_8TH_DOWN, FLAG_16TH_UP, FLAG_16TH_DOWN,
+                 FLAG_32ND_UP, FLAG_32ND_DOWN, FLAG_64TH_UP, FLAG_64TH_DOWN,
+                 FLAG_128TH_UP, FLAG_128TH_DOWN -> {
                 // Flags rely on the SMuFL font; when absent we draw nothing
                 // (a missing flag is preferable to an incorrect primitive).
                 drawSmuflIfAvailable(surface, g, glyph, sizeHint);
@@ -596,6 +619,17 @@ public final class ScorePainter {
                     surface.strokeText(">", glyph.x(), glyph.y() + gap * 0.4);
                 }
             }
+            case ARTICULATION_DOWN_BOW -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText("⊓", glyph.x(), glyph.y() + gap * 0.4);
+                }
+            }
+            case ARTICULATION_UP_BOW -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText("V", glyph.x(), glyph.y() + gap * 0.4);
+                }
+            }
+            case ARTICULATION_ROLL -> surface.strokeText("~", glyph.x(), glyph.y() + gap * 0.4);
             case DYNAMIC_PPP, DYNAMIC_PP, DYNAMIC_P, DYNAMIC_MP, DYNAMIC_MF,
                  DYNAMIC_F, DYNAMIC_FF, DYNAMIC_FFF, DYNAMIC_SF, DYNAMIC_SFZ,
                  DYNAMIC_FZ, DYNAMIC_FP, DYNAMIC_RF, DYNAMIC_RFZ, DYNAMIC_NIENTE -> {
@@ -788,6 +822,48 @@ public final class ScorePainter {
     }
 
     /**
+     * Draw a grace-note run: small noteheads with stems reaching a shared
+     * beam line that is raked (sloped) to follow the run's pitch contour
+     * (a lone grace note just gets its own short stem), an acciaccatura
+     * slash across the beam (or the stem, when there is only one), and a
+     * curved line connecting the last grace note to the main note it leads
+     * into.
+     */
+    private void drawGraceNotes(RenderSurface surface, StaffLayout staff, GraceNotePlacement grace) {
+        double gap = staff.lineGap();
+        double headW = gap * 0.78;
+        double headH = gap * 0.58;
+        List<Double> xs = grace.noteX();
+        List<Double> ys = grace.noteY();
+        List<Double> stemTops = grace.stemTopY();
+        int count = xs.size();
+        for (int i = 0; i < count; i++) {
+            double x = xs.get(i);
+            double y = ys.get(i);
+            surface.fillOval(x - headW / 2, y - headH / 2, headW, headH);
+            surface.strokeLine(x + headW / 2, y, x + headW / 2, stemTops.get(i));
+        }
+        double slashHalf = gap * 0.5;
+        double firstStemX = xs.get(0) + headW / 2;
+        double firstStemTop = stemTops.get(0);
+        if (count > 1) {
+            surface.strokeLine(firstStemX, firstStemTop,
+                    xs.get(count - 1) + headW / 2, stemTops.get(count - 1));
+            surface.strokeLine(firstStemX - slashHalf * 0.5, firstStemTop + slashHalf,
+                    firstStemX + slashHalf * 0.5, firstStemTop - slashHalf);
+        } else {
+            double slashY = (ys.get(0) + firstStemTop) / 2.0;
+            surface.strokeLine(firstStemX - slashHalf * 0.6, slashY + slashHalf,
+                    firstStemX + slashHalf * 0.6, slashY - slashHalf);
+        }
+        double lastX = xs.get(count - 1);
+        double lastY = ys.get(count - 1);
+        double curveMidX = (lastX + grace.mainNoteX()) / 2.0;
+        double curveY = Math.min(lastY, grace.mainNoteY()) - gap * 1.2;
+        surface.strokeQuadCurve(lastX, lastY, curveMidX, curveY, grace.mainNoteX(), grace.mainNoteY());
+    }
+
+    /**
      * Draw an overlay accidental for the given notehead placement. The
      * glyph is positioned at {@code (notehead.x() - gap * 1.5,
      * notehead.y())} - matching the engraver's own accidental placement
@@ -866,6 +942,101 @@ public final class ScorePainter {
     }
 
     /**
+     * Draw a single per-measure barline at {@code x}: a plain thin line for
+     * {@code null}/{@link Barline.Style#REGULAR}, two close thin lines for
+     * {@link Barline.Style#DOUBLE}, thin+thick for {@link Barline.Style#FINAL},
+     * and the conventional dotted variants when {@link Barline#repeat()} is
+     * set (dots sit on the side the repeated section is on).
+     */
+    private void drawBarline(RenderSurface surface, StaffLayout staff, double x, Barline barline) {
+        double gap = staff.lineGap();
+        double top = staff.lineY(0);
+        double bottom = staff.lineY(STAFF_LINES - 1);
+        double lineSpacing = gap * 0.35;
+        double dotOffset = lineSpacing + gap * 0.65;
+
+        Barline.Repeat repeat = barline == null ? Barline.Repeat.NONE : barline.repeat();
+        Barline.Style style = barline == null ? Barline.Style.REGULAR : barline.style();
+        switch (repeat) {
+            case BACKWARD -> {
+                drawRepeatDots(surface, staff, x - dotOffset);
+                surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                drawThickLine(surface, x, top, bottom);
+            }
+            case FORWARD -> {
+                drawThickLine(surface, x, top, bottom);
+                surface.strokeLine(x + lineSpacing, top, x + lineSpacing, bottom);
+                drawRepeatDots(surface, staff, x + dotOffset);
+            }
+            case BOTH -> {
+                drawRepeatDots(surface, staff, x - dotOffset);
+                surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                surface.strokeLine(x + lineSpacing, top, x + lineSpacing, bottom);
+                drawRepeatDots(surface, staff, x + dotOffset);
+            }
+            case NONE -> {
+                switch (style) {
+                    case DOUBLE -> {
+                        surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                        surface.strokeLine(x, top, x, bottom);
+                    }
+                    case FINAL -> {
+                        surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                        drawThickLine(surface, x, top, bottom);
+                    }
+                    case REGULAR -> surface.strokeLine(x, top, x, bottom);
+                }
+            }
+        }
+    }
+
+    private void drawThickLine(RenderSurface surface, double x, double top, double bottom) {
+        surface.setLineWidth(2.5);
+        surface.strokeLine(x, top, x, bottom);
+        surface.setLineWidth(1.0);
+    }
+
+    /** Two repeat dots, vertically centered in the staff's middle two spaces. */
+    private void drawRepeatDots(RenderSurface surface, StaffLayout staff, double x) {
+        double gap = staff.lineGap();
+        double radius = gap * 0.16;
+        double midY = (staff.lineY(0) + staff.lineY(STAFF_LINES - 1)) / 2.0;
+        surface.fillOval(x - radius, midY - gap * 0.5 - radius, radius * 2, radius * 2);
+        surface.fillOval(x - radius, midY + gap * 0.5 - radius, radius * 2, radius * 2);
+    }
+
+    /**
+     * Draw a first/second-ending bracket over each contiguous run of
+     * measures sharing the same non-null {@link MeasureLayout#ending()}
+     * label: a horizontal line with a short downward tick at each end and
+     * the label centered above it.
+     */
+    private void drawEndingBrackets(RenderSurface surface, StaffLayout staff) {
+        double gap = staff.lineGap();
+        double y = staff.lineY(0) - gap * 2.2;
+        double tick = gap * 0.6;
+        List<MeasureLayout> measures = staff.measures();
+        int i = 0;
+        while (i < measures.size()) {
+            String label = measures.get(i).ending();
+            if (label == null) {
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < measures.size() && label.equals(measures.get(i).ending())) {
+                i++;
+            }
+            double x1 = measures.get(start).x();
+            double x2 = measures.get(i - 1).right();
+            surface.strokeLine(x1, y, x1, y + tick);
+            surface.strokeLine(x1, y, x2, y);
+            surface.strokeLine(x2, y, x2, y + tick);
+            surface.strokeText(label, x1 + gap * 0.5, y - gap * 0.3);
+        }
+    }
+
+    /**
      * Draw a system-wide vertical barline at the given x, spanning the
      * top-line of the first staff to the bottom-line of the last staff of
      * the enclosing system. Style is honored by picking a heavier line
@@ -899,7 +1070,7 @@ public final class ScorePainter {
      *       vertical line, no serifs.</li>
      * </ul>
      */
-    private void drawBracket(RenderSurface surface, BracketPlacement bracket) {
+    private void drawBracket(RenderSurface surface, BracketPlacement bracket, double gap) {
         double span = bracket.bottomY() - bracket.topY();
         switch (bracket.shape()) {
             case BRACE -> {
@@ -910,15 +1081,19 @@ public final class ScorePainter {
                 // verified via GlyphVector#getVisualBounds() (top ~ -0.997 *
                 // fontSize, bottom ~ 0). So anchoring the baseline at
                 // bracket.bottomY() makes the glyph span almost exactly
-                // [topY, bottomY] with no extra offset needed.
+                // [topY, bottomY] with no extra offset needed. Unlike the
+                // bracket's ornamental tips below, the brace glyph is
+                // *meant* to stretch across the whole span - that's the
+                // one piece of this drawing that legitimately scales with
+                // however many staves the group covers.
                 boolean drawn = surface.drawSmuflGlyph("\uE000",
                         bracket.x() - 5, bracket.bottomY(), span);
                 if (!drawn) {
-                    drawBraceFallback(surface, bracket, span);
+                    drawBraceFallback(surface, bracket, gap);
                 }
             }
-            case BRACKET -> drawBracketWithOrnaments(surface, bracket, span);
-            case SQUARE -> drawSquareBracket(surface, bracket, span);
+            case BRACKET -> drawBracketWithOrnaments(surface, bracket, gap);
+            case SQUARE -> drawSquareBracket(surface, bracket, gap);
             case LINE -> drawBracketLineFallback(surface, bracket);
         }
     }
@@ -928,13 +1103,10 @@ public final class ScorePainter {
      * horizontal serifs at each end. Uglier than a real brace but
      * unambiguously signals "these staves are grouped".
      */
-    private void drawBraceFallback(RenderSurface surface, BracketPlacement bracket, double span) {
+    private void drawBraceFallback(RenderSurface surface, BracketPlacement bracket, double gap) {
         double x = bracket.x();
         surface.strokeLine(x, bracket.topY(), x, bracket.bottomY());
-        // Serif width: 2/3 of the average staff-line gap. We don't have
-        // direct access to the gap here; approximate from the span so the
-        // serif scales sensibly with the brace height.
-        double serif = Math.max(4.0, span * 0.05);
+        double serif = gap * 0.65;
         surface.strokeLine(x, bracket.topY(), x + serif, bracket.topY());
         surface.strokeLine(x, bracket.bottomY(), x + serif, bracket.bottomY());
     }
@@ -946,21 +1118,26 @@ public final class ScorePainter {
      * falls back to short horizontal serifs so the shape still reads as a
      * bracket rather than a plain vertical line.
      */
-    private void drawBracketWithOrnaments(RenderSurface surface, BracketPlacement bracket, double span) {
+    private void drawBracketWithOrnaments(RenderSurface surface, BracketPlacement bracket, double gap) {
         double x = bracket.x();
-        // Overshoot each end by 0.4 of an approximated staff-line gap so
-        // the bracket visually "caps" the outermost staff lines.
-        double gapEstimate = Math.max(4.0, span * 0.05);
-        double overshoot = gapEstimate * 0.4;
-        double thickness = gapEstimate * 0.4;
+        // Overshoot each end by 0.4 of a staff-line gap so the bracket
+        // visually "caps" the outermost staff lines.
+        double overshoot = gap * 0.4;
+        double thickness = gap * 0.4;
         double topExtended = bracket.topY() - overshoot;
         double bottomExtended = bracket.bottomY() + overshoot;
         surface.fillRect(x - thickness / 2.0, topExtended, thickness,
                 bottomExtended - topExtended);
-        boolean topDrawn = surface.drawSmuflGlyph("\uE003", x, bracket.topY(), span);
-        boolean bottomDrawn = surface.drawSmuflGlyph("\uE004", x, bracket.bottomY(), span);
+        // The ornamental tips are small fixed-size caps at each end, not a
+        // single glyph stretched across the whole bracket like the brace
+        // is (see drawBracket's BRACE case) - scale by the actual staff
+        // gap, not the bracket's own span, or a bracket spanning many
+        // staves draws a wildly oversized tip.
+        double tipSize = gap * 4.0;
+        boolean topDrawn = surface.drawSmuflGlyph("\uE003", x, bracket.topY(), tipSize);
+        boolean bottomDrawn = surface.drawSmuflGlyph("\uE004", x, bracket.bottomY(), tipSize);
         if (!topDrawn || !bottomDrawn) {
-            double serif = gapEstimate * 0.9;
+            double serif = gap * 0.9;
             if (!topDrawn) {
                 surface.strokeLine(x, topExtended, x + serif, topExtended);
             }
@@ -975,11 +1152,10 @@ public final class ScorePainter {
      * stroke as {@link #drawBracketWithOrnaments} but with unadorned
      * horizontal serifs at each end instead of SMuFL ornamental tips.
      */
-    private void drawSquareBracket(RenderSurface surface, BracketPlacement bracket, double span) {
+    private void drawSquareBracket(RenderSurface surface, BracketPlacement bracket, double gap) {
         double x = bracket.x();
-        double gapEstimate = Math.max(4.0, span * 0.05);
-        double thickness = gapEstimate * 0.4;
-        double serif = gapEstimate * 0.9;
+        double thickness = gap * 0.4;
+        double serif = gap * 0.9;
         surface.fillRect(x - thickness / 2.0, bracket.topY(), thickness,
                 bracket.bottomY() - bracket.topY());
         surface.strokeLine(x, bracket.topY(), x + serif, bracket.topY());

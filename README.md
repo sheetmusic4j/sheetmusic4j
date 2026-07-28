@@ -13,7 +13,7 @@ Sheetmusic4J requires **Java 21** or higher.
 
 | Module      | Description                                                                                                                                               | JavaFX dependency |
 |-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
-| `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML and MIDI import/export | No                |
+| `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, and ABC import/export | No                |
 | `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                               | No                |
 | `fxviewer`  | JavaFX Canvas rendering of a `LayoutResult` using a SMuFL-compliant music font                                                                            | Yes               |
 | `fxdemo`    | Standalone JavaFX demo application for loading and inspecting scores                                                                                      | Yes               |
@@ -27,8 +27,9 @@ renders, so you can point at something in a screenshot and know exactly which cl
 
 * Loading and saving of MusicXML 4.0 files, see https://www.musicxml.com/for-developers/
 * Importing and exporting MIDI files (`javax.sound.midi`)
+* Importing and exporting ABC music notation files (see https://abcnotation.com/)
 * `ScoreFile` convenience facade that dispatches to the right reader/writer based on file extension (`.musicxml`,
-  `.xml`, `.mxl`, `.mid`, `.midi`)
+  `.xml`, `.mxl`, `.mid`, `.midi`, `.abc`)
 * Testfiles from https://www.musicxml.com/music-in-musicxml/example-set/
 
 ### Engraving
@@ -43,7 +44,7 @@ renders, so you can point at something in a screenshot and know exactly which cl
 
 ### FX Demo
 
-* Opens MusicXML/MIDI files and displays a debug/inspection pane alongside the rendered score
+* Opens MusicXML/MIDI/ABC files and displays a debug/inspection pane alongside the rendered score
 * Shows a companion PDF side-by-side (via [pdfviewfx](https://github.com/dlsc-software-consulting-gmbh/PDFViewFX)) when
   one exists next to the loaded file with the same base name
 
@@ -66,5 +67,5 @@ mvn -pl fxdemo javafx:run
 
 ## Status
 
-Module structure, domain model, MusicXML/MIDI I/O, layout engine, JavaFX rendering, and the demo app are in place;
-rendering fidelity and MusicXML/MIDI coverage are still being expanded.
+Module structure, domain model, MusicXML/MIDI/ABC I/O, layout engine, JavaFX rendering, and the demo app are in place;
+rendering fidelity and format coverage are still being expanded.

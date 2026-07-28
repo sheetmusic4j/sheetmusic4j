@@ -1,0 +1,13 @@
+X:1
+T:Paddy O'Rafferty (Jig)
+C:Trad.
+O:Irish
+R:Jig
+M:6/8
+K:D
+dff cee|def gfe|dff cee|dfe dBA|
+dff cee|def gfe|faf gfe|1 dfe dBA:|2 dfe dcB|]
+~A3 B3|gfe fdB|AFA B2c|dfe dcB|
+~A3 ~B3|efe efg|faf gfe|1 dfe dcB:|2 dfe dBA|]
+fAA eAA|def gfe|fAA eAA|dfe dBA|
+fAA eAA|def gfe|faf gfe|dfe dBA:|

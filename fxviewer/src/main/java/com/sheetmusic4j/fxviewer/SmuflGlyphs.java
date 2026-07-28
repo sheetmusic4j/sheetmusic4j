@@ -71,10 +71,17 @@ public final class SmuflGlyphs {
             case NOTEHEAD_WHOLE -> "\uE0A2";
             case NOTEHEAD_HALF -> "\uE0A3";
             case NOTEHEAD_BLACK -> "\uE0A4";
+            case NOTEHEAD_BREVE -> "\uE0A0";
             case FLAG_8TH_UP -> "\uE240";
             case FLAG_8TH_DOWN -> "\uE241";
             case FLAG_16TH_UP -> "\uE242";
             case FLAG_16TH_DOWN -> "\uE243";
+            case FLAG_32ND_UP -> "\uE244";
+            case FLAG_32ND_DOWN -> "\uE245";
+            case FLAG_64TH_UP -> "\uE246";
+            case FLAG_64TH_DOWN -> "\uE247";
+            case FLAG_128TH_UP -> "\uE248";
+            case FLAG_128TH_DOWN -> "\uE249";
             case ACCIDENTAL_FLAT -> "\uE260";
             case ACCIDENTAL_NATURAL -> "\uE261";
             case ACCIDENTAL_SHARP -> "\uE262";
@@ -119,6 +126,8 @@ public final class SmuflGlyphs {
             case BRACKET_BOTTOM -> "\uE004";
             case ARTICULATION_ACCENT -> "\uE4A0";
             case ARTICULATION_STACCATO -> "\uE4A2";
+            case ARTICULATION_DOWN_BOW -> "\uE610";
+            case ARTICULATION_UP_BOW -> "\uE612";
             default -> null;
         };
     }
@@ -140,6 +149,7 @@ public final class SmuflGlyphs {
         double staffSpaces = switch (glyph) {
             case NOTEHEAD_BLACK, NOTEHEAD_HALF -> 1.18;
             case NOTEHEAD_WHOLE -> 1.5;
+            case NOTEHEAD_BREVE -> 2.2;
             case TIME_DIGIT_0, TIME_DIGIT_1, TIME_DIGIT_2, TIME_DIGIT_3, TIME_DIGIT_4,
                  TIME_DIGIT_5, TIME_DIGIT_6, TIME_DIGIT_7, TIME_DIGIT_8, TIME_DIGIT_9 -> 1.4;
             case ACCIDENTAL_FLAT -> 0.9;
@@ -156,6 +166,7 @@ public final class SmuflGlyphs {
             case BRACKET_TOP, BRACKET_BOTTOM -> 0.7;
             case ARTICULATION_STACCATO -> 0.5;
             case ARTICULATION_ACCENT -> 1.2;
+            case ARTICULATION_DOWN_BOW, ARTICULATION_UP_BOW -> 1.2;
             default -> 0.0;
         };
         // 1 em = 4 staff spaces in SMuFL, so staffSpaces / 4 = fraction of the em/sizeHint.

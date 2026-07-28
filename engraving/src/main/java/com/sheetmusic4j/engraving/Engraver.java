@@ -9,6 +9,7 @@ import java.util.Optional;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
@@ -37,8 +38,25 @@ import com.sheetmusic4j.core.model.TimeSignature;
 import com.sheetmusic4j.core.model.Tuplet;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
-import com.sheetmusic4j.engraving.layout.*;
-import com.sheetmusic4j.engraving.placement.*;
+import com.sheetmusic4j.engraving.layout.KeySignatureLayout;
+import com.sheetmusic4j.engraving.layout.LayoutMode;
+import com.sheetmusic4j.engraving.layout.LayoutOptions;
+import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.engraving.layout.MeasureLayout;
+import com.sheetmusic4j.engraving.layout.NoteAnchor;
+import com.sheetmusic4j.engraving.layout.StaffLayout;
+import com.sheetmusic4j.engraving.layout.SystemBarline;
+import com.sheetmusic4j.engraving.layout.SystemLayout;
+import com.sheetmusic4j.engraving.placement.BeamPlacement;
+import com.sheetmusic4j.engraving.placement.BracketPlacement;
+import com.sheetmusic4j.engraving.placement.GlyphPlacement;
+import com.sheetmusic4j.engraving.placement.GraceNotePlacement;
+import com.sheetmusic4j.engraving.placement.HairpinPlacement;
+import com.sheetmusic4j.engraving.placement.SlurPlacement;
+import com.sheetmusic4j.engraving.placement.StemPlacement;
+import com.sheetmusic4j.engraving.placement.TextPlacement;
+import com.sheetmusic4j.engraving.placement.TiePlacement;
+import com.sheetmusic4j.engraving.placement.TupletPlacement;
 
 /**
  * Turns a {@link Score} into a framework-agnostic {@link LayoutResult}.
@@ -117,9 +135,9 @@ public final class Engraver {
      * Distance (in staff-line gaps) from the top staff line to the baseline
      * of a chord-symbol label. Chord symbols conventionally sit closer to the
      * staff than tempo/words directions so performers can read them alongside
-     * the notes.
+     * the notes - smaller than {@link #DIRECTION_OFFSET_GAPS}, not larger.
      */
-    private static final double HARMONY_OFFSET_GAPS = 3.5;
+    private static final double HARMONY_OFFSET_GAPS = 1.2;
 
     /**
      * Multiplier applied to the staff-line gap to derive the chord-symbol
@@ -230,8 +248,68 @@ public final class Engraver {
      * when it carries an accidental. This ensures the accidental glyph sits
      * inside the note's reserved slot rather than colliding with the
      * previous element.
+     *
+     * <p>The accidental itself is drawn centered {@code gap * 1.5} to the
+     * left of the note (see {@code placeNote}'s accidental placement) and
+     * its own glyph then extends roughly another half-gap further left at
+     * this layout's font size (see {@code SmuflGlyphs#halfAdvanceWidth} for
+     * {@code ACCIDENTAL_FLAT}/{@code ACCIDENTAL_SHARP}/{@code
+     * ACCIDENTAL_NATURAL}) - this value must clear that whole reach, or the
+     * accidental collides with the previous element regardless of how much
+     * the note itself gets shifted.
      */
-    private static final double ACCIDENTAL_RESERVE_GAPS = 0.9;
+    private static final double ACCIDENTAL_RESERVE_GAPS = 2.0;
+
+    /**
+     * Left-side shift for a note whose accidental is a double sharp/flat:
+     * {@link #ACCIDENTAL_RESERVE_GAPS} sized for the narrower single
+     * accidentals, but a double glyph draws almost twice as wide (see
+     * {@code SmuflGlyphs#halfAdvanceWidth} for {@code
+     * ACCIDENTAL_DOUBLE_FLAT}/{@code ACCIDENTAL_DOUBLE_SHARP}) and needs
+     * more room to stay clear of the previous element.
+     */
+    private static final double DOUBLE_ACCIDENTAL_RESERVE_GAPS = 2.4;
+
+    /**
+     * Trailing padding (in staff-line gaps) reserved after the rightmost
+     * augmentation dot, so the dot's own glyph width doesn't touch the next
+     * notehead.
+     */
+    private static final double DOT_TRAILING_PAD_GAPS = 0.5;
+
+    /**
+     * Horizontal spacing (in staff-line gaps) between consecutive grace
+     * noteheads within one run, and per grace note reserved as a left-side
+     * shift before the main note - see {@link #buildGraceNotePlacement}. A
+     * run of {@code n} grace notes reaches back {@code n} times this many
+     * gaps from the main note, so that same distance must be reserved as
+     * the main note's left shift or the run collides with whatever
+     * precedes it (previous note, or the barline).
+     */
+    private static final double GRACE_NOTE_SPACING_GAPS = 1.7;
+
+    /**
+     * Stem length (in staff-line gaps) for the first/last grace note of a
+     * run, measured from its own notehead - see
+     * {@link #buildGraceNotePlacement}. The run's beam/stem-top line is
+     * raked (sloped) between these two endpoints to follow the run's pitch
+     * contour, the same way a beam over ordinary notes of varying pitch
+     * would, rather than sitting flat.
+     */
+    private static final double GRACE_STEM_LENGTH_GAPS = 2.3;
+
+    /**
+     * Extra weight added to a note's width per grace note it carries, in
+     * "quarter-note width" units, mirroring {@link #ACCIDENTAL_RESERVE_WEIGHT}.
+     */
+    private static final double GRACE_NOTE_RESERVE_WEIGHT = 0.25;
+
+    /**
+     * Maximum ratio, within a single weighting context (a measure's
+     * elements, or a row's measures), between the largest and smallest
+     * width weight. See {@link #capWeightRatio}.
+     */
+    private static final double MAX_WEIGHT_RATIO = 4.0;
 
     public LayoutResult layout(Score score, LayoutOptions options) {
         List<TextPlacement> texts = new ArrayList<>();
@@ -308,6 +386,17 @@ public final class Engraver {
             StaffLayout[] partFirstStaves = new StaffLayout[score.parts().size()];
             StaffLayout[] partLastStaves = new StaffLayout[score.parts().size()];
             double staffTop = y;
+            String sectionTitle = sectionTitleAt(parts, start);
+            if (sectionTitle != null && options.showTitleTexts()) {
+                double gap = options.staffLineGap();
+                double fontSize = gap * 1.8;
+                texts.add(new TextPlacement(sectionTitle, options.systemWidth() / 2.0, staffTop + fontSize,
+                        fontSize, TextPlacement.Align.CENTER, MarkingCategory.SUBTITLE));
+                // Clear not just the text itself but a typical beamed run's
+                // stem height above the staff below it (the row's actual
+                // note positions aren't known yet at this point).
+                staffTop += fontSize + gap * 4.5;
+            }
             boolean rowHasAboveDirections = false;
             boolean rowHasHarmony = false;
             for (PartInfo p : parts) {
@@ -388,7 +477,10 @@ public final class Engraver {
             y = staffTop;
             }
 
-            double staffOnlyHeight = y - options.staffSpacing() + options.rightMargin();
+            double postTuneBottom = layoutPostTuneText(score, options, y, texts);
+
+            double staffOnlyBase = y - options.staffSpacing();
+            double staffOnlyHeight = (postTuneBottom > y ? postTuneBottom : staffOnlyBase) + options.rightMargin();
             // Expand the layout's reported height so it also covers any
             // glyph, stem, beam or note anchor that sits below the last
             // staff (e.g. ledger lines for notes well below the bottom
@@ -400,6 +492,45 @@ public final class Engraver {
                     contentBottom + options.rightMargin());
             anchors.sort((a, b) -> Double.compare(a.onsetQuarters(), b.onsetQuarters()));
             return new LayoutResult(systems, texts, anchors, effectiveSystemWidth, height);
+            }
+
+            /**
+             * Emit ABC {@code W:} "words after tune" text lines below the last
+             * system. Returns the y coordinate reached after emitting the block
+             * (equal to {@code startY} when no part carries post-tune text).
+             *
+             * <p>Lines are drawn left-aligned to the same margin used by the
+             * title block so a reader sees the verses laid out like typeset
+             * lyrics under the score, not squeezed into the last measure.
+             */
+            private static double layoutPostTuneText(Score score, LayoutOptions options,
+                    double startY, List<TextPlacement> texts) {
+                if (!options.showTitleTexts()) {
+                    return startY;
+                }
+                boolean any = false;
+                for (Part part : score.parts()) {
+                    if (!part.postTuneText().isEmpty()) {
+                        any = true;
+                        break;
+                    }
+                }
+                if (!any) {
+                    return startY;
+                }
+                double gap = options.staffLineGap();
+                double fontSize = gap * 1.4;
+                double lineHeight = fontSize * 1.3;
+                double x = options.leftMargin();
+                double y = startY + gap * 1.5;
+                for (Part part : score.parts()) {
+                    for (String line : part.postTuneText()) {
+                        y += lineHeight;
+                        texts.add(new TextPlacement(line == null ? "" : line, x, y,
+                                fontSize, TextPlacement.Align.LEFT, MarkingCategory.LYRIC));
+                    }
+                }
+                return y + gap;
             }
 
             /**
@@ -508,10 +639,123 @@ public final class Engraver {
         }
 
         if (consumed > 0) {
-            // A little breathing space between the title block and the first staff.
-            consumed += gap;
+            // A little breathing space between the title block and the first
+            // staff; more when the score carries marks drawn above the staff
+            // (bowings, ornaments) or chord symbols, so they don't collide
+            // with the title text. Chord symbols sit further from the staff
+            // than the reserve added for them at row layout time accounts
+            // for (see HARMONY_OFFSET_GAPS vs. HARMONY_ABOVE_RESERVE_GAPS),
+            // so the first row needs its own, larger, clearance. Even the
+            // baseline (no special markings) case needs more than a single
+            // gap: an ordinary high note's stem - more so with multiple
+            // flags (sixteenth/thirty-second/...) - can reach close enough
+            // to the staff top to collide with the title text otherwise.
+            double breathing = gap * 2.2;
+            if (hasAboveStaffArticulation(score)) {
+                breathing = Math.max(breathing, gap * 2.5);
+            }
+            if (hasHarmony(score)) {
+                breathing = Math.max(breathing, gap * 2.7);
+            }
+            if (hasGraceNotes(score)) {
+                breathing = Math.max(breathing, gap * 3.2);
+            }
+            if (hasTuplets(score)) {
+                breathing = Math.max(breathing, gap * 3.0);
+            }
+            consumed += breathing;
         }
         return consumed;
+        }
+
+        /**
+         * Whether any note in the score carries a grace-note run - drawn
+         * above the note itself (see {@link #buildGraceNotePlacement}),
+         * which needs its own clearance below the title block.
+         */
+        private static boolean hasGraceNotes(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        if (element instanceof Note note && !note.graceNotes().isEmpty()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Whether any note/rest in the score carries a tuplet marking - its
+         * number is drawn above the tuplet run's highest stem (see
+         * {@link #TUPLET_ABOVE_GAP}), which needs its own clearance below
+         * the title block just like the other above-staff marks here.
+         */
+        private static boolean hasTuplets(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        if (element instanceof Note note && !note.tuplets().isEmpty()) {
+                            return true;
+                        }
+                        if (element instanceof Rest rest && !rest.tuplets().isEmpty()) {
+                            return true;
+                        }
+                        if (element instanceof Chord chord) {
+                            for (Note note : chord.notes()) {
+                                if (!note.tuplets().isEmpty()) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Whether any measure in the score carries a chord-symbol
+         * annotation — see the comment above where this is used.
+         */
+        private static boolean hasHarmony(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        if (element instanceof Harmony) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Whether any note in the score carries an articulation that is always
+         * drawn above the staff (see {@link #placeNote}), regardless of stem
+         * direction — such marks need extra clearance below the title block.
+         */
+        private static boolean hasAboveStaffArticulation(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        List<Note> notes = element instanceof Chord chord ? chord.notes()
+                                : element instanceof Note note ? List.of(note) : List.of();
+                        for (Note note : notes) {
+                            for (Articulation articulation : note.articulations()) {
+                                if (articulation == Articulation.DOWN_BOW
+                                        || articulation == Articulation.UP_BOW
+                                        || articulation == Articulation.ROLL) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
     /**
@@ -1182,7 +1426,7 @@ public final class Engraver {
         double cursor = header;
         for (int i = 0; i < n; i++) {
             double w = baseWidths.get(i);
-            if (i > start && cursor + w > staffWidth + 1e-6) {
+            if (i > start && (cursor + w > staffWidth + 1e-6 || forcesBreak(parts, i))) {
                 rows.add(new int[]{start, i});
                 start = i;
                 header = maxHeaderAdvanceAtRowStart(parts, start, options);
@@ -1193,6 +1437,39 @@ public final class Engraver {
         }
         rows.add(new int[]{start, n});
         return rows;
+    }
+
+    /**
+     * Whether any part explicitly requires a fresh system to start at
+     * measure index {@code i} (e.g. an ABC mid-tune section title), rather
+     * than being packed onto the end of the previous row.
+     */
+    private static boolean forcesBreak(List<PartInfo> parts, int i) {
+        for (PartInfo p : parts) {
+            List<Measure> measures = p.part().measures();
+            if (i < measures.size() && measures.get(i).forceSystemBreak()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The section title (ABC mid-tune {@code T:}) carried by any part's
+     * measure at index {@code i}, the row's first measure - or {@code null}
+     * if none of them start a new section there.
+     */
+    private static String sectionTitleAt(List<PartInfo> parts, int i) {
+        for (PartInfo p : parts) {
+            List<Measure> measures = p.part().measures();
+            if (i < measures.size()) {
+                String title = measures.get(i).sectionTitle().orElse(null);
+                if (title != null) {
+                    return title;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -1256,6 +1533,7 @@ public final class Engraver {
         List<TupletPlacement> tuplets = new ArrayList<>();
         List<HairpinPlacement> hairpins = new ArrayList<>();
         List<StemPlacement> stems = new ArrayList<>();
+        List<GraceNotePlacement> graceNotePlacements = new ArrayList<>();
 
         Map<Integer, BeamRun> openBeams = new HashMap<>();
         Map<String, PlacedNote> tieCandidates = new HashMap<>();
@@ -1279,15 +1557,39 @@ public final class Engraver {
             double measureStartQ = idx < measureStartQuarters.length ? measureStartQuarters[idx] : 0.0;
             double measureDurQ = idx < measureDurationQuarters.length ? measureDurationQuarters[idx] : 0.0;
             measureLayouts.add(new MeasureLayout(measure.number(), cursorX, measureWidth,
-                    measureStartQ, measureStartQ + measureDurQ));
+                    measureStartQ, measureStartQ + measureDurQ,
+                    measure.barline().orElse(null), measure.leadingRepeatStart(),
+                    measure.ending().orElse(null)));
 
             double contentStart = cursorX + options.staffLineGap();
+            // A repeat-start mark (bare "|:") or the right-hand dots of a
+            // combined end+start repeat ("::") on the *previous* measure
+            // both draw repeat dots just past this measure's left edge (see
+            // ScorePainter#drawBarline); reserve the same clearance the
+            // first-measure-in-row branch below already gives its own
+            // leading repeat mark, or the dots land on top of - and the
+            // first note collides with - that clearance-free content start.
+            boolean midRowRepeatClearance = !firstMeasureInRow && measure.leadingRepeatStart();
+            if (!midRowRepeatClearance && !firstMeasureInRow && idx > 0) {
+                Barline previousBarline = part.measures().get(idx - 1).barline().orElse(null);
+                midRowRepeatClearance = previousBarline != null
+                        && (previousBarline.repeat() == Barline.Repeat.FORWARD
+                            || previousBarline.repeat() == Barline.Repeat.BOTH);
+            }
+            if (midRowRepeatClearance) {
+                contentStart = cursorX + options.staffLineGap() * 1.6;
+            }
             if (firstMeasureInRow) {
                 double clefY = y + clefAnchorLineIndex(currentClef) * options.staffLineGap();
+                // A leading repeat-start mark (thick line + dots) is drawn at
+                // the staff's left edge (see ScorePainter#drawStaff); leave
+                // room for it before the clef instead of drawing on top of it.
+                double leadingRepeatClearance = measure.leadingRepeatStart()
+                        ? options.staffLineGap() * 1.6 : 0.0;
                 if (options.showClef()) {
-                    glyphs.add(new GlyphPlacement(cursorX + options.staffLineGap() * 0.5,
+                    glyphs.add(new GlyphPlacement(cursorX + leadingRepeatClearance + options.staffLineGap() * 0.5,
                             clefY, clefGlyph(currentClef), 4));
-                    contentStart = cursorX + options.staffLineGap() * 4;
+                    contentStart = cursorX + leadingRepeatClearance + options.staffLineGap() * 4;
                 }
                 if (options.showKeySignature() && currentKey.fifths() != 0) {
                     contentStart = placeKeySignature(glyphs, currentKey, currentClef, contentStart, y, options);
@@ -1312,17 +1614,19 @@ public final class Engraver {
             }
             double available = (cursorX + measureWidth) - contentStart - options.staffLineGap();
             double gap = options.staffLineGap();
-            double minSlot = MIN_NOTE_ADVANCE_GAPS * gap;
             double[] timedX = new double[timedElements.size()];
             if (!timedElements.isEmpty()) {
                 double[] weights = new double[timedElements.size()];
-                double sumWeights = 0.0;
                 for (int i = 0; i < timedElements.size(); i++) {
                     double w = noteWidthWeight(timedElements.get(i));
                     if (w <= 0) {
                         w = 1.0;
                     }
                     weights[i] = w;
+                }
+                capWeightRatio(weights);
+                double sumWeights = 0.0;
+                for (double w : weights) {
                     sumWeights += w;
                 }
                 double startCursor = contentStart;
@@ -1330,12 +1634,18 @@ public final class Engraver {
                     double slotWidth = sumWeights > 0
                             ? available * (weights[i] / sumWeights)
                             : available / timedElements.size();
-                    if (slotWidth < minSlot) {
-                        slotWidth = minSlot;
+                    double slot = minSlotFor(timedElements.get(i), gap);
+                    if (slotWidth < slot) {
+                        slotWidth = slot;
                     }
                     double leftShift = hasAccidental(timedElements.get(i))
-                            ? ACCIDENTAL_RESERVE_GAPS * gap
+                            ? (isDoubleAccidental(timedElements.get(i))
+                                ? DOUBLE_ACCIDENTAL_RESERVE_GAPS : ACCIDENTAL_RESERVE_GAPS) * gap
                             : 0.0;
+                    int graceNotes = graceNoteCount(timedElements.get(i));
+                    if (graceNotes > 0) {
+                        leftShift += GRACE_NOTE_SPACING_GAPS * graceNotes * gap;
+                    }
                     timedX[i] = startCursor + leftShift;
                     startCursor += slotWidth;
                 }
@@ -1375,6 +1685,9 @@ public final class Engraver {
                     int ti = timedIdx++;
                     double noteX = timedX[ti];
                     placeElement(glyphs, beams, ties, slurs, tuplets, stems, openBeams, tieCandidates, slurCandidates, tupletCandidates, element, noteX, y, currentClef, options, stemTipY[ti], stemUpArr[ti], hasStemArr[ti]);
+                    if (element instanceof Note note && !note.graceNotes().isEmpty()) {
+                        graceNotePlacements.add(buildGraceNotePlacement(note, noteX, y, currentClef, options));
+                    }
                     if (staffIdx == 0) {
                         placeLyrics(texts, element, noteX, y, options);
                     }
@@ -1389,7 +1702,7 @@ public final class Engraver {
         }
 
         return new StaffLayout(x, y, cursorX - x, options.staffLineGap(),
-                measureLayouts, glyphs, beams, ties, slurs, tuplets, hairpins, stems);
+                measureLayouts, glyphs, beams, ties, slurs, tuplets, hairpins, stems, graceNotePlacements);
     }
 
     /**
@@ -1442,11 +1755,48 @@ public final class Engraver {
     }
 
     private static double measureWeight(Measure measure) {
+        List<MusicElement> elements = measure.elements();
+        double[] weights = new double[elements.size()];
+        for (int i = 0; i < elements.size(); i++) {
+            weights[i] = noteWidthWeight(elements.get(i));
+        }
+        capWeightRatio(weights);
         double sum = 0.0;
-        for (MusicElement element : measure.elements()) {
-            sum += noteWidthWeight(element);
+        for (double w : weights) {
+            sum += w;
         }
         return sum > 0 ? sum : 1.0;
+    }
+
+    /**
+     * Clamp every positive value in {@code weights} to at most {@link
+     * #MAX_WEIGHT_RATIO} times the smallest positive value present.
+     *
+     * <p>Note width weight grows with duration ({@code d^0.6}), which is
+     * correct engraving practice — but within one measure this can swing
+     * far enough that a single very long note (e.g. a triple-dotted quarter)
+     * claims several times the horizontal room a neighbouring very short
+     * note (e.g. a 32nd) gets, reading as a wide empty gap next to a
+     * cramped one rather than a smooth "longer note, more room" gradient.
+     * Capping the ratio keeps the direction of the effect (longer still
+     * gets more space) while bounding how extreme the spread can get.
+     */
+    private static void capWeightRatio(double[] weights) {
+        double min = Double.MAX_VALUE;
+        for (double w : weights) {
+            if (w > 0 && w < min) {
+                min = w;
+            }
+        }
+        if (min == Double.MAX_VALUE) {
+            return;
+        }
+        double ceiling = min * MAX_WEIGHT_RATIO;
+        for (int i = 0; i < weights.length; i++) {
+            if (weights[i] > ceiling) {
+                weights[i] = ceiling;
+            }
+        }
     }
 
     /**
@@ -1464,18 +1814,41 @@ public final class Engraver {
      * past the barlines instead of the row simply breaking sooner.
      */
     private static double measureContentMinWidth(Measure measure, LayoutOptions options) {
+        double gap = options.staffLineGap();
         int count = 0;
+        double contentFloor = 2 * gap;
         for (MusicElement element : measure.elements()) {
             if (!(element instanceof Direction) && !(element instanceof Harmony)) {
                 count++;
+                contentFloor += minSlotFor(element, gap);
             }
         }
         if (count == 0) {
             return options.measureMinWidth();
         }
-        double gap = options.staffLineGap();
-        double contentFloor = count * MIN_NOTE_ADVANCE_GAPS * gap + 2 * gap;
         return Math.max(options.measureMinWidth(), contentFloor);
+    }
+
+    /**
+     * Minimum horizontal slot an element needs, in pixels: normally just
+     * {@code MIN_NOTE_ADVANCE_GAPS * gap}, but widened for augmentation dots
+     * so the dot(s) — drawn starting at {@code noteX + 1.2 * gap} and spaced
+     * {@code 0.6 * gap} apart, see the dot loop in {@code placeNote} — have
+     * room before the next element's slot begins.
+     */
+    private static double minSlotFor(MusicElement element, double gap) {
+        double slot = MIN_NOTE_ADVANCE_GAPS * gap;
+        int dots = dotCount(element);
+        if (dots > 0) {
+            double dotsExtent = gap * (1.2 + (dots - 1) * 0.6 + DOT_TRAILING_PAD_GAPS);
+            slot = Math.max(slot, dotsExtent);
+        }
+        int graceNotes = graceNoteCount(element);
+        if (graceNotes > 0) {
+            double graceExtent = gap * (GRACE_NOTE_SPACING_GAPS * graceNotes + 1.0);
+            slot = Math.max(slot, graceExtent);
+        }
+        return slot;
     }
 
     /**
@@ -1499,6 +1872,10 @@ public final class Engraver {
         int dots = dotCount(e);
         if (dots > 0) {
             extras += DOT_RESERVE_WEIGHT * dots;
+        }
+        int graceNotes = graceNoteCount(e);
+        if (graceNotes > 0) {
+            extras += GRACE_NOTE_RESERVE_WEIGHT * graceNotes;
         }
         return base + extras;
     }
@@ -1530,6 +1907,29 @@ public final class Engraver {
     }
 
     /**
+     * Whether the element's displayed accidental is a double sharp/flat -
+     * these draw almost twice as wide as the other accidentals and need
+     * more reserved space, see {@link #DOUBLE_ACCIDENTAL_RESERVE_GAPS}.
+     */
+    private static boolean isDoubleAccidental(MusicElement e) {
+        if (e instanceof Note note) {
+            return isDouble(note.displayedAccidental().orElse(null));
+        }
+        if (e instanceof Chord chord) {
+            for (Note note : chord.notes()) {
+                if (isDouble(note.displayedAccidental().orElse(null))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDouble(Accidental accidental) {
+        return accidental == Accidental.DOUBLE_SHARP || accidental == Accidental.DOUBLE_FLAT;
+    }
+
+    /**
      * Number of augmentation dots on the element. For a {@link Chord} the
      * maximum across all member notes is returned.
      */
@@ -1550,6 +1950,15 @@ public final class Engraver {
             return max;
         }
         return 0;
+    }
+
+    /**
+     * Number of grace notes attached ahead of the element (only {@link Note}
+     * carries these). Used to reserve enough of the note's own slot for the
+     * grace-note run to fit within, see {@link #buildGraceNotePlacement}.
+     */
+    private static int graceNoteCount(MusicElement e) {
+        return e instanceof Note note ? note.graceNotes().size() : 0;
     }
 
     private double placeKeySignature(List<GlyphPlacement> glyphs, KeySignature key, Clef clef,
@@ -1876,6 +2285,40 @@ public final class Engraver {
         };
     }
 
+    /**
+     * Lay out a note's grace-note run: small noteheads spaced immediately
+     * before it, oldest furthest left, sharing one flat stem-top / beam
+     * line set just clear of the highest (smallest-y) grace pitch.
+     */
+    private GraceNotePlacement buildGraceNotePlacement(Note note, double mainNoteX, double staffY,
+                                                        Clef clef, LayoutOptions options) {
+        double gap = options.staffLineGap();
+        List<Pitch> pitches = note.graceNotes();
+        int count = pitches.size();
+        double spacing = gap * GRACE_NOTE_SPACING_GAPS;
+        List<Double> xs = new ArrayList<>(count);
+        List<Double> ys = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            xs.add(mainNoteX - spacing * (count - i));
+            double graceY = staffY + staffStep(pitches.get(i), clef) * (gap / 2.0);
+            ys.add(graceY);
+        }
+        // Rake the stem-top/beam line between the first and last grace
+        // note's own clearance, following the run's pitch contour instead
+        // of sitting flat - matching how a beam over ordinary notes of
+        // varying pitch is drawn.
+        double stemLen = gap * GRACE_STEM_LENGTH_GAPS;
+        double firstTop = ys.get(0) - stemLen;
+        double lastTop = ys.get(count - 1) - stemLen;
+        List<Double> stemTops = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            double t = count == 1 ? 0.0 : (double) i / (count - 1);
+            stemTops.add(firstTop + (lastTop - firstTop) * t);
+        }
+        double mainNoteY = staffY + staffStep(note.pitch(), clef) * (gap / 2.0);
+        return new GraceNotePlacement(xs, ys, stemTops, mainNoteX, mainNoteY);
+    }
+
     private void placeNote(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,
                            List<SlurPlacement> slurs, List<TupletPlacement> tuplets, List<StemPlacement> stems,
                            Map<Integer, BeamRun> openBeams, Map<String, PlacedNote> tieCandidates,
@@ -1921,13 +2364,38 @@ public final class Engraver {
             stems.add(new StemPlacement(stemX, y, stemTipY, note));
         }
 
-        // Articulations sit on the side opposite the stem, clear of the notehead.
+        // Articulations (staccato, accent) sit on the side opposite the stem,
+        // clear of the notehead. Bowing and ornament marks (up/down-bow,
+        // roll) are conventionally always placed above the note regardless
+        // of stem direction. Stacked outward one per mark when a note
+        // carries more than one.
+        int articulationIndex = 0;
         for (Articulation articulation : note.articulations()) {
-            Glyph articulationGlyph = articulation == Articulation.STACCATO
-                    ? Glyph.ARTICULATION_STACCATO
-                    : Glyph.ARTICULATION_ACCENT;
-            double articulationY = stemUp ? y + gap * 2.6 : y - gap * 2.6;
+            Glyph articulationGlyph = switch (articulation) {
+                case STACCATO -> Glyph.ARTICULATION_STACCATO;
+                case ACCENT -> Glyph.ARTICULATION_ACCENT;
+                case DOWN_BOW -> Glyph.ARTICULATION_DOWN_BOW;
+                case UP_BOW -> Glyph.ARTICULATION_UP_BOW;
+                case ROLL -> Glyph.ARTICULATION_ROLL;
+            };
+            boolean alwaysAbove = articulation == Articulation.DOWN_BOW
+                    || articulation == Articulation.UP_BOW
+                    || articulation == Articulation.ROLL;
+            // Staccato/accent marks hug the notehead - just past its edge,
+            // not the wide clearance the always-above ornaments need.
+            double offset = gap * (0.8 + articulationIndex * 0.6);
+            double articulationY;
+            if (alwaysAbove) {
+                // Clear the staff top as well as the notehead itself (a low
+                // note's own clearance may not reach above the staff lines).
+                double aboveStaff = staffY - gap * (1.0 + articulationIndex);
+                double aboveNote = y - gap * (1.0 + articulationIndex);
+                articulationY = Math.min(aboveStaff, aboveNote);
+            } else {
+                articulationY = stemUp ? y + offset : y - offset;
+            }
             glyphs.add(new GlyphPlacement(noteX, articulationY, articulationGlyph, staffStep, MarkingCategory.NOTE, note));
+            articulationIndex++;
         }
 
         // Augmentation dots.
@@ -1963,7 +2431,10 @@ public final class Engraver {
         if (note.tieStop()) {
             PlacedNote start = tieCandidates.remove(key);
             if (start != null) {
-                boolean curveUp = staffStep >= MIDDLE_LINE_STAFF_STEP;
+                // Opposite the stem side, same convention as articulations:
+                // notes below the middle line stem up, so their tie curves
+                // below; notes above stem down, so their tie curves above.
+                boolean curveUp = staffStep < MIDDLE_LINE_STAFF_STEP;
                 double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
                 double startY = start.y() + yShift;
                 double endY = y + yShift;
@@ -1998,7 +2469,8 @@ public final class Engraver {
                     boolean curveUp = switch (start.placement) {
                         case ABOVE -> true;
                         case BELOW -> false;
-                        case DEFAULT -> staffStep >= MIDDLE_LINE_STAFF_STEP;
+                        // Opposite the stem side (see the tie curveUp above).
+                        case DEFAULT -> staffStep < MIDDLE_LINE_STAFF_STEP;
                     };
                     double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
                     double clearY = curveUp ? start.minY : start.maxY;
@@ -2093,8 +2565,10 @@ public final class Engraver {
     static Glyph flagGlyph(NoteType type, boolean stemUp) {
         return switch (type) {
             case EIGHTH -> stemUp ? Glyph.FLAG_8TH_UP : Glyph.FLAG_8TH_DOWN;
-            case SIXTEENTH, THIRTY_SECOND, SIXTY_FOURTH, HUNDRED_TWENTY_EIGHTH ->
-                    stemUp ? Glyph.FLAG_16TH_UP : Glyph.FLAG_16TH_DOWN;
+            case SIXTEENTH -> stemUp ? Glyph.FLAG_16TH_UP : Glyph.FLAG_16TH_DOWN;
+            case THIRTY_SECOND -> stemUp ? Glyph.FLAG_32ND_UP : Glyph.FLAG_32ND_DOWN;
+            case SIXTY_FOURTH -> stemUp ? Glyph.FLAG_64TH_UP : Glyph.FLAG_64TH_DOWN;
+            case HUNDRED_TWENTY_EIGHTH -> stemUp ? Glyph.FLAG_128TH_UP : Glyph.FLAG_128TH_DOWN;
             default -> null;
         };
     }
@@ -2127,7 +2601,8 @@ public final class Engraver {
 
     private static Glyph noteheadGlyph(NoteType type) {
         return switch (type) {
-            case WHOLE, BREVE, LONG, MAXIMA -> Glyph.NOTEHEAD_WHOLE;
+            case WHOLE -> Glyph.NOTEHEAD_WHOLE;
+            case BREVE, LONG, MAXIMA -> Glyph.NOTEHEAD_BREVE;
             case HALF -> Glyph.NOTEHEAD_HALF;
             default -> Glyph.NOTEHEAD_BLACK;
         };

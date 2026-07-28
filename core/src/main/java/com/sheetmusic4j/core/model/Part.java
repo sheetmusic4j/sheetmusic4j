@@ -22,12 +22,14 @@ public final class Part {
     private final String name;
     private final String abbreviation;
     private final List<Measure> measures;
+    private final List<String> postTuneText;
 
     private Part(Builder builder) {
         this.id = builder.id;
         this.name = builder.name;
         this.abbreviation = builder.abbreviation;
         this.measures = List.copyOf(builder.measures);
+        this.postTuneText = List.copyOf(builder.postTuneText);
     }
 
     /**
@@ -71,6 +73,22 @@ public final class Part {
     }
 
     /**
+     * Free-form text lines carried alongside this part but not tied to any
+     * specific note timeline. ABC uses the uppercase {@code W:} info field to
+     * attach additional verses that are typeset below the tune once the
+     * musical body has ended (in contrast to the lowercase {@code w:} field,
+     * whose syllables land inside {@link Note#lyrics()}).
+     *
+     * <p>The engraver / demo can print these lines beneath the last system as
+     * a stand-alone text block. Empty for scores that carry no such text.
+     *
+     * @return the (possibly empty) list of post-tune text lines
+     */
+    public List<String> postTuneText() {
+        return postTuneText;
+    }
+
+    /**
      * Start building a part with the given identifier.
      *
      * @param id MusicXML {@code <part id>}; must not be {@code null}
@@ -88,6 +106,7 @@ public final class Part {
         private String name;
         private String abbreviation;
         private final List<Measure> measures = new ArrayList<>();
+        private final List<String> postTuneText = new ArrayList<>();
 
         private Builder(String id) {
             this.id = id;
@@ -135,6 +154,35 @@ public final class Part {
         public Builder measures(List<Measure> measures) {
             this.measures.clear();
             this.measures.addAll(measures);
+            return this;
+        }
+
+        /**
+         * Append a post-tune text line (one call per {@code W:} field in ABC).
+         *
+         * @param line the text (nulls and blanks are ignored)
+         * @return this builder for chaining
+         */
+        public Builder addPostTuneText(String line) {
+            if (line != null) {
+                this.postTuneText.add(line);
+            }
+            return this;
+        }
+
+        /**
+         * Replace the post-tune text lines with the given list.
+         *
+         * @param lines the lines to set (each non-null)
+         * @return this builder for chaining
+         */
+        public Builder postTuneText(List<String> lines) {
+            this.postTuneText.clear();
+            for (String s : lines) {
+                if (s != null) {
+                    this.postTuneText.add(s);
+                }
+            }
             return this;
         }
 

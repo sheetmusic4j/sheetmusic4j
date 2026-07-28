@@ -23,6 +23,7 @@ public final class Note implements MusicElement {
     private final List<Tuplet> tuplets;
     private final TimeModification timeModification;
     private final Boolean stemUp;
+    private final List<Pitch> graceNotes;
 
     private Note(Builder builder) {
         this.pitch = builder.pitch;
@@ -40,6 +41,7 @@ public final class Note implements MusicElement {
         this.slurs = List.copyOf(builder.slurs);
         this.tuplets = List.copyOf(builder.tuplets);
         this.timeModification = builder.timeModification;
+        this.graceNotes = List.copyOf(builder.graceNotes);
     }
 
     public Pitch pitch() {
@@ -151,6 +153,16 @@ public final class Note implements MusicElement {
         return java.util.Optional.ofNullable(stemUp);
     }
 
+    /**
+     * Small ornamental grace notes played immediately before this note
+     * (MusicXML {@code <grace/>} notes preceding it in document order,
+     * carrying no printed duration of their own); empty for a note with no
+     * grace notes attached. Ordered oldest-first, matching playing order.
+     */
+    public List<Pitch> graceNotes() {
+        return graceNotes;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -171,6 +183,7 @@ public final class Note implements MusicElement {
         private java.util.List<Tuplet> tuplets = new java.util.ArrayList<>();
         private TimeModification timeModification;
         private Boolean stemUp;
+        private java.util.List<Pitch> graceNotes = new java.util.ArrayList<>();
 
         public Builder pitch(Pitch pitch) {
             this.pitch = pitch;
@@ -269,6 +282,11 @@ public final class Note implements MusicElement {
 
         public Builder stemUp(Boolean stemUp) {
             this.stemUp = stemUp;
+            return this;
+        }
+
+        public Builder graceNotes(java.util.List<Pitch> graceNotes) {
+            this.graceNotes = new java.util.ArrayList<>(graceNotes);
             return this;
         }
 

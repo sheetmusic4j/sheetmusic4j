@@ -2,6 +2,7 @@ package com.sheetmusic4j.engraving.layout;
 
 import com.sheetmusic4j.engraving.placement.BeamPlacement;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
+import com.sheetmusic4j.engraving.placement.GraceNotePlacement;
 import com.sheetmusic4j.engraving.placement.HairpinPlacement;
 import com.sheetmusic4j.engraving.placement.SlurPlacement;
 import com.sheetmusic4j.engraving.placement.StemPlacement;
@@ -25,6 +26,7 @@ import java.util.List;
  * @param tuplets  tuplet numbers/brackets spanning a run of notes
  * @param hairpins crescendo/diminuendo wedges
  * @param stems    note stems, lengthened as needed to reach a shared beam or clear the staff
+ * @param graceNotes small ornamental grace-note runs, each leading into a real note
  */
 public record StaffLayout(
         double x,
@@ -38,7 +40,8 @@ public record StaffLayout(
         List<SlurPlacement> slurs,
         List<TupletPlacement> tuplets,
         List<HairpinPlacement> hairpins,
-        List<StemPlacement> stems) {
+        List<StemPlacement> stems,
+        List<GraceNotePlacement> graceNotes) {
 
     public StaffLayout {
         measures = List.copyOf(measures);
@@ -49,6 +52,18 @@ public record StaffLayout(
         tuplets = List.copyOf(tuplets);
         hairpins = List.copyOf(hairpins);
         stems = List.copyOf(stems);
+        graceNotes = List.copyOf(graceNotes);
+    }
+
+    /**
+     * Backwards-compatible constructor for callers that pre-date grace-note support.
+     */
+    public StaffLayout(double x, double y, double width, double lineGap,
+                       List<MeasureLayout> measures, List<GlyphPlacement> glyphs,
+                       List<BeamPlacement> beams, List<TiePlacement> ties,
+                       List<SlurPlacement> slurs, List<TupletPlacement> tuplets,
+                       List<HairpinPlacement> hairpins, List<StemPlacement> stems) {
+        this(x, y, width, lineGap, measures, glyphs, beams, ties, slurs, tuplets, hairpins, stems, List.of());
     }
 
     /**

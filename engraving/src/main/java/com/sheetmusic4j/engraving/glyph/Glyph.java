@@ -15,6 +15,12 @@ public enum Glyph {
     NOTEHEAD_HALF,
     NOTEHEAD_BLACK,
     /**
+     * Double-whole ("breve") notehead: a hollow rectangle with short
+     * vertical ticks at each side. Also used for the rarer long/maxima
+     * types, which this engraver does not distinguish visually.
+     */
+    NOTEHEAD_BREVE,
+    /**
      * Stem going up (from the right side of the notehead).
      */
     STEM_UP,
@@ -43,6 +49,30 @@ public enum Glyph {
      * Flag for an unbeamed sixteenth note with a downward stem.
      */
     FLAG_16TH_DOWN,
+    /**
+     * Flag for an unbeamed thirty-second note with an upward stem.
+     */
+    FLAG_32ND_UP,
+    /**
+     * Flag for an unbeamed thirty-second note with a downward stem.
+     */
+    FLAG_32ND_DOWN,
+    /**
+     * Flag for an unbeamed sixty-fourth note with an upward stem.
+     */
+    FLAG_64TH_UP,
+    /**
+     * Flag for an unbeamed sixty-fourth note with a downward stem.
+     */
+    FLAG_64TH_DOWN,
+    /**
+     * Flag for an unbeamed hundred-twenty-eighth note with an upward stem.
+     */
+    FLAG_128TH_UP,
+    /**
+     * Flag for an unbeamed hundred-twenty-eighth note with a downward stem.
+     */
+    FLAG_128TH_DOWN,
     /**
      * A beam segment connecting the stem tips of two or more beamed notes.
      * Positioning is carried by {@link BeamPlacement} rather than a
@@ -123,7 +153,20 @@ public enum Glyph {
     /**
      * SMuFL {@code articAccentAbove} glyph (U+E4A0).
      */
-    ARTICULATION_ACCENT;
+    ARTICULATION_ACCENT,
+    /**
+     * SMuFL {@code stringsDownBow} glyph (U+E610).
+     */
+    ARTICULATION_DOWN_BOW,
+    /**
+     * SMuFL {@code stringsUpBow} glyph (U+E612).
+     */
+    ARTICULATION_UP_BOW,
+    /**
+     * Irish roll ornament. No dedicated SMuFL codepoint; rendered as a small
+     * tilde-like squiggle.
+     */
+    ARTICULATION_ROLL;
 
     /**
      * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.

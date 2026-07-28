@@ -7,29 +7,49 @@ import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.engraving.layout.NoteAnchor;
+import com.sheetmusic4j.engraving.layout.SystemLayout;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
+import com.sheetmusic4j.engraving.placement.TextPlacement;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.collections.*;
 import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import java.util.EnumSet;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Optional;
 
 /**
  * A JavaFX control that renders a {@link Score}. It engraves the score into a
- * {@link LayoutResult} via {@link Engraver} and draws it on a {@link Canvas}.
+ * {@link LayoutResult} via {@link Engraver} and draws it on a single
+ * {@link Canvas}.
  *
- * <p>The view is <em>content-sized</em>: after each engrave, the underlying
- * canvas and the region's preferred/min/max sizes track {@link LayoutResult}'s
- * width and height. That way, when the view is wrapped in a
- * {@code ScrollPane}, the pane sees the real content size and shows scrollbars
- * whenever the content is larger than the viewport.
+ * <p>The view is <em>content-sized</em>: after each engrave, the region's
+ * preferred/min/max sizes track {@link LayoutResult}'s full width and height
+ * (scaled by {@link #zoomProperty()}). That way, when the view is wrapped in
+ * a {@code ScrollPane}, the pane sees the real content size and shows
+ * scrollbars whenever the content is larger than the viewport.
+ *
+ * <p>The underlying {@link Canvas} itself, however, is capped at
+ * {@link #MAX_CANVAS_DIMENSION} pixels: JavaFX backs every Canvas with a GPU
+ * texture, and most backends refuse dimensions beyond roughly 16384px, so a
+ * sufficiently tall score (many parts, many systems) would otherwise crash
+ * the renderer rather than just failing to display. When the content
+ * exceeds that cap, only a <em>window</em> of it - sized to fit the cap - is
+ * actually materialized into the Canvas at any one time, positioned to cover
+ * whatever {@link #viewportTopProperty()}/{@link #viewportHeightProperty()}
+ * currently say is visible. Callers that wrap this view in a
+ * {@code ScrollPane} should keep those two properties bound to the pane's
+ * scroll position (see the properties' docs) so the window follows
+ * scrolling; callers that never do so still get a safe, non-crashing (if
+ * only partially visible) render of oversized scores.
  *
  * <p>Callers can override the engraving width via {@link #setSystemWidth(double)}
  * (or the {@link #systemWidthProperty()} JavaFX property, e.g. by binding it to
@@ -47,14 +67,67 @@ public final class SheetView extends Region {
     private static final double FALLBACK_HEIGHT = LayoutOptions.defaults().staffHeight()
             + LayoutOptions.defaults().topMargin() * 2;
 
+    /**
+     * Safe ceiling for the Canvas's pixel width/height. JavaFX's hardware
+     * renderer backs every Canvas with a GPU texture, and most backends cap
+     * texture dimensions around 16384px; the Canvas is never asked to grow
+     * past this, regardless of how tall the engraved score actually is (see
+     * {@link #updateWindow(boolean)}).
+     */
+    private static final double MAX_CANVAS_DIMENSION = 8000.0;
+
     private final Canvas canvas = new Canvas();
     private final Engraver engraver = new Engraver();
     private final ScoreRenderer renderer = new ScoreRenderer();
+
+    /**
+     * Top edge, in unzoomed layout units, of the score content currently
+     * materialized into {@link #canvas}. Only meaningful once a score is
+     * loaded; {@link #updateWindow(boolean)} is the sole writer.
+     */
+    private double windowStartLayoutY = 0;
 
     private final DoubleProperty systemWidth =
             new SimpleDoubleProperty(this, "systemWidth", LayoutOptions.defaults().systemWidth());
 
     private final DoubleProperty zoom = new SimpleDoubleProperty(this, "zoom", 1.0);
+
+    /**
+     * Top edge of the currently visible viewport, in this view's own local
+     * coordinate space (i.e. already scaled by {@link #zoomProperty()} -
+     * the same units as {@link #computePrefHeight(double)}). Defaults to 0.
+     * Bind this to a wrapping {@code ScrollPane}'s scroll position - e.g.
+     * from its {@code vvalueProperty()} combined with its
+     * {@code viewportBoundsProperty()} - so this view knows which portion of
+     * an oversized score to actually materialize into its Canvas. Changing
+     * this never re-engraves; it only repaints, and only when the new
+     * viewport falls outside the currently materialized window.
+     *
+     * @return the writable viewport-top property, in local pixel units
+     */
+    public DoubleProperty viewportTopProperty() {
+        return viewportTop;
+    }
+
+    private final DoubleProperty viewportTop = new SimpleDoubleProperty(this, "viewportTop", 0);
+
+    /**
+     * Height of the currently visible viewport, in the same local pixel
+     * units as {@link #viewportTopProperty()}. Defaults to
+     * {@link Double#MAX_VALUE}, meaning "assume the whole score is visible"
+     * - the safe default for callers that never wire this up: an oversized
+     * score still renders (windowed near the top) instead of crashing, it
+     * just isn't scrollable into view past the window without this being
+     * set correctly.
+     *
+     * @return the writable viewport-height property, in local pixel units
+     */
+    public DoubleProperty viewportHeightProperty() {
+        return viewportHeight;
+    }
+
+    private final DoubleProperty viewportHeight =
+            new SimpleDoubleProperty(this, "viewportHeight", Double.MAX_VALUE);
 
     private final ObservableSet<MarkingCategory> hiddenTextCategories =
             FXCollections.observableSet(EnumSet.noneOf(MarkingCategory.class));
@@ -98,6 +171,8 @@ public final class SheetView extends Region {
         getChildren().add(canvas);
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
         zoom.addListener((obs, oldV, newV) -> rebuild());
+        viewportTop.addListener((obs, oldV, newV) -> updateWindow(false));
+        viewportHeight.addListener((obs, oldV, newV) -> updateWindow(false));
         hiddenTextCategories.addListener((SetChangeListener<MarkingCategory>) change -> repaint());
         bracketsVisible.addListener((obs, oldV, newV) -> repaint());
         noteHighlights.addListener((MapChangeListener<MusicElement, Color>) change -> repaint());
@@ -106,11 +181,9 @@ public final class SheetView extends Region {
         renderer.setNoteColorProvider(this::highlightFor);
         renderer.setNoteBackgroundProvider(this::backgroundFor);
         renderer.setNoteAccidentalProvider(this::accidentalFor);
-        // Initial empty canvas at the default width; setScore replaces it.
-        canvas.setWidth(systemWidth.get() * zoom.get());
-        canvas.setHeight(FALLBACK_HEIGHT * zoom.get());
         setMinSize(200, 120);
-        setPrefSize(canvas.getWidth(), canvas.getHeight());
+        // Initial empty canvas at the default width; setScore replaces it.
+        rebuild();
     }
 
     private static Optional<RenderColor> toRenderColor(Color c) {
@@ -143,7 +216,8 @@ public final class SheetView extends Region {
      * The most recently engraved layout for the current score, or
      * {@code null} when no score has been set. Callers building playback
      * cursors read anchors and call {@link LayoutResult#xAtTime(double)}
-     * from this result.
+     * from this result. This is always the <em>full</em> layout, regardless
+     * of how much of it is currently windowed into the Canvas.
      */
     public LayoutResult getLayout() {
         return layout;
@@ -198,6 +272,36 @@ public final class SheetView extends Region {
     public void setZoom(double factor) {
         if (factor > 0) {
             zoom.set(factor);
+        }
+    }
+
+    /**
+     * @return the current viewport top, in local pixel units.
+     */
+    public double getViewportTop() {
+        return viewportTop.get();
+    }
+
+    /**
+     * Updates the viewport top. See {@link #viewportTopProperty()}.
+     */
+    public void setViewportTop(double top) {
+        viewportTop.set(Math.max(0, top));
+    }
+
+    /**
+     * @return the current viewport height, in local pixel units.
+     */
+    public double getViewportHeight() {
+        return viewportHeight.get();
+    }
+
+    /**
+     * Updates the viewport height. See {@link #viewportHeightProperty()}.
+     */
+    public void setViewportHeight(double height) {
+        if (height > 0) {
+            viewportHeight.set(height);
         }
     }
 
@@ -325,26 +429,30 @@ public final class SheetView extends Region {
 
     /**
      * Re-engrave the current score (produces a fresh {@link LayoutResult}),
-     * resize the canvas to the layout's content extent, and repaint. Called
-     * only when a score/layout knob changes; per-note highlight changes go
-     * through {@link #repaint()} instead.
+     * update this view's reported content size accordingly, and repaint.
+     * Called only when a score/layout knob changes; per-note highlight
+     * changes go through {@link #repaint()} instead, and viewport-only
+     * changes go through {@link #updateWindow(boolean)}.
      */
     private void rebuild() {
-        double zoomFactor = Math.max(zoom.get(), 0.01);
+        windowStartLayoutY = 0;
         if (score == null) {
             layout = null;
+            double zoomFactor = Math.max(zoom.get(), 0.01);
             canvas.setWidth(systemWidth.get() * zoomFactor);
             canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
+            canvas.relocate(0, 0);
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         } else {
             layout = engraver.layout(score, layoutOptions());
-            canvas.setWidth(Math.max(layout.width() * zoomFactor, 1.0));
-            canvas.setHeight(Math.max(layout.height() * zoomFactor, 1.0));
-            paintCurrent();
+            updateWindow(true);
         }
-        setPrefSize(canvas.getWidth(), canvas.getHeight());
-        setMinSize(Math.min(200, canvas.getWidth()), Math.min(120, canvas.getHeight()));
-        setMaxSize(canvas.getWidth(), canvas.getHeight());
+
+        double totalWidth = contentWidth();
+        double totalHeight = contentHeight();
+        setPrefSize(totalWidth, totalHeight);
+        setMinSize(Math.min(200, totalWidth), Math.min(120, totalHeight));
+        setMaxSize(totalWidth, totalHeight);
         requestLayout();
         if (getParent() != null) {
             getParent().requestLayout();
@@ -352,61 +460,142 @@ public final class SheetView extends Region {
     }
 
     /**
-     * Redraw the cached layout without re-engraving. Used when only
-     * per-note highlights or the bracket visibility flag change.
+     * Ensures the Canvas currently materializes whatever
+     * {@link #viewportTopProperty()}/{@link #viewportHeightProperty()} say
+     * is visible, re-painting (and repositioning) it only when the visible
+     * viewport has moved outside the currently rendered window - or when
+     * {@code force} is set, as {@link #rebuild()} does right after
+     * re-engraving. For scores that fit within {@link #MAX_CANVAS_DIMENSION}
+     * this always resolves to "the whole score, once" - identical to a
+     * plain, unwindowed Canvas - so ordinary scores never pay any windowing
+     * cost.
+     */
+    private void updateWindow(boolean force) {
+        if (layout == null) {
+            return;
+        }
+        double zoomFactor = Math.max(zoom.get(), 0.01);
+        double contentHeightPx = layout.height() * zoomFactor;
+        double contentWidthPx = layout.width() * zoomFactor;
+        double canvasWidthPx = Math.max(Math.min(contentWidthPx, MAX_CANVAS_DIMENSION), 1.0);
+        double canvasHeightPx = Math.max(Math.min(contentHeightPx, MAX_CANVAS_DIMENSION), 1.0);
+
+        double viewTop = Math.max(0, viewportTop.get());
+        double viewHeight = Math.max(0, Math.min(viewportHeight.get(), contentHeightPx));
+        double viewBottom = viewTop + viewHeight;
+
+        double windowStartPx = windowStartLayoutY * zoomFactor;
+        double windowEndPx = windowStartPx + canvasHeightPx;
+        boolean windowCoversViewport = canvasHeightPx >= contentHeightPx
+                || (viewTop >= windowStartPx && viewBottom <= windowEndPx);
+
+        if (!force && windowCoversViewport) {
+            return;
+        }
+
+        double desiredStartPx;
+        if (canvasHeightPx >= contentHeightPx) {
+            desiredStartPx = 0;
+        } else {
+            double centered = viewTop - (canvasHeightPx - viewHeight) / 2.0;
+            desiredStartPx = Math.max(0, Math.min(centered, contentHeightPx - canvasHeightPx));
+        }
+        windowStartLayoutY = desiredStartPx / zoomFactor;
+
+        canvas.setWidth(canvasWidthPx);
+        canvas.setHeight(canvasHeightPx);
+        requestLayout();
+        paintWindow();
+    }
+
+    /**
+     * Restricts a full layout to just the systems/texts/note-anchors whose
+     * y-position falls within {@code [startY, endY)}, so the Canvas only
+     * pays the drawing cost for its own window instead of the whole score.
+     */
+    private static LayoutResult sliceForWindow(LayoutResult full, double startY, double endY) {
+        List<SystemLayout> systems = full.systems().stream()
+                .filter(s -> s.y() >= startY && s.y() < endY)
+                .toList();
+        List<TextPlacement> texts = full.texts().stream()
+                .filter(t -> t.y() >= startY && t.y() < endY)
+                .toList();
+        List<NoteAnchor> anchors = full.noteAnchors().stream()
+                .filter(a -> a.y() >= startY && a.y() < endY)
+                .toList();
+        return new LayoutResult(systems, texts, anchors, full.width(), endY - startY);
+    }
+
+    /**
+     * Redraw the currently materialized window from the cached layout
+     * without re-engraving or repositioning it. Used whenever only per-note
+     * highlights or the bracket visibility flag change.
      */
     private void repaint() {
         if (layout == null) {
             return;
         }
-        paintCurrent();
+        paintWindow();
     }
 
-    private void paintCurrent() {
+    private void paintWindow() {
         double zoomFactor = Math.max(zoom.get(), 0.01);
         renderer.setHiddenTextCategories(hiddenTextCategories);
         renderer.setBracketsVisible(bracketsVisible.get());
-        var gc = canvas.getGraphicsContext2D();
+        GraphicsContext gc = canvas.getGraphicsContext2D();
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         gc.save();
+        gc.translate(0, -windowStartLayoutY * zoomFactor);
         gc.scale(zoomFactor, zoomFactor);
-        renderer.render(gc, layout, layout.width(), layout.height());
+        double windowEndLayoutY = windowStartLayoutY + canvas.getHeight() / zoomFactor;
+        LayoutResult slice = sliceForWindow(layout, windowStartLayoutY, windowEndLayoutY);
+        renderer.render(gc, slice, layout.width(), canvas.getHeight() / zoomFactor);
         gc.restore();
+    }
+
+    private double contentWidth() {
+        double zoomFactor = Math.max(zoom.get(), 0.01);
+        return Math.max((layout != null ? layout.width() : systemWidth.get()) * zoomFactor, 1.0);
+    }
+
+    private double contentHeight() {
+        double zoomFactor = Math.max(zoom.get(), 0.01);
+        return Math.max((layout != null ? layout.height() : FALLBACK_HEIGHT) * zoomFactor, 1.0);
     }
 
     @Override
     protected void layoutChildren() {
-        canvas.relocate(0, 0);
+        canvas.relocate(0, windowStartLayoutY * Math.max(zoom.get(), 0.01));
     }
 
     @Override
     protected double computeMinWidth(double height) {
-        return Math.min(200, canvas.getWidth());
+        return Math.min(200, contentWidth());
     }
 
     @Override
     protected double computeMinHeight(double width) {
-        return Math.min(120, canvas.getHeight());
+        return Math.min(120, contentHeight());
     }
 
     @Override
     protected double computePrefWidth(double height) {
-        return canvas.getWidth();
+        return contentWidth();
     }
 
     @Override
     protected double computePrefHeight(double width) {
-        return canvas.getHeight();
+        return contentHeight();
     }
 
     @Override
     protected double computeMaxWidth(double height) {
-        return canvas.getWidth();
+        return contentWidth();
     }
 
     @Override
     protected double computeMaxHeight(double width) {
-        return canvas.getHeight();
+        return contentHeight();
     }
 
     private LayoutOptions layoutOptions() {

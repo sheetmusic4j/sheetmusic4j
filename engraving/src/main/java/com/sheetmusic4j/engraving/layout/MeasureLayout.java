@@ -1,5 +1,7 @@
 package com.sheetmusic4j.engraving.layout;
 
+import com.sheetmusic4j.core.model.Barline;
+
 /**
  * The horizontal extent and musical time range of a single measure on a
  * staff.
@@ -11,9 +13,24 @@ package com.sheetmusic4j.engraving.layout;
  *                       from the start of the score in quarter notes
  * @param endQuarters    end of the measure (onset + measure duration), in
  *                       quarter notes
+ * @param barline        the barline drawn at this measure's right edge, or
+ *                       {@code null} for a plain single thin line
+ * @param leadingRepeatStart whether a repeat-start mark ({@code |:}) is
+ *                       drawn at this measure's left edge
+ * @param ending         the first/second-ending label active for this
+ *                       measure (e.g. {@code "1"}), or {@code null}
  */
 public record MeasureLayout(int number, double x, double width,
-                            double startQuarters, double endQuarters) {
+                            double startQuarters, double endQuarters,
+                            Barline barline, boolean leadingRepeatStart, String ending) {
+
+    /**
+     * Backwards-compatible constructor for callers that pre-date barline /
+     * ending support.
+     */
+    public MeasureLayout(int number, double x, double width, double startQuarters, double endQuarters) {
+        this(number, x, width, startQuarters, endQuarters, null, false, null);
+    }
 
     /**
      * Backwards-compatible constructor for callers that pre-date musical

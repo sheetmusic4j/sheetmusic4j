@@ -7,12 +7,14 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -417,14 +419,22 @@ public final class MusicXmlReader {
     }
 
     private void readPart(XMLStreamReader reader, Part.Builder part) throws XMLStreamException {
-        // divisions carry over between measures within a part
+        // divisions carry over between measures within a part, same as
+        // clefsByStaff below.
         int[] divisions = {1};
+        // Carries each staff's most recently seen clef across the whole
+        // part, keyed by <clef number="..."> (1-indexed staff number) -
+        // shared across every measure so a later measure's partial clef
+        // change (naming only one staff) merges positionally onto the
+        // right staff instead of shifting into whichever list index the
+        // partial block alone would occupy (see readAttributes).
+        Map<Integer, Clef> clefsByStaff = new TreeMap<>();
         while (reader.hasNext()) {
             int event = reader.next();
             if (event == XMLStreamConstants.START_ELEMENT) {
                 if ("measure".equals(reader.getLocalName())) {
                     int number = parseIntOr(reader.getAttributeValue(null, "number"), 0);
-                    part.addMeasure(readMeasure(reader, number, divisions));
+                    part.addMeasure(readMeasure(reader, number, divisions, clefsByStaff));
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT && "part".equals(reader.getLocalName())) {
                 break;
@@ -432,17 +442,33 @@ public final class MusicXmlReader {
         }
     }
 
-    private Measure readMeasure(XMLStreamReader reader, int number, int[] divisions) throws XMLStreamException {
+    private Measure readMeasure(XMLStreamReader reader, int number, int[] divisions,
+                                 Map<Integer, Clef> clefsByStaff) throws XMLStreamException {
         Measure.Builder measure = Measure.builder(number);
         List<Note> pendingChord = new ArrayList<>();
+        // A measure can legally carry more than one <attributes> block (most
+        // commonly a mid-measure clef change on one staff of a multi-staff
+        // part). Each subsequent block only states what changed, so its
+        // fields must be merged onto what came before it rather than
+        // replacing it wholesale - otherwise a later, partial block (e.g.
+        // just a staff-2 clef change) would wipe out earlier fields it
+        // never mentioned, like <staves>. clefsByStaff (shared across the
+        // whole part, see readPart) carries clef state across measures and
+        // across blocks within one measure, keyed by <clef number="...">,
+        // so a partial block correctly updates just its own staff's entry
+        // and every other staff's clef is carried forward positionally
+        // correct instead of shifting to whatever index the partial
+        // block's shorter list alone would occupy.
+        Attributes currentAttributes = null;
 
         while (reader.hasNext()) {
             int event = reader.next();
             if (event == XMLStreamConstants.START_ELEMENT) {
                 switch (reader.getLocalName()) {
                     case "attributes" -> {
-                        Attributes attributes = readAttributes(reader, divisions);
+                        Attributes attributes = readAttributes(reader, divisions, currentAttributes, clefsByStaff);
                         if (!attributes.isEmpty()) {
+                            currentAttributes = attributes;
                             measure.attributes(attributes);
                         }
                     }
@@ -495,11 +521,26 @@ public final class MusicXmlReader {
         pendingChord.clear();
     }
 
-    private Attributes readAttributes(XMLStreamReader reader, int[] divisions) throws XMLStreamException {
+    /**
+     * Reads one {@code <attributes>} block, merging it onto whatever this
+     * measure's previous {@code <attributes>} block(s) already established
+     * (see the comment in {@link #readMeasure}). A field this block doesn't
+     * mention falls back to {@code previousInMeasure}'s value instead of
+     * coming out empty; {@code clefsByStaff} is shared across every
+     * {@code <attributes>} block in the measure so a partial clef change
+     * (naming only one {@code number}) updates just that staff's entry
+     * while every other staff's clef is carried forward unchanged.
+     */
+    private Attributes readAttributes(XMLStreamReader reader, int[] divisions,
+                                       Attributes previousInMeasure, Map<Integer, Clef> clefsByStaff)
+            throws XMLStreamException {
         Attributes.Builder builder = Attributes.builder();
+        Integer divisionsValue = null;
+        Integer stavesValue = null;
         Integer beats = null;
         Integer beatType = null;
         Integer fifths = null;
+        int nextClefNumber = clefsByStaff.isEmpty() ? 1 : Collections.max(clefsByStaff.keySet()) + 1;
 
         while (reader.hasNext()) {
             int event = reader.next();
@@ -508,16 +549,18 @@ public final class MusicXmlReader {
                     case "divisions" -> {
                         int d = parseIntOr(readText(reader), 1);
                         divisions[0] = d;
-                        builder.divisions(d);
+                        divisionsValue = d;
                     }
                     case "fifths" -> fifths = parseIntOr(readText(reader), 0);
                     case "beats" -> beats = parseIntOr(readText(reader), 4);
                     case "beat-type" -> beatType = parseIntOr(readText(reader), 4);
-                    case "staves" -> builder.staves(parseIntOr(readText(reader), 1));
+                    case "staves" -> stavesValue = parseIntOr(readText(reader), 1);
                     case "clef" -> {
+                        int staffNumber = parseIntOr(reader.getAttributeValue(null, "number"), nextClefNumber);
                         Clef clef = readClef(reader);
                         if (clef != null) {
-                            builder.addClef(clef);
+                            clefsByStaff.put(staffNumber, clef);
+                            nextClefNumber = staffNumber + 1;
                         }
                     }
                     default -> { /* ignore */ }
@@ -527,11 +570,29 @@ public final class MusicXmlReader {
             }
         }
 
+        if (divisionsValue != null) {
+            builder.divisions(divisionsValue);
+        } else if (previousInMeasure != null) {
+            previousInMeasure.divisions().ifPresent(builder::divisions);
+        }
+        if (stavesValue != null) {
+            builder.staves(stavesValue);
+        } else if (previousInMeasure != null) {
+            previousInMeasure.staves().ifPresent(builder::staves);
+        }
+        if (!clefsByStaff.isEmpty()) {
+            builder.clefs(List.copyOf(clefsByStaff.values()));
+        }
+
         if (fifths != null) {
             builder.keySignature(new KeySignature(fifths));
+        } else if (previousInMeasure != null) {
+            previousInMeasure.keySignature().ifPresent(builder::keySignature);
         }
         if (beats != null && beatType != null) {
             builder.timeSignature(new TimeSignature(beats, beatType));
+        } else if (previousInMeasure != null) {
+            previousInMeasure.timeSignature().ifPresent(builder::timeSignature);
         }
         return builder.build();
     }
@@ -905,6 +966,9 @@ public final class MusicXmlReader {
                     }
                     case "staccato" -> articulations.add(Articulation.STACCATO);
                     case "accent" -> articulations.add(Articulation.ACCENT);
+                    case "down-bow" -> articulations.add(Articulation.DOWN_BOW);
+                    case "up-bow" -> articulations.add(Articulation.UP_BOW);
+                    case "turn" -> articulations.add(Articulation.ROLL);
                     case "slur" -> {
                         int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
                         String slurType = reader.getAttributeValue(null, "type");
