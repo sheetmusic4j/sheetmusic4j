@@ -544,6 +544,9 @@ public final class AbcReader {
         private boolean pendingLeadingRepeatStart;
         private String currentEndingLabel;
 
+        /** Grace-note pitches captured from a "{...}" run, attached to the next emitted note. */
+        private final List<Pitch> pendingGraceNotes = new ArrayList<>();
+
         // Pending broken rhythm to apply to the next emitted note (from > or <
         // encountered immediately after a note).
         private AbcNoteLength.Fraction nextLengthMultiplier;
@@ -1034,8 +1037,28 @@ public final class AbcReader {
                     continue;
                 }
                 if (c == '{') {
-                    // Grace notes — skip to closing '}'.
+                    // Grace notes: one or more small ornamental pitches
+                    // played before the next real note. Captured as plain
+                    // pitches (their own length markers are ignored - grace
+                    // notes always render as small flagged/beamed eighths)
+                    // and attached to whichever note is emitted next.
                     int close = work.indexOf('}', i);
+                    String content = close < 0 ? work.substring(i + 1) : work.substring(i + 1, close);
+                    pendingGraceNotes.clear();
+                    int gi = 0;
+                    int gn = content.length();
+                    while (gi < gn) {
+                        char gc = content.charAt(gi);
+                        if (isNoteStartChar(gc)) {
+                            ParsedNote parsed = parseNote(content, gi);
+                            gi = parsed.consumed;
+                            if (!parsed.isRest) {
+                                pendingGraceNotes.add(new Pitch(parsed.step, parsed.octave, parsed.alter));
+                            }
+                        } else {
+                            gi++;
+                        }
+                    }
                     i = close < 0 ? n : close + 1;
                     continue;
                 }
@@ -1382,6 +1405,10 @@ public final class AbcReader {
                 }
                 pendingArticulations.clear();
             }
+            if (!inChord && !pendingGraceNotes.isEmpty()) {
+                b.graceNotes(pendingGraceNotes);
+                pendingGraceNotes.clear();
+            }
             Note note = b.build();
             if (inChord) {
                 chordNotes.add(note);
@@ -1724,7 +1751,8 @@ public final class AbcReader {
                 .staff(original.staff())
                 .articulations(new ArrayList<>(original.articulations()))
                 .slurs(new ArrayList<>(original.slurs()))
-                .tuplets(new ArrayList<>(original.tuplets()));
+                .tuplets(new ArrayList<>(original.tuplets()))
+                .graceNotes(new ArrayList<>(original.graceNotes()));
         original.displayedAccidental().ifPresent(b::displayedAccidental);
         original.timeModification().ifPresent(b::timeModification);
         original.stemUp().ifPresent(b::stemUp);

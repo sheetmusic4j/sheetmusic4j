@@ -49,6 +49,7 @@ import com.sheetmusic4j.engraving.layout.SystemLayout;
 import com.sheetmusic4j.engraving.placement.BeamPlacement;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
+import com.sheetmusic4j.engraving.placement.GraceNotePlacement;
 import com.sheetmusic4j.engraving.placement.HairpinPlacement;
 import com.sheetmusic4j.engraving.placement.SlurPlacement;
 import com.sheetmusic4j.engraving.placement.StemPlacement;
@@ -594,9 +595,30 @@ public final class Engraver {
             if (hasHarmony(score)) {
                 breathing = Math.max(breathing, gap * 2.7);
             }
+            if (hasGraceNotes(score)) {
+                breathing = Math.max(breathing, gap * 3.2);
+            }
             consumed += breathing;
         }
         return consumed;
+        }
+
+        /**
+         * Whether any note in the score carries a grace-note run - drawn
+         * above the note itself (see {@link #buildGraceNotePlacement}),
+         * which needs its own clearance below the title block.
+         */
+        private static boolean hasGraceNotes(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        if (element instanceof Note note && !note.graceNotes().isEmpty()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
         /**
@@ -1384,6 +1406,7 @@ public final class Engraver {
         List<TupletPlacement> tuplets = new ArrayList<>();
         List<HairpinPlacement> hairpins = new ArrayList<>();
         List<StemPlacement> stems = new ArrayList<>();
+        List<GraceNotePlacement> graceNotePlacements = new ArrayList<>();
 
         Map<Integer, BeamRun> openBeams = new HashMap<>();
         Map<String, PlacedNote> tieCandidates = new HashMap<>();
@@ -1513,6 +1536,9 @@ public final class Engraver {
                     int ti = timedIdx++;
                     double noteX = timedX[ti];
                     placeElement(glyphs, beams, ties, slurs, tuplets, stems, openBeams, tieCandidates, slurCandidates, tupletCandidates, element, noteX, y, currentClef, options, stemTipY[ti], stemUpArr[ti], hasStemArr[ti]);
+                    if (element instanceof Note note && !note.graceNotes().isEmpty()) {
+                        graceNotePlacements.add(buildGraceNotePlacement(note, noteX, y, currentClef, options));
+                    }
                     if (staffIdx == 0) {
                         placeLyrics(texts, element, noteX, y, options);
                     }
@@ -1527,7 +1553,7 @@ public final class Engraver {
         }
 
         return new StaffLayout(x, y, cursorX - x, options.staffLineGap(),
-                measureLayouts, glyphs, beams, ties, slurs, tuplets, hairpins, stems);
+                measureLayouts, glyphs, beams, ties, slurs, tuplets, hairpins, stems, graceNotePlacements);
     }
 
     /**
@@ -2067,6 +2093,30 @@ public final class Engraver {
             case HALF -> 4;
             default -> 4;
         };
+    }
+
+    /**
+     * Lay out a note's grace-note run: small noteheads spaced immediately
+     * before it, oldest furthest left, sharing one flat stem-top / beam
+     * line set just clear of the highest (smallest-y) grace pitch.
+     */
+    private GraceNotePlacement buildGraceNotePlacement(Note note, double mainNoteX, double staffY,
+                                                        Clef clef, LayoutOptions options) {
+        double gap = options.staffLineGap();
+        List<Pitch> pitches = note.graceNotes();
+        int count = pitches.size();
+        double spacing = gap * 1.7;
+        List<Double> xs = new ArrayList<>(count);
+        List<Double> ys = new ArrayList<>(count);
+        double minY = Double.MAX_VALUE;
+        for (int i = 0; i < count; i++) {
+            xs.add(mainNoteX - spacing * (count - i));
+            double graceY = staffY + staffStep(pitches.get(i), clef) * (gap / 2.0);
+            ys.add(graceY);
+            minY = Math.min(minY, graceY);
+        }
+        double mainNoteY = staffY + staffStep(note.pitch(), clef) * (gap / 2.0);
+        return new GraceNotePlacement(xs, ys, minY - gap * 2.3, mainNoteX, mainNoteY);
     }
 
     private void placeNote(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,

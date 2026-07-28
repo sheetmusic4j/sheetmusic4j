@@ -507,6 +507,9 @@ public final class ScorePainter {
         for (HairpinPlacement hairpin : staff.hairpins()) {
             drawHairpin(surface, hairpin);
         }
+        for (GraceNotePlacement grace : staff.graceNotes()) {
+            drawGraceNotes(surface, staff, grace);
+        }
         for (StemPlacement stem : staff.stems()) {
             drawStem(surface, stem);
         }
@@ -800,6 +803,45 @@ public final class ScorePainter {
         double openX = hairpin.crescendo() ? hairpin.x2() : hairpin.x1();
         surface.strokeLine(closedX, hairpin.y(), openX, hairpin.y() - hairpin.halfHeight());
         surface.strokeLine(closedX, hairpin.y(), openX, hairpin.y() + hairpin.halfHeight());
+    }
+
+    /**
+     * Draw a grace-note run: small noteheads with stems reaching a shared
+     * flat beam line (a lone grace note just gets its own short stem), an
+     * acciaccatura slash across the beam (or the stem, when there is only
+     * one), and a curved line connecting the last grace note to the main
+     * note it leads into.
+     */
+    private void drawGraceNotes(RenderSurface surface, StaffLayout staff, GraceNotePlacement grace) {
+        double gap = staff.lineGap();
+        double headW = gap * 0.78;
+        double headH = gap * 0.58;
+        List<Double> xs = grace.noteX();
+        List<Double> ys = grace.noteY();
+        int count = xs.size();
+        for (int i = 0; i < count; i++) {
+            double x = xs.get(i);
+            double y = ys.get(i);
+            surface.fillOval(x - headW / 2, y - headH / 2, headW, headH);
+            surface.strokeLine(x + headW / 2, y, x + headW / 2, grace.beamY());
+        }
+        double slashHalf = gap * 0.5;
+        if (count > 1) {
+            surface.strokeLine(xs.get(0) + headW / 2, grace.beamY(), xs.get(count - 1) + headW / 2, grace.beamY());
+            double slashX = xs.get(0) + headW / 2;
+            surface.strokeLine(slashX - slashHalf * 0.5, grace.beamY() + slashHalf,
+                    slashX + slashHalf * 0.5, grace.beamY() - slashHalf);
+        } else {
+            double slashY = (ys.get(0) + grace.beamY()) / 2.0;
+            double slashX = xs.get(0) + headW / 2;
+            surface.strokeLine(slashX - slashHalf * 0.6, slashY + slashHalf,
+                    slashX + slashHalf * 0.6, slashY - slashHalf);
+        }
+        double lastX = xs.get(count - 1);
+        double lastY = ys.get(count - 1);
+        double curveMidX = (lastX + grace.mainNoteX()) / 2.0;
+        double curveY = Math.min(lastY, grace.mainNoteY()) - gap * 1.2;
+        surface.strokeQuadCurve(lastX, lastY, curveMidX, curveY, grace.mainNoteX(), grace.mainNoteY());
     }
 
     /**
