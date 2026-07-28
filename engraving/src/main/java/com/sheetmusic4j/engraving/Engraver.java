@@ -2273,7 +2273,10 @@ public final class Engraver {
         if (note.tieStop()) {
             PlacedNote start = tieCandidates.remove(key);
             if (start != null) {
-                boolean curveUp = staffStep >= MIDDLE_LINE_STAFF_STEP;
+                // Opposite the stem side, same convention as articulations:
+                // notes below the middle line stem up, so their tie curves
+                // below; notes above stem down, so their tie curves above.
+                boolean curveUp = staffStep < MIDDLE_LINE_STAFF_STEP;
                 double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
                 double startY = start.y() + yShift;
                 double endY = y + yShift;
@@ -2308,7 +2311,8 @@ public final class Engraver {
                     boolean curveUp = switch (start.placement) {
                         case ABOVE -> true;
                         case BELOW -> false;
-                        case DEFAULT -> staffStep >= MIDDLE_LINE_STAFF_STEP;
+                        // Opposite the stem side (see the tie curveUp above).
+                        case DEFAULT -> staffStep < MIDDLE_LINE_STAFF_STEP;
                     };
                     double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
                     double clearY = curveUp ? start.minY : start.maxY;
