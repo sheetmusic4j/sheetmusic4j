@@ -135,9 +135,9 @@ public final class Engraver {
      * Distance (in staff-line gaps) from the top staff line to the baseline
      * of a chord-symbol label. Chord symbols conventionally sit closer to the
      * staff than tempo/words directions so performers can read them alongside
-     * the notes.
+     * the notes - smaller than {@link #DIRECTION_OFFSET_GAPS}, not larger.
      */
-    private static final double HARMONY_OFFSET_GAPS = 3.5;
+    private static final double HARMONY_OFFSET_GAPS = 1.2;
 
     /**
      * Multiplier applied to the staff-line gap to derive the chord-symbol
