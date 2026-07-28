@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
@@ -879,15 +880,26 @@ public final class AbcReader {
                         || c == 'O' || c == 'P' || c == 'R' || c == 'S'
                         || c == 'T' || c == 'u' || c == 'v') {
                     // ABC shorthand decorations attached to the following
-                    // note. Only skip when clearly a decoration prefix
+                    // note. Only consume when clearly a decoration prefix
                     // (single char followed by a note letter or accidental).
                     // Beware: capital A-G are note letters — do NOT skip those.
-                    // H, L, M, O, P, R, S, T are legacy decorations; 'u' and
-                    // 'v' are up/down bow. We check the next char: if it's a
-                    // note letter/accidental/octave-mark, we treat as a
-                    // decoration and skip; otherwise fall through so unrelated
-                    // characters aren't lost.
+                    // '.', '~', 'u', 'v' map to a known Articulation; H, L, M,
+                    // O, P, R, S, T are legacy decorations with no model
+                    // representation yet and are just consumed. We check the
+                    // next char: if it's a note letter/accidental/octave-mark,
+                    // we treat as a decoration; otherwise fall through so
+                    // unrelated characters aren't lost.
                     if (i + 1 < n && isNoteStartChar(work.charAt(i + 1))) {
+                        Articulation articulation = switch (c) {
+                            case '.' -> Articulation.STACCATO;
+                            case '~' -> Articulation.ROLL;
+                            case 'v' -> Articulation.DOWN_BOW;
+                            case 'u' -> Articulation.UP_BOW;
+                            default -> null;
+                        };
+                        if (articulation != null) {
+                            pendingArticulations.add(articulation);
+                        }
                         i++;
                         continue;
                     }
@@ -959,6 +971,8 @@ public final class AbcReader {
         }
 
         private boolean pendingSlurStart;
+
+        private final List<Articulation> pendingArticulations = new ArrayList<>();
 
         private static boolean isInlineField(String line, int at) {
             // Detects [X:...] where X is a single ASCII letter and ':' follows.
@@ -1179,6 +1193,12 @@ public final class AbcReader {
             if (pendingSlurStart) {
                 b.addSlur(new Slur(1, Slur.Type.START, com.sheetmusic4j.core.model.Placement.DEFAULT));
                 pendingSlurStart = false;
+            }
+            if (!pendingArticulations.isEmpty()) {
+                for (Articulation articulation : pendingArticulations) {
+                    b.addArticulation(articulation);
+                }
+                pendingArticulations.clear();
             }
             Note note = b.build();
             if (inChord) {

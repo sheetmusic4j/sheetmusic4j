@@ -580,10 +580,38 @@ public final class Engraver {
         }
 
         if (consumed > 0) {
-            // A little breathing space between the title block and the first staff.
-            consumed += gap;
+            // A little breathing space between the title block and the first staff;
+            // a bit more when the score carries marks drawn above the staff
+            // (bowings, ornaments) so they don't collide with the title text.
+            consumed += hasAboveStaffArticulation(score) ? gap * 2.5 : gap;
         }
         return consumed;
+        }
+
+        /**
+         * Whether any note in the score carries an articulation that is always
+         * drawn above the staff (see {@link #placeNote}), regardless of stem
+         * direction — such marks need extra clearance below the title block.
+         */
+        private static boolean hasAboveStaffArticulation(Score score) {
+            for (Part part : score.parts()) {
+                for (Measure measure : part.measures()) {
+                    for (MusicElement element : measure.elements()) {
+                        List<Note> notes = element instanceof Chord chord ? chord.notes()
+                                : element instanceof Note note ? List.of(note) : List.of();
+                        for (Note note : notes) {
+                            for (Articulation articulation : note.articulations()) {
+                                if (articulation == Articulation.DOWN_BOW
+                                        || articulation == Articulation.UP_BOW
+                                        || articulation == Articulation.ROLL) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
     /**
@@ -2051,13 +2079,36 @@ public final class Engraver {
             stems.add(new StemPlacement(stemX, y, stemTipY, note));
         }
 
-        // Articulations sit on the side opposite the stem, clear of the notehead.
+        // Articulations (staccato, accent) sit on the side opposite the stem,
+        // clear of the notehead. Bowing and ornament marks (up/down-bow,
+        // roll) are conventionally always placed above the note regardless
+        // of stem direction. Stacked outward one per mark when a note
+        // carries more than one.
+        int articulationIndex = 0;
         for (Articulation articulation : note.articulations()) {
-            Glyph articulationGlyph = articulation == Articulation.STACCATO
-                    ? Glyph.ARTICULATION_STACCATO
-                    : Glyph.ARTICULATION_ACCENT;
-            double articulationY = stemUp ? y + gap * 2.6 : y - gap * 2.6;
+            Glyph articulationGlyph = switch (articulation) {
+                case STACCATO -> Glyph.ARTICULATION_STACCATO;
+                case ACCENT -> Glyph.ARTICULATION_ACCENT;
+                case DOWN_BOW -> Glyph.ARTICULATION_DOWN_BOW;
+                case UP_BOW -> Glyph.ARTICULATION_UP_BOW;
+                case ROLL -> Glyph.ARTICULATION_ROLL;
+            };
+            boolean alwaysAbove = articulation == Articulation.DOWN_BOW
+                    || articulation == Articulation.UP_BOW
+                    || articulation == Articulation.ROLL;
+            double offset = gap * (2.6 + articulationIndex * 1.0);
+            double articulationY;
+            if (alwaysAbove) {
+                // Clear the staff top as well as the notehead itself (a low
+                // note's own clearance may not reach above the staff lines).
+                double aboveStaff = staffY - gap * (1.0 + articulationIndex);
+                double aboveNote = y - gap * (1.0 + articulationIndex);
+                articulationY = Math.min(aboveStaff, aboveNote);
+            } else {
+                articulationY = stemUp ? y + offset : y - offset;
+            }
             glyphs.add(new GlyphPlacement(noteX, articulationY, articulationGlyph, staffStep, MarkingCategory.NOTE, note));
+            articulationIndex++;
         }
 
         // Augmentation dots.

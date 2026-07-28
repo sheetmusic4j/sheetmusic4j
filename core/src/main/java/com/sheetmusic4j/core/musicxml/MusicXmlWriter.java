@@ -345,9 +345,32 @@ public final class MusicXmlWriter {
                     "type", tuplet.type() == Tuplet.Type.START ? "start" : "stop",
                     "bracket", tuplet.bracket() ? "yes" : "no");
         }
-        if (!articulations.isEmpty()) {
+        List<Articulation> ornaments = articulations.stream()
+                .filter(a -> a == Articulation.ROLL)
+                .toList();
+        if (!ornaments.isEmpty()) {
+            w.start("ornaments");
+            for (Articulation ignored : ornaments) {
+                w.emptyElement("turn");
+            }
+            w.end("ornaments");
+        }
+        List<Articulation> technical = articulations.stream()
+                .filter(a -> a == Articulation.DOWN_BOW || a == Articulation.UP_BOW)
+                .toList();
+        if (!technical.isEmpty()) {
+            w.start("technical");
+            for (Articulation articulation : technical) {
+                w.emptyElement(articulation == Articulation.DOWN_BOW ? "down-bow" : "up-bow");
+            }
+            w.end("technical");
+        }
+        List<Articulation> plain = articulations.stream()
+                .filter(a -> a == Articulation.STACCATO || a == Articulation.ACCENT)
+                .toList();
+        if (!plain.isEmpty()) {
             w.start("articulations");
-            for (Articulation articulation : articulations) {
+            for (Articulation articulation : plain) {
                 w.emptyElement(articulation == Articulation.STACCATO ? "staccato" : "accent");
             }
             w.end("articulations");

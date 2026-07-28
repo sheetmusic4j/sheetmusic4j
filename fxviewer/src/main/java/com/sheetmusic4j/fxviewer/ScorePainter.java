@@ -596,6 +596,17 @@ public final class ScorePainter {
                     surface.strokeText(">", glyph.x(), glyph.y() + gap * 0.4);
                 }
             }
+            case ARTICULATION_DOWN_BOW -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText("⊓", glyph.x(), glyph.y() + gap * 0.4);
+                }
+            }
+            case ARTICULATION_UP_BOW -> {
+                if (!drawSmuflCentered(surface, g, glyph.x(), glyph.y(), sizeHint)) {
+                    surface.strokeText("V", glyph.x(), glyph.y() + gap * 0.4);
+                }
+            }
+            case ARTICULATION_ROLL -> surface.strokeText("~", glyph.x(), glyph.y() + gap * 0.4);
             case DYNAMIC_PPP, DYNAMIC_PP, DYNAMIC_P, DYNAMIC_MP, DYNAMIC_MF,
                  DYNAMIC_F, DYNAMIC_FF, DYNAMIC_FFF, DYNAMIC_SF, DYNAMIC_SFZ,
                  DYNAMIC_FZ, DYNAMIC_FP, DYNAMIC_RF, DYNAMIC_RFZ, DYNAMIC_NIENTE -> {

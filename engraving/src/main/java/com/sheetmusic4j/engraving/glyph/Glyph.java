@@ -123,7 +123,20 @@ public enum Glyph {
     /**
      * SMuFL {@code articAccentAbove} glyph (U+E4A0).
      */
-    ARTICULATION_ACCENT;
+    ARTICULATION_ACCENT,
+    /**
+     * SMuFL {@code stringsDownBow} glyph (U+E610).
+     */
+    ARTICULATION_DOWN_BOW,
+    /**
+     * SMuFL {@code stringsUpBow} glyph (U+E612).
+     */
+    ARTICULATION_UP_BOW,
+    /**
+     * Irish roll ornament. No dedicated SMuFL codepoint; rendered as a small
+     * tilde-like squiggle.
+     */
+    ARTICULATION_ROLL;
 
     /**
      * Look up the {@code TIME_DIGIT_N} glyph for a single digit 0..9.

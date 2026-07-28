@@ -905,6 +905,9 @@ public final class MusicXmlReader {
                     }
                     case "staccato" -> articulations.add(Articulation.STACCATO);
                     case "accent" -> articulations.add(Articulation.ACCENT);
+                    case "down-bow" -> articulations.add(Articulation.DOWN_BOW);
+                    case "up-bow" -> articulations.add(Articulation.UP_BOW);
+                    case "turn" -> articulations.add(Articulation.ROLL);
                     case "slur" -> {
                         int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
                         String slurType = reader.getAttributeValue(null, "type");
