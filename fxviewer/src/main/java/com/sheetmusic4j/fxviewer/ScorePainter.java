@@ -820,12 +820,12 @@ public final class ScorePainter {
     }
 
     /**
-     * Draw a grace-note run: small noteheads each with their own stem
-     * reaching a shared flat top and their own acciaccatura flag/slash - a
-     * run of several grace notes fans out as individually-flagged small
-     * notes (conventional folk/ABC engraving), not a beamed group like a
-     * run of regular notes - plus a curved line connecting the last grace
-     * note to the main note it leads into.
+     * Draw a grace-note run: small noteheads with stems reaching a shared
+     * beam line that is raked (sloped) to follow the run's pitch contour
+     * (a lone grace note just gets its own short stem), an acciaccatura
+     * slash across the beam (or the stem, when there is only one), and a
+     * curved line connecting the last grace note to the main note it leads
+     * into.
      */
     private void drawGraceNotes(RenderSurface surface, StaffLayout staff, GraceNotePlacement grace) {
         double gap = staff.lineGap();
@@ -833,17 +833,26 @@ public final class ScorePainter {
         double headH = gap * 0.58;
         List<Double> xs = grace.noteX();
         List<Double> ys = grace.noteY();
+        List<Double> stemTops = grace.stemTopY();
         int count = xs.size();
-        double slashHalf = gap * 0.5;
         for (int i = 0; i < count; i++) {
             double x = xs.get(i);
             double y = ys.get(i);
             surface.fillOval(x - headW / 2, y - headH / 2, headW, headH);
-            double stemX = x + headW / 2;
-            surface.strokeLine(stemX, y, stemX, grace.beamY());
-            double slashY = (y + grace.beamY()) / 2.0;
-            surface.strokeLine(stemX - slashHalf * 0.6, slashY + slashHalf,
-                    stemX + slashHalf * 0.6, slashY - slashHalf);
+            surface.strokeLine(x + headW / 2, y, x + headW / 2, stemTops.get(i));
+        }
+        double slashHalf = gap * 0.5;
+        double firstStemX = xs.get(0) + headW / 2;
+        double firstStemTop = stemTops.get(0);
+        if (count > 1) {
+            surface.strokeLine(firstStemX, firstStemTop,
+                    xs.get(count - 1) + headW / 2, stemTops.get(count - 1));
+            surface.strokeLine(firstStemX - slashHalf * 0.5, firstStemTop + slashHalf,
+                    firstStemX + slashHalf * 0.5, firstStemTop - slashHalf);
+        } else {
+            double slashY = (ys.get(0) + firstStemTop) / 2.0;
+            surface.strokeLine(firstStemX - slashHalf * 0.6, slashY + slashHalf,
+                    firstStemX + slashHalf * 0.6, slashY - slashHalf);
         }
         double lastX = xs.get(count - 1);
         double lastY = ys.get(count - 1);

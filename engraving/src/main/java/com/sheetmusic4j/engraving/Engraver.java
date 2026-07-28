@@ -289,6 +289,16 @@ public final class Engraver {
     private static final double GRACE_NOTE_SPACING_GAPS = 1.7;
 
     /**
+     * Stem length (in staff-line gaps) for the first/last grace note of a
+     * run, measured from its own notehead - see
+     * {@link #buildGraceNotePlacement}. The run's beam/stem-top line is
+     * raked (sloped) between these two endpoints to follow the run's pitch
+     * contour, the same way a beam over ordinary notes of varying pitch
+     * would, rather than sitting flat.
+     */
+    private static final double GRACE_STEM_LENGTH_GAPS = 2.3;
+
+    /**
      * Extra weight added to a note's width per grace note it carries, in
      * "quarter-note width" units, mirroring {@link #ACCIDENTAL_RESERVE_WEIGHT}.
      */
@@ -2288,15 +2298,25 @@ public final class Engraver {
         double spacing = gap * GRACE_NOTE_SPACING_GAPS;
         List<Double> xs = new ArrayList<>(count);
         List<Double> ys = new ArrayList<>(count);
-        double minY = Double.MAX_VALUE;
         for (int i = 0; i < count; i++) {
             xs.add(mainNoteX - spacing * (count - i));
             double graceY = staffY + staffStep(pitches.get(i), clef) * (gap / 2.0);
             ys.add(graceY);
-            minY = Math.min(minY, graceY);
+        }
+        // Rake the stem-top/beam line between the first and last grace
+        // note's own clearance, following the run's pitch contour instead
+        // of sitting flat - matching how a beam over ordinary notes of
+        // varying pitch is drawn.
+        double stemLen = gap * GRACE_STEM_LENGTH_GAPS;
+        double firstTop = ys.get(0) - stemLen;
+        double lastTop = ys.get(count - 1) - stemLen;
+        List<Double> stemTops = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            double t = count == 1 ? 0.0 : (double) i / (count - 1);
+            stemTops.add(firstTop + (lastTop - firstTop) * t);
         }
         double mainNoteY = staffY + staffStep(note.pitch(), clef) * (gap / 2.0);
-        return new GraceNotePlacement(xs, ys, minY - gap * 2.3, mainNoteX, mainNoteY);
+        return new GraceNotePlacement(xs, ys, stemTops, mainNoteX, mainNoteY);
     }
 
     private void placeNote(List<GlyphPlacement> glyphs, List<BeamPlacement> beams, List<TiePlacement> ties,
