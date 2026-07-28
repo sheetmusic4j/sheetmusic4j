@@ -14,6 +14,7 @@ import java.util.Map;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
@@ -422,6 +423,15 @@ public final class AbcReader {
         private int measureNumber = 1;
         private final List<Note> lyricNoteAnchors = new ArrayList<>();
 
+        // Barline / repeat / ending bookkeeping. A repeat-start ("|:") has
+        // nothing to attach trailing dots to on the measure it follows (it
+        // may be the very first measure of the part), so it is carried
+        // forward as a leading mark on the next measure instead. An ending
+        // label stays active on every subsequent measure until a new bar
+        // token introduces a different one (see applyBarToken).
+        private boolean pendingLeadingRepeatStart;
+        private String currentEndingLabel;
+
         // Pending broken rhythm to apply to the next emitted note (from > or <
         // encountered immediately after a note).
         private AbcNoteLength.Fraction nextLengthMultiplier;
@@ -497,6 +507,11 @@ public final class AbcReader {
         private void startMeasure() {
             currentMeasure = new PendingMeasure(measureNumber);
             pendingElements = currentMeasure.elements;
+            currentMeasure.ending = currentEndingLabel;
+            if (pendingLeadingRepeatStart) {
+                currentMeasure.leadingRepeatStart = true;
+                pendingLeadingRepeatStart = false;
+            }
             if (!firstMeasureFlushed && lineMeasures.isEmpty()) {
                 currentMeasure.attributes = Attributes.builder()
                         .divisions(DIVISIONS)
@@ -518,7 +533,14 @@ public final class AbcReader {
                 return;
             }
             measureAccidentals.clear();
-            if (!currentMeasure.elements.isEmpty() || currentMeasure.attributes != null) {
+            // A barline with no preceding notes at the very start of the
+            // tune (e.g. a decorative leading "[|", or a repeat-start "|:"
+            // opening the whole part) is not itself an empty pickup measure
+            // - drop it and let the next startMeasure() re-derive the same
+            // opening attributes.
+            boolean leadingDecorative = currentMeasure.elements.isEmpty()
+                    && lineMeasures.isEmpty() && !firstMeasureFlushed;
+            if (!leadingDecorative && (!currentMeasure.elements.isEmpty() || currentMeasure.attributes != null)) {
                 lineMeasures.add(currentMeasure);
                 measureNumber++;
             }
@@ -535,10 +557,37 @@ public final class AbcReader {
                 for (MusicElement el : pm.elements) {
                     b.addElement(el);
                 }
+                if (pm.barline != null) {
+                    b.barline(pm.barline);
+                }
+                b.leadingRepeatStart(pm.leadingRepeatStart);
+                if (pm.ending != null) {
+                    b.ending(pm.ending);
+                }
                 part.addMeasure(b.build());
                 firstMeasureFlushed = true;
             }
             lineMeasures.clear();
+        }
+
+        /**
+         * Classify a captured bar-line token and apply its style/repeat to
+         * the measure being closed. A bare "|:" has nothing to attach
+         * trailing dots to (see {@link #pendingLeadingRepeatStart}), so it
+         * only sets a pending flag consumed by the next {@link #startMeasure()}.
+         */
+        private void applyBarToken(String token) {
+            switch (token) {
+                case "||" -> currentMeasure.barline = new Barline(Barline.Style.DOUBLE, Barline.Repeat.NONE);
+                case "|]" -> currentMeasure.barline = new Barline(Barline.Style.FINAL, Barline.Repeat.NONE);
+                case ":|" -> currentMeasure.barline = new Barline(Barline.Style.FINAL, Barline.Repeat.BACKWARD);
+                case "::" -> currentMeasure.barline = new Barline(Barline.Style.DOUBLE, Barline.Repeat.BOTH);
+                case "|:" -> pendingLeadingRepeatStart = true;
+                default -> {
+                    // "|", the decorative "[|", or an unrecognized run of
+                    // bar punctuation: a plain barline.
+                }
+            }
         }
 
         /** Mutable measure state accumulated during a music line. */
@@ -546,6 +595,9 @@ public final class AbcReader {
             final int number;
             Attributes attributes;
             final List<MusicElement> elements = new ArrayList<>();
+            Barline barline;
+            boolean leadingRepeatStart;
+            String ending;
 
             PendingMeasure(int number) {
                 this.number = number;
@@ -737,30 +789,42 @@ public final class AbcReader {
                 if (c == '%') {
                     break;
                 }
-                if (c == '|') {
-                    // Bar line (possibly with ':' repeats or '||', '|]', ':|', '::').
-                    while (i < n && (work.charAt(i) == '|' || work.charAt(i) == ':'
-                            || work.charAt(i) == ']' || work.charAt(i) == '[')) {
-                        // '[' after '|' could be a first-ending bracket. Peek
-                        // and stop before an inline info field (see below).
-                        char next = work.charAt(i);
-                        if (next == '[' && isInlineField(work, i)) {
+                if (c == '|' || c == ':' || (c == '[' && i + 1 < n && work.charAt(i + 1) == '|')) {
+                    // Bar line: '|', '||', '|]', '|:', ':|', '::', or a
+                    // decorative leading '[|' (thick-thin mark occasionally
+                    // used to open a tune) - never a chord, even though it
+                    // starts with '['.
+                    int j = i;
+                    while (j < n && (work.charAt(j) == '|' || work.charAt(j) == ':'
+                            || work.charAt(j) == ']' || work.charAt(j) == '[')) {
+                        // A '[' beyond the very first character could be an
+                        // inline field abutting the barline with no space
+                        // (e.g. "|[K:D]") - stop before swallowing it.
+                        if (j > i && work.charAt(j) == '[' && isInlineField(work, j)) {
                             break;
                         }
-                        i++;
+                        j++;
                     }
+                    String token = work.substring(i, j);
+                    // A first/second-ending number immediately follows some
+                    // bar tokens (e.g. "|1", ":|2") with no separating space.
+                    int k = j;
+                    while (k < n && Character.isDigit(work.charAt(k))) {
+                        k++;
+                    }
+                    String endingLabel = k > j ? work.substring(j, k) : null;
                     closeChordIfOpen();
                     flushBeamGroup();
+                    applyBarToken(token);
                     // A bar in the middle of a body closes the current
                     // measure and starts a new one.
                     closeMeasure();
+                    if (endingLabel != null) {
+                        currentEndingLabel = endingLabel;
+                    }
                     startMeasure();
                     lastWasNote = false;
-                    continue;
-                }
-                if (c == ':') {
-                    // ':|' handled above; leading ':' is unusual — consume.
-                    i++;
+                    i = k;
                     continue;
                 }
                 if (c == '[' && isInlineField(work, i)) {

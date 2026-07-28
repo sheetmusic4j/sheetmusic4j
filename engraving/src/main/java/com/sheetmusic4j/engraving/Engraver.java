@@ -1379,15 +1379,22 @@ public final class Engraver {
             double measureStartQ = idx < measureStartQuarters.length ? measureStartQuarters[idx] : 0.0;
             double measureDurQ = idx < measureDurationQuarters.length ? measureDurationQuarters[idx] : 0.0;
             measureLayouts.add(new MeasureLayout(measure.number(), cursorX, measureWidth,
-                    measureStartQ, measureStartQ + measureDurQ));
+                    measureStartQ, measureStartQ + measureDurQ,
+                    measure.barline().orElse(null), measure.leadingRepeatStart(),
+                    measure.ending().orElse(null)));
 
             double contentStart = cursorX + options.staffLineGap();
             if (firstMeasureInRow) {
                 double clefY = y + clefAnchorLineIndex(currentClef) * options.staffLineGap();
+                // A leading repeat-start mark (thick line + dots) is drawn at
+                // the staff's left edge (see ScorePainter#drawStaff); leave
+                // room for it before the clef instead of drawing on top of it.
+                double leadingRepeatClearance = measure.leadingRepeatStart()
+                        ? options.staffLineGap() * 1.6 : 0.0;
                 if (options.showClef()) {
-                    glyphs.add(new GlyphPlacement(cursorX + options.staffLineGap() * 0.5,
+                    glyphs.add(new GlyphPlacement(cursorX + leadingRepeatClearance + options.staffLineGap() * 0.5,
                             clefY, clefGlyph(currentClef), 4));
-                    contentStart = cursorX + options.staffLineGap() * 4;
+                    contentStart = cursorX + leadingRepeatClearance + options.staffLineGap() * 4;
                 }
                 if (options.showKeySignature() && currentKey.fifths() != 0) {
                     contentStart = placeKeySignature(glyphs, currentKey, currentClef, contentStart, y, options);

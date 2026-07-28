@@ -1,6 +1,7 @@
 package com.sheetmusic4j.fxviewer;
 
 import com.sheetmusic4j.core.model.Accidental;
+import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
@@ -8,6 +9,7 @@ import com.sheetmusic4j.engraving.layout.*;
 import com.sheetmusic4j.engraving.placement.*;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -463,10 +465,12 @@ public final class ScorePainter {
         }
 
         for (MeasureLayout measure : staff.measures()) {
-            double top = staff.lineY(0);
-            double bottom = staff.lineY(STAFF_LINES - 1);
-            surface.strokeLine(measure.right(), top, measure.right(), bottom);
+            if (measure.leadingRepeatStart()) {
+                drawBarline(surface, staff, measure.x(), new Barline(Barline.Style.REGULAR, Barline.Repeat.FORWARD));
+            }
+            drawBarline(surface, staff, measure.right(), measure.barline());
         }
+        drawEndingBrackets(surface, staff);
 
         for (GlyphPlacement glyph : staff.glyphs()) {
             if (hiddenCategories.contains(glyph.category())) {
@@ -873,6 +877,101 @@ public final class ScorePainter {
             double y = topY + i * gap * 0.7;
             surface.fillOval(x - d / 2, y - d / 2, d, d);
             surface.strokeLine(x + d / 2, y, x - d / 2, y + gap * 1.5);
+        }
+    }
+
+    /**
+     * Draw a single per-measure barline at {@code x}: a plain thin line for
+     * {@code null}/{@link Barline.Style#REGULAR}, two close thin lines for
+     * {@link Barline.Style#DOUBLE}, thin+thick for {@link Barline.Style#FINAL},
+     * and the conventional dotted variants when {@link Barline#repeat()} is
+     * set (dots sit on the side the repeated section is on).
+     */
+    private void drawBarline(RenderSurface surface, StaffLayout staff, double x, Barline barline) {
+        double gap = staff.lineGap();
+        double top = staff.lineY(0);
+        double bottom = staff.lineY(STAFF_LINES - 1);
+        double lineSpacing = gap * 0.35;
+        double dotOffset = lineSpacing + gap * 0.65;
+
+        Barline.Repeat repeat = barline == null ? Barline.Repeat.NONE : barline.repeat();
+        Barline.Style style = barline == null ? Barline.Style.REGULAR : barline.style();
+        switch (repeat) {
+            case BACKWARD -> {
+                drawRepeatDots(surface, staff, x - dotOffset);
+                surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                drawThickLine(surface, x, top, bottom);
+            }
+            case FORWARD -> {
+                drawThickLine(surface, x, top, bottom);
+                surface.strokeLine(x + lineSpacing, top, x + lineSpacing, bottom);
+                drawRepeatDots(surface, staff, x + dotOffset);
+            }
+            case BOTH -> {
+                drawRepeatDots(surface, staff, x - dotOffset);
+                surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                surface.strokeLine(x + lineSpacing, top, x + lineSpacing, bottom);
+                drawRepeatDots(surface, staff, x + dotOffset);
+            }
+            case NONE -> {
+                switch (style) {
+                    case DOUBLE -> {
+                        surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                        surface.strokeLine(x, top, x, bottom);
+                    }
+                    case FINAL -> {
+                        surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
+                        drawThickLine(surface, x, top, bottom);
+                    }
+                    case REGULAR -> surface.strokeLine(x, top, x, bottom);
+                }
+            }
+        }
+    }
+
+    private void drawThickLine(RenderSurface surface, double x, double top, double bottom) {
+        surface.setLineWidth(2.5);
+        surface.strokeLine(x, top, x, bottom);
+        surface.setLineWidth(1.0);
+    }
+
+    /** Two repeat dots, vertically centered in the staff's middle two spaces. */
+    private void drawRepeatDots(RenderSurface surface, StaffLayout staff, double x) {
+        double gap = staff.lineGap();
+        double radius = gap * 0.16;
+        double midY = (staff.lineY(0) + staff.lineY(STAFF_LINES - 1)) / 2.0;
+        surface.fillOval(x - radius, midY - gap * 0.5 - radius, radius * 2, radius * 2);
+        surface.fillOval(x - radius, midY + gap * 0.5 - radius, radius * 2, radius * 2);
+    }
+
+    /**
+     * Draw a first/second-ending bracket over each contiguous run of
+     * measures sharing the same non-null {@link MeasureLayout#ending()}
+     * label: a horizontal line with a short downward tick at each end and
+     * the label centered above it.
+     */
+    private void drawEndingBrackets(RenderSurface surface, StaffLayout staff) {
+        double gap = staff.lineGap();
+        double y = staff.lineY(0) - gap * 2.2;
+        double tick = gap * 0.6;
+        List<MeasureLayout> measures = staff.measures();
+        int i = 0;
+        while (i < measures.size()) {
+            String label = measures.get(i).ending();
+            if (label == null) {
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < measures.size() && label.equals(measures.get(i).ending())) {
+                i++;
+            }
+            double x1 = measures.get(start).x();
+            double x2 = measures.get(i - 1).right();
+            surface.strokeLine(x1, y, x1, y + tick);
+            surface.strokeLine(x1, y, x2, y);
+            surface.strokeLine(x2, y, x2, y + tick);
+            surface.strokeText(label, x1 + gap * 0.5, y - gap * 0.3);
         }
     }
 
