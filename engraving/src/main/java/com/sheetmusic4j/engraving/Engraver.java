@@ -2264,7 +2264,9 @@ public final class Engraver {
             boolean alwaysAbove = articulation == Articulation.DOWN_BOW
                     || articulation == Articulation.UP_BOW
                     || articulation == Articulation.ROLL;
-            double offset = gap * (2.6 + articulationIndex * 1.0);
+            // Staccato/accent marks hug the notehead - just past its edge,
+            // not the wide clearance the always-above ornaments need.
+            double offset = gap * (0.8 + articulationIndex * 0.6);
             double articulationY;
             if (alwaysAbove) {
                 // Clear the staff top as well as the notehead itself (a low
