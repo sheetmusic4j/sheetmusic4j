@@ -390,8 +390,10 @@ public final class ScorePainter {
                 drawSystemBarline(surface, barline);
             }
             if (bracketsVisible) {
+                double systemGap = system.staves().isEmpty() ? referenceLineGap(layout)
+                        : system.staves().get(0).lineGap();
                 for (BracketPlacement bracket : system.brackets()) {
-                    drawBracket(surface, bracket);
+                    drawBracket(surface, bracket, systemGap);
                 }
             }
         }
@@ -1068,7 +1070,7 @@ public final class ScorePainter {
      *       vertical line, no serifs.</li>
      * </ul>
      */
-    private void drawBracket(RenderSurface surface, BracketPlacement bracket) {
+    private void drawBracket(RenderSurface surface, BracketPlacement bracket, double gap) {
         double span = bracket.bottomY() - bracket.topY();
         switch (bracket.shape()) {
             case BRACE -> {
@@ -1079,15 +1081,19 @@ public final class ScorePainter {
                 // verified via GlyphVector#getVisualBounds() (top ~ -0.997 *
                 // fontSize, bottom ~ 0). So anchoring the baseline at
                 // bracket.bottomY() makes the glyph span almost exactly
-                // [topY, bottomY] with no extra offset needed.
+                // [topY, bottomY] with no extra offset needed. Unlike the
+                // bracket's ornamental tips below, the brace glyph is
+                // *meant* to stretch across the whole span - that's the
+                // one piece of this drawing that legitimately scales with
+                // however many staves the group covers.
                 boolean drawn = surface.drawSmuflGlyph("\uE000",
                         bracket.x() - 5, bracket.bottomY(), span);
                 if (!drawn) {
-                    drawBraceFallback(surface, bracket, span);
+                    drawBraceFallback(surface, bracket, gap);
                 }
             }
-            case BRACKET -> drawBracketWithOrnaments(surface, bracket, span);
-            case SQUARE -> drawSquareBracket(surface, bracket, span);
+            case BRACKET -> drawBracketWithOrnaments(surface, bracket, gap);
+            case SQUARE -> drawSquareBracket(surface, bracket, gap);
             case LINE -> drawBracketLineFallback(surface, bracket);
         }
     }
@@ -1097,13 +1103,10 @@ public final class ScorePainter {
      * horizontal serifs at each end. Uglier than a real brace but
      * unambiguously signals "these staves are grouped".
      */
-    private void drawBraceFallback(RenderSurface surface, BracketPlacement bracket, double span) {
+    private void drawBraceFallback(RenderSurface surface, BracketPlacement bracket, double gap) {
         double x = bracket.x();
         surface.strokeLine(x, bracket.topY(), x, bracket.bottomY());
-        // Serif width: 2/3 of the average staff-line gap. We don't have
-        // direct access to the gap here; approximate from the span so the
-        // serif scales sensibly with the brace height.
-        double serif = Math.max(4.0, span * 0.05);
+        double serif = gap * 0.65;
         surface.strokeLine(x, bracket.topY(), x + serif, bracket.topY());
         surface.strokeLine(x, bracket.bottomY(), x + serif, bracket.bottomY());
     }
@@ -1115,21 +1118,26 @@ public final class ScorePainter {
      * falls back to short horizontal serifs so the shape still reads as a
      * bracket rather than a plain vertical line.
      */
-    private void drawBracketWithOrnaments(RenderSurface surface, BracketPlacement bracket, double span) {
+    private void drawBracketWithOrnaments(RenderSurface surface, BracketPlacement bracket, double gap) {
         double x = bracket.x();
-        // Overshoot each end by 0.4 of an approximated staff-line gap so
-        // the bracket visually "caps" the outermost staff lines.
-        double gapEstimate = Math.max(4.0, span * 0.05);
-        double overshoot = gapEstimate * 0.4;
-        double thickness = gapEstimate * 0.4;
+        // Overshoot each end by 0.4 of a staff-line gap so the bracket
+        // visually "caps" the outermost staff lines.
+        double overshoot = gap * 0.4;
+        double thickness = gap * 0.4;
         double topExtended = bracket.topY() - overshoot;
         double bottomExtended = bracket.bottomY() + overshoot;
         surface.fillRect(x - thickness / 2.0, topExtended, thickness,
                 bottomExtended - topExtended);
-        boolean topDrawn = surface.drawSmuflGlyph("\uE003", x, bracket.topY(), span);
-        boolean bottomDrawn = surface.drawSmuflGlyph("\uE004", x, bracket.bottomY(), span);
+        // The ornamental tips are small fixed-size caps at each end, not a
+        // single glyph stretched across the whole bracket like the brace
+        // is (see drawBracket's BRACE case) - scale by the actual staff
+        // gap, not the bracket's own span, or a bracket spanning many
+        // staves draws a wildly oversized tip.
+        double tipSize = gap * 4.0;
+        boolean topDrawn = surface.drawSmuflGlyph("\uE003", x, bracket.topY(), tipSize);
+        boolean bottomDrawn = surface.drawSmuflGlyph("\uE004", x, bracket.bottomY(), tipSize);
         if (!topDrawn || !bottomDrawn) {
-            double serif = gapEstimate * 0.9;
+            double serif = gap * 0.9;
             if (!topDrawn) {
                 surface.strokeLine(x, topExtended, x + serif, topExtended);
             }
@@ -1144,11 +1152,10 @@ public final class ScorePainter {
      * stroke as {@link #drawBracketWithOrnaments} but with unadorned
      * horizontal serifs at each end instead of SMuFL ornamental tips.
      */
-    private void drawSquareBracket(RenderSurface surface, BracketPlacement bracket, double span) {
+    private void drawSquareBracket(RenderSurface surface, BracketPlacement bracket, double gap) {
         double x = bracket.x();
-        double gapEstimate = Math.max(4.0, span * 0.05);
-        double thickness = gapEstimate * 0.4;
-        double serif = gapEstimate * 0.9;
+        double thickness = gap * 0.4;
+        double serif = gap * 0.9;
         surface.fillRect(x - thickness / 2.0, bracket.topY(), thickness,
                 bracket.bottomY() - bracket.topY());
         surface.strokeLine(x, bracket.topY(), x + serif, bracket.topY());
