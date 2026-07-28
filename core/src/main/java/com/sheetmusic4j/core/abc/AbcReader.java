@@ -1487,12 +1487,17 @@ public final class AbcReader {
                 effective = effective.times(nextLengthMultiplier);
                 nextLengthMultiplier = null;
             }
+            // The written length determines the displayed rest type/dots; a
+            // tuplet's ratio only scales the *sounding* duration used for
+            // timing (see emitNote for the matching note-side fix), it does
+            // not change how the rest is notated.
+            Duration writtenDuration = toDuration(effective);
             if (tupletCountRemaining > 0) {
                 effective = effective.times(tupletNormalNotes, tupletActualNotes);
             }
             Duration duration = toDuration(effective);
             Rest.Builder rb = Rest.builder().duration(duration);
-            setTypeAndDots(rb, duration);
+            setTypeAndDots(rb, writtenDuration);
             pendingElements.add(rb.build());
             lyricNoteAnchors.add(null);
         }
@@ -1503,6 +1508,13 @@ public final class AbcReader {
                 m = m.times(nextLengthMultiplier);
                 nextLengthMultiplier = null;
             }
+            // The written length determines the displayed notehead type/dots;
+            // a tuplet's ratio only scales the *sounding* duration used for
+            // timing, it does not change how the note is notated (a "2 in
+            // the time of 3" tuplet still shows plain eighth noteheads, not
+            // dotted ones, even though 2/3 of an eighth happens to equal a
+            // dotted eighth's duration).
+            Duration writtenDuration = toDuration(m);
             TimeModification timeMod = null;
             List<Tuplet> tuplets = new ArrayList<>();
             if (tupletCountRemaining > 0) {
@@ -1522,7 +1534,7 @@ public final class AbcReader {
             Note.Builder b = Note.builder()
                     .pitch(pitch)
                     .duration(duration);
-            setTypeAndDots(b, duration);
+            setTypeAndDots(b, writtenDuration);
             if (parsed.explicitAccidental) {
                 b.displayedAccidental(Accidental.fromAlter(parsed.alter));
             }
