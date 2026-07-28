@@ -732,18 +732,48 @@ public final class AbcReader {
             }
         }
 
+        /**
+         * A mid-tune K:/M: change must show up as a fresh {@code <attributes>}
+         * block, same as MusicXML represents an attribute change mid-piece -
+         * otherwise the new key/time signature is tracked in parser state but
+         * never reaches the model. {@code currentMeasure} is always the
+         * not-yet-populated measure this change applies to: {@link #startMeasure()}
+         * already ran for it (from the previous line's closing barline) before
+         * this field line is seen, same as the {@code T:} mid-tune handling
+         * above mutates {@code currentMeasure} directly.
+         *
+         * <p>Also forces a new system, same as a mid-tune {@code T:} does:
+         * this engraver only ever draws a key/time signature at the start of
+         * a system, so a change that landed mid-row would otherwise never be
+         * drawn at all.
+         */
+        private void applyMidTuneAttributesChange() {
+            if (currentMeasure == null) {
+                return;
+            }
+            currentMeasure.attributes = Attributes.builder()
+                    .divisions(DIVISIONS)
+                    .keySignature(key)
+                    .timeSignature(timeSignature)
+                    .clef(Clef.treble())
+                    .build();
+            currentMeasure.forceSystemBreak = true;
+        }
+
         void applyMidTuneField(char field, String value) {
             switch (field) {
                 case 'K' -> {
                     KeySignature ks = AbcKey.parse(value);
                     if (ks != null) {
                         this.key = ks;
+                        applyMidTuneAttributesChange();
                     }
                 }
                 case 'M' -> {
                     TimeSignature ts = parseMeter(value);
                     if (ts != null) {
                         this.timeSignature = ts;
+                        applyMidTuneAttributesChange();
                     }
                 }
                 case 'L' -> {

@@ -79,11 +79,6 @@ final class AbcKey {
             return KeySignature.cMajor();
         }
         String trimmed = raw.trim();
-        // Strip trailing directives like " clef=treble", "exp _b", or "^f".
-        int space = trimmed.indexOf(' ');
-        if (space > 0) {
-            trimmed = trimmed.substring(0, space);
-        }
         if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("none")) {
             return null;
         }
@@ -98,7 +93,22 @@ final class AbcKey {
             }
         }
         String root = upper.substring(0, rootLen);
-        String modeRaw = upper.substring(rootLen);
+
+        // The mode word may be glued directly to the root ("Cdor", "Cm") or
+        // separated by a single space ("C Dorian", "C major") - both are
+        // valid ABC. Consume at most one leading space, then the following
+        // run of letters is the mode word; anything after that (another
+        // space followed by a trailing directive like "clef=treble", "exp
+        // _b", or "^f") is ignored silently for MVP.
+        int i = rootLen;
+        if (i < upper.length() && upper.charAt(i) == ' ') {
+            i++;
+        }
+        int modeStart = i;
+        while (i < upper.length() && Character.isLetter(upper.charAt(i))) {
+            i++;
+        }
+        String modeRaw = upper.substring(modeStart, i);
 
         // Normalise mode to first-three-letters convention used by ABC.
         int modeOffset;
