@@ -564,6 +564,13 @@ public final class AbcReader {
         private boolean tupletStartPending;
         private int tupletNumberCounter;
         private int currentTupletNumber;
+        /**
+         * Whether the current tuplet needs an explicit bracket line: true
+         * unless a lookahead at the tuplet's start found its whole run
+         * beaming cleanly together (matching the ABC/notation convention of
+         * showing just the number over an already-beamed tuplet).
+         */
+        private boolean tupletBracket = true;
 
         // Chord accumulation.
         private boolean inChord;
@@ -1031,6 +1038,7 @@ public final class AbcReader {
                         tupletNormalNotes = normal;
                         tupletCountRemaining = count;
                         tupletStartPending = true;
+                        tupletBracket = !tupletRunBeamsCleanly(work, j, count);
                         tupletNumberCounter++;
                         currentTupletNumber = tupletNumberCounter;
                         i = j;
@@ -1214,6 +1222,69 @@ public final class AbcReader {
                     || c == '^' || c == '_' || c == '=';
         }
 
+        /**
+         * Side-effect-free lookahead: whether the next {@code count} note
+         * tokens starting at {@code from} form one unbroken run - no
+         * whitespace, barline, or rest between them - so the beam grouping
+         * logic (whitespace/rest flush the beam) will draw them as a single
+         * beamed group. Matches the ABC/notation convention of showing just
+         * the tuplet number over an already-beamed group, and a full
+         * bracket only when the beam wouldn't otherwise make the grouping
+         * clear.
+         */
+        private static boolean tupletRunBeamsCleanly(String line, int from, int count) {
+            int i = from;
+            int n = line.length();
+            int found = 0;
+            while (i < n && found < count) {
+                char c = line.charAt(i);
+                if (c == ' ' || c == '\t' || c == '|' || c == ':' || c == '[' || c == ']'
+                        || c == 'z' || c == 'x' || c == 'Z' || c == 'X') {
+                    return false;
+                }
+                if (isNoteStartChar(c)) {
+                    int consumed = skipNoteToken(line, i);
+                    if (consumed == i) {
+                        return false;
+                    }
+                    i = consumed;
+                    found++;
+                    continue;
+                }
+                if (c == '{') {
+                    int close = line.indexOf('}', i);
+                    i = close < 0 ? n : close + 1;
+                } else if (c == '"') {
+                    int close = line.indexOf('"', i + 1);
+                    i = close < 0 ? n : close + 1;
+                } else if (c == '!' || c == '+') {
+                    int close = line.indexOf(c, i + 1);
+                    i = close < 0 ? n : close + 1;
+                } else {
+                    i++;
+                }
+            }
+            return found >= count;
+        }
+
+        /** Side-effect-free scan over one note token's accidental/letter/octave/length span. */
+        private static int skipNoteToken(String line, int start) {
+            int i = start;
+            int n = line.length();
+            while (i < n && (line.charAt(i) == '^' || line.charAt(i) == '_' || line.charAt(i) == '=')) {
+                i++;
+            }
+            if (i >= n || !Character.isLetter(line.charAt(i))) {
+                return start;
+            }
+            i++;
+            while (i < n && (line.charAt(i) == '\'' || line.charAt(i) == ',')) {
+                i++;
+            }
+            AbcNoteLength.Parsed p = AbcNoteLength.parseSuffix(line, i);
+            return i + p.consumed();
+        }
+
         /** All data captured for a single ABC note or rest token. */
         private static final class ParsedNote {
             Step step;
@@ -1386,11 +1457,11 @@ public final class AbcReader {
                 m = m.times(tupletNormalNotes, tupletActualNotes);
                 timeMod = new TimeModification(tupletActualNotes, tupletNormalNotes);
                 if (tupletStartPending) {
-                    tuplets.add(new Tuplet(currentTupletNumber, Tuplet.Type.START, true));
+                    tuplets.add(new Tuplet(currentTupletNumber, Tuplet.Type.START, tupletBracket));
                     tupletStartPending = false;
                 }
                 if (tupletCountRemaining == 1) {
-                    tuplets.add(new Tuplet(currentTupletNumber, Tuplet.Type.STOP, true));
+                    tuplets.add(new Tuplet(currentTupletNumber, Tuplet.Type.STOP, tupletBracket));
                 }
                 tupletCountRemaining--;
             }
