@@ -30,6 +30,8 @@ import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.SimpleDoubleProperty;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
@@ -57,6 +59,7 @@ import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -105,6 +108,9 @@ public final class SheetDemoApp extends Application {
     private final ScrollPane imageScroll = new ScrollPane(imageView);
     private final ImageView previewImageView = new ImageView();
     private final ScrollPane previewImageScroll = new ScrollPane(previewImageView);
+    private final DoubleProperty previewImageZoom = new SimpleDoubleProperty(1.0);
+    private final Label previewZoomLabel = new Label();
+    private HBox previewImageToolbar;
     private final TextArea debugArea = new TextArea();
     private final Label statusLabel = new Label("Ready.");
     private final Label zoomLabel = new Label();
@@ -407,8 +413,56 @@ public final class SheetDemoApp extends Application {
     private void configurePreviewImageView() {
         previewImageView.setPreserveRatio(true);
         previewImageView.setSmooth(true);
-        previewImageView.fitWidthProperty().bind(previewImageScroll.widthProperty().subtract(4));
+        previewImageView.fitWidthProperty().bind(
+                previewImageScroll.widthProperty().subtract(4).multiply(previewImageZoom));
         previewImageScroll.setFitToWidth(true);
+        previewImageScroll.setPannable(true);
+        previewImageScroll.addEventFilter(ScrollEvent.SCROLL, this::handlePreviewImageScroll);
+        previewImageToolbar = buildPreviewImageToolbar();
+    }
+
+    /**
+     * Ctrl/Cmd + scroll zooms the image preview in place of the ScrollPane's
+     * normal vertical scrolling; plain scroll/drag keeps panning the image.
+     */
+    private void handlePreviewImageScroll(ScrollEvent event) {
+        if (!event.isShortcutDown()) {
+            return;
+        }
+        adjustPreviewImageZoom(event.getDeltaY() > 0 ? ZOOM_STEP : 1.0 / ZOOM_STEP);
+        event.consume();
+    }
+
+    private HBox buildPreviewImageToolbar() {
+        Label title = sectionTitle("Preview");
+        Button zoomOut = new Button("-");
+        zoomOut.setOnAction(e -> adjustPreviewImageZoom(1.0 / ZOOM_STEP));
+        Button zoomIn = new Button("+");
+        zoomIn.setOnAction(e -> adjustPreviewImageZoom(ZOOM_STEP));
+        Button zoomReset = new Button("100%");
+        zoomReset.setOnAction(e -> setPreviewImageZoom(1.0));
+        previewZoomLabel.setPadding(new Insets(0, 8, 0, 0));
+        updatePreviewZoomLabel();
+
+        HBox spacer = new HBox();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox bar = new HBox(8, title, spacer, zoomOut, zoomIn, zoomReset, previewZoomLabel);
+        bar.setPadding(new Insets(4));
+        return bar;
+    }
+
+    private void adjustPreviewImageZoom(double factor) {
+        setPreviewImageZoom(previewImageZoom.get() * factor);
+    }
+
+    private void setPreviewImageZoom(double value) {
+        double clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
+        previewImageZoom.set(clamped);
+        updatePreviewZoomLabel();
+    }
+
+    private void updatePreviewZoomLabel() {
+        previewZoomLabel.setText(String.format(Locale.ROOT, "Zoom %.0f%%", previewImageZoom.get() * 100.0));
     }
 
     private BorderPane buildTreePane() {
@@ -468,6 +522,8 @@ public final class SheetDemoApp extends Application {
     private void showPreviewImage(Path imagePath) {
         try (InputStream in = Files.newInputStream(imagePath)) {
             previewImageView.setImage(new Image(in));
+            setPreviewImageZoom(1.0);
+            previewPane.setTop(previewImageToolbar);
             showPreviewNode(previewImageScroll);
             statusLabel.setText("Preview: " + imagePath.toAbsolutePath());
         } catch (IOException | RuntimeException ex) {
@@ -662,6 +718,7 @@ public final class SheetDemoApp extends Application {
         if (pdf.isPresent()) {
             try (InputStream in = Files.newInputStream(pdf.get())) {
                 pdfView.load(in);
+                previewPane.setTop(sectionTitle("Preview"));
                 showPreviewNode(pdfView);
             } catch (IOException | RuntimeException ex) {
                 removePreview();
