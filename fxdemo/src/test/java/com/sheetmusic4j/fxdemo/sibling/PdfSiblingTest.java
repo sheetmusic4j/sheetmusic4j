@@ -1,6 +1,5 @@
-package com.sheetmusic4j.fxdemo;
+package com.sheetmusic4j.fxdemo.sibling;
 
-import com.sheetmusic4j.fxdemo.sibling.PdfSibling;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

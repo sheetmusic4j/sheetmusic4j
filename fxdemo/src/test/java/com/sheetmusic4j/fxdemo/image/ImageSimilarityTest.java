@@ -1,4 +1,4 @@
-package com.sheetmusic4j.fxdemo;
+package com.sheetmusic4j.fxdemo.image;
 
 import org.junit.jupiter.api.Test;
 
