@@ -244,13 +244,6 @@ public final class Engraver {
     private static final double MIN_NOTE_ADVANCE_GAPS = 1.2;
 
     /**
-     * Uniform scale applied to the time-proportional STRIP spacing so notes
-     * sit at a comfortable, readable density rather than the bare minimum-slot
-     * packing. A pure scale - it does not affect the constant-speed property.
-     */
-    private static final double STRIP_SPACING_FACTOR = 3.0;
-
-    /**
      * Left-side shift (in staff-line gaps) applied to a note's x position
      * when it carries an accidental. This ensures the accidental glyph sits
      * inside the note's reserved slot rather than colliding with the
@@ -1890,10 +1883,10 @@ public final class Engraver {
                 }
             }
         }
-        // The bare minimum-slot scale packs notes tightly; give the strip more
-        // breathing room so a quarter note occupies a comfortable, readable
-        // width. Purely a uniform scale - it does not affect proportionality.
-        return ppq * STRIP_SPACING_FACTOR;
+        // The bare minimum-slot scale packs notes tightly; the configurable
+        // spacing factor gives the strip more breathing room. Purely a uniform
+        // scale - it does not affect proportionality.
+        return ppq * options.stripSpacingFactor();
     }
 
     /**

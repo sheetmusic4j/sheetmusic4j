@@ -61,6 +61,9 @@ public final class StripSheetView extends Region {
 
     private final DoubleProperty zoom = new SimpleDoubleProperty(this, "zoom", 1.0);
 
+    private final DoubleProperty stripSpacingFactor =
+            new SimpleDoubleProperty(this, "stripSpacingFactor", LayoutOptions.DEFAULT_STRIP_SPACING_FACTOR);
+
     private final ObservableMap<MusicElement, Color> noteHighlights =
             FXCollections.observableMap(new IdentityHashMap<>());
 
@@ -101,6 +104,7 @@ public final class StripSheetView extends Region {
         cursorTime.addListener((obs, o, n) -> updateCursor());
         cursorScreenPosition.addListener((obs, o, n) -> updateCursor());
         zoom.addListener((obs, o, n) -> rebuild());
+        stripSpacingFactor.addListener((obs, o, n) -> rebuild());
         noteHighlights.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
         noteBackgrounds.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
         noteAccidentals.addListener((MapChangeListener<MusicElement, Accidental>) c -> repaint());
@@ -334,6 +338,27 @@ public final class StripSheetView extends Region {
         }
     }
 
+    /**
+     * Uniform horizontal spacing scale for the time-proportional STRIP layout
+     * (see {@link LayoutOptions#stripSpacingFactor()}). Larger values spread
+     * notes further apart; changing it re-engraves the score, so note anchor
+     * positions change and any cached timeline should be rebuilt from
+     * {@link #getLayout()}.
+     */
+    public DoubleProperty stripSpacingFactorProperty() {
+        return stripSpacingFactor;
+    }
+
+    public double getStripSpacingFactor() {
+        return stripSpacingFactor.get();
+    }
+
+    public void setStripSpacingFactor(double factor) {
+        if (factor > 0) {
+            stripSpacingFactor.set(factor);
+        }
+    }
+
     private Optional<RenderColor> highlightFor(MusicElement element) {
         return toRenderColor(noteHighlights.get(element));
     }
@@ -359,6 +384,7 @@ public final class StripSheetView extends Region {
         LayoutOptions options = LayoutOptions.defaults().toBuilder()
                 .layoutMode(LayoutMode.STRIP)
                 .showTitleTexts(false)
+                .stripSpacingFactor(stripSpacingFactor.get())
                 .build();
         layout = engraver.layout(score, options);
         canvas.setWidth(Math.max(layout.width() * zoomFactor, 1.0));

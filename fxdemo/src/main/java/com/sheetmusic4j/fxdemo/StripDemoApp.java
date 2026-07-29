@@ -80,6 +80,7 @@ public final class StripDemoApp extends Application {
     private final CheckBox cursorVisible = new CheckBox("Cursor");
     private final Slider cursorPosition = new Slider(0.0, 1.0, 0.3);
     private final Slider zoom = new Slider(0.5, 3.0, 1.0);
+    private final Slider spacing = new Slider(1.0, 6.0, 2.0);
 
     // Background-highlight box geometry (in staff-line gaps).
     private final Slider bgPadX = new Slider(0.0, 3.0, 0.2);
@@ -130,6 +131,10 @@ public final class StripDemoApp extends Application {
         stripView.cursorScreenPositionProperty().bind(cursorPosition.valueProperty());
         stripView.zoomProperty().bind(zoom.valueProperty());
 
+        // Spacing re-engraves the score (note x positions change), so after it
+        // we rebuild the cursor timeline and re-place the cursor.
+        spacing.valueProperty().addListener((obs, o, n) -> applySpacing());
+
         // Recolour the currently-lit notes when the pickers change mid-play.
         highlightColor.valueProperty().addListener((obs, o, n) -> reapplyActiveColours());
         backgroundColor.valueProperty().addListener((obs, o, n) -> reapplyActiveColours());
@@ -162,7 +167,7 @@ public final class StripDemoApp extends Application {
             openFile(Path.of(args.getFirst()));
         }
 
-        Scene scene = new Scene(root, 1100, 380);
+        Scene scene = new Scene(root, 1100, 500);
         stage.setTitle(TITLE);
         stage.setScene(scene);
         stage.show();
@@ -220,15 +225,22 @@ public final class StripDemoApp extends Application {
         Label zoomValue = new Label();
         zoomValue.textProperty().bind(zoom.valueProperty().asString("%.2fx"));
 
-        ToolBar appearance = new ToolBar(
+        spacing.setPrefWidth(120);
+        Label spacingValue = new Label();
+        spacingValue.textProperty().bind(spacing.valueProperty().asString("%.1f"));
+
+        ToolBar appearance1 = new ToolBar(
                 new Label("Highlight:"), highlightColor,
                 new Label("Background:"), backgroundColor,
                 new Separator(),
-                new Label("Cursor:"), cursorColor, cursorVisible,
-                new Separator(),
+                new Label("Cursor:"), cursorColor, cursorVisible);
+
+        ToolBar appearance2 = new ToolBar(
                 new Label("Position:"), cursorPosition,
                 new Separator(),
-                new Label("Zoom:"), zoom, zoomValue);
+                new Label("Zoom:"), zoom, zoomValue,
+                new Separator(),
+                new Label("Spacing:"), spacing, spacingValue);
 
         bgPadX.setPrefWidth(100);
         bgPadY.setPrefWidth(100);
@@ -254,9 +266,18 @@ public final class StripDemoApp extends Application {
 
         statusLabel.setPadding(new Insets(4, 8, 6, 8));
 
-        VBox box = new VBox(transport, appearance, backgroundBox, statusLabel);
+        VBox box = new VBox(transport, appearance1, appearance2, backgroundBox, statusLabel);
         VBox.setVgrow(box, Priority.NEVER);
         return box;
+    }
+
+    /** Apply a new strip spacing factor: re-engrave, rebuild the timeline, re-place the cursor. */
+    private void applySpacing() {
+        stripView.setStripSpacingFactor(spacing.getValue());
+        recomputeAnchors();
+        if (stripView.getScore() != null) {
+            stripView.setCursorLayoutX(cursorXForTime(playhead));
+        }
     }
 
     /** Rebuild the note-background geometry from the three sliders (symmetric padding). */

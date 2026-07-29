@@ -27,6 +27,10 @@ public final class LayoutOptions {
     private final boolean showKeySignature;
     private final boolean showTimeSignature;
     private final boolean showTitleTexts;
+    private final double stripSpacingFactor;
+
+    /** Default uniform spacing scale for {@link LayoutMode#STRIP} layout. */
+    public static final double DEFAULT_STRIP_SPACING_FACTOR = 2.0;
 
     /**
      * Legacy positional constructor. Populates the record-era fields; all
@@ -49,14 +53,15 @@ public final class LayoutOptions {
                          double measureMinWidth, double fontSize) {
         this(staffLineGap, staffSpacing, systemWidth, leftMargin, rightMargin, topMargin,
                 measureMinWidth, fontSize,
-                LayoutMode.PAGE, true, true, true, true);
+                LayoutMode.PAGE, true, true, true, true, DEFAULT_STRIP_SPACING_FACTOR);
     }
 
     private LayoutOptions(double staffLineGap, double staffSpacing, double systemWidth,
                           double leftMargin, double rightMargin, double topMargin,
                           double measureMinWidth, double fontSize,
                           LayoutMode layoutMode, boolean showClef, boolean showKeySignature,
-                          boolean showTimeSignature, boolean showTitleTexts) {
+                          boolean showTimeSignature, boolean showTitleTexts,
+                          double stripSpacingFactor) {
         this.staffLineGap = staffLineGap;
         this.staffSpacing = staffSpacing;
         this.systemWidth = systemWidth;
@@ -70,6 +75,7 @@ public final class LayoutOptions {
         this.showKeySignature = showKeySignature;
         this.showTimeSignature = showTimeSignature;
         this.showTitleTexts = showTitleTexts;
+        this.stripSpacingFactor = stripSpacingFactor > 0 ? stripSpacingFactor : DEFAULT_STRIP_SPACING_FACTOR;
     }
 
     /** Returns a fresh options instance populated with sensible defaults. */
@@ -149,6 +155,16 @@ public final class LayoutOptions {
     }
 
     /**
+     * Uniform horizontal spacing scale for {@link LayoutMode#STRIP} layout.
+     * Larger values spread notes further apart; a pure scale that does not
+     * affect the time-proportional (constant-speed) property. Ignored in
+     * {@link LayoutMode#PAGE} mode.
+     */
+    public double stripSpacingFactor() {
+        return stripSpacingFactor;
+    }
+
+    /**
      * Height of a five-line staff (four gaps).
      */
     public double staffHeight() {
@@ -174,6 +190,7 @@ public final class LayoutOptions {
         private boolean showKeySignature;
         private boolean showTimeSignature;
         private boolean showTitleTexts;
+        private double stripSpacingFactor;
 
         private Builder(LayoutOptions base) {
             this.staffLineGap = base.staffLineGap;
@@ -189,6 +206,7 @@ public final class LayoutOptions {
             this.showKeySignature = base.showKeySignature;
             this.showTimeSignature = base.showTimeSignature;
             this.showTitleTexts = base.showTitleTexts;
+            this.stripSpacingFactor = base.stripSpacingFactor;
         }
 
         public Builder staffLineGap(double v) {
@@ -256,10 +274,16 @@ public final class LayoutOptions {
             return this;
         }
 
+        public Builder stripSpacingFactor(double v) {
+            this.stripSpacingFactor = v;
+            return this;
+        }
+
         public LayoutOptions build() {
             return new LayoutOptions(staffLineGap, staffSpacing, systemWidth,
                     leftMargin, rightMargin, topMargin, measureMinWidth, fontSize,
-                    layoutMode, showClef, showKeySignature, showTimeSignature, showTitleTexts);
+                    layoutMode, showClef, showKeySignature, showTimeSignature, showTitleTexts,
+                    stripSpacingFactor);
         }
     }
 }
