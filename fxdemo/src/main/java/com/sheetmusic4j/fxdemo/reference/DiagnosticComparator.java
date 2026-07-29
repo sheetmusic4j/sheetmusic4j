@@ -4,7 +4,7 @@ import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.MeasureLayout;
 import com.sheetmusic4j.engraving.layout.StaffLayout;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
-import com.sheetmusic4j.fxdemo.ImageSimilarity;
+import com.sheetmusic4j.fxdemo.image.ImageSimilarity;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;

@@ -27,6 +27,7 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 import com.sheetmusic4j.core.model.Attributes;
+import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
@@ -34,6 +35,7 @@ import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Pitch;
@@ -71,6 +73,12 @@ import com.sheetmusic4j.core.model.TimeSignature;
  * <p>GuitarPro bars can carry several concurrent voices per staff. The model
  * has no voice concept, so only the primary (first present) voice of each staff
  * is imported; secondary voices are dropped.
+ *
+ * <p>GPIF stores no explicit beam grouping (Guitar Pro beams automatically by
+ * beat), so beams are reconstructed here: consecutive beamable beats (eighth or
+ * shorter, uninterrupted by a rest or longer note) are grouped within each beat
+ * of the measure's time signature and tagged with {@link Beam} entries so the
+ * engraver draws beams rather than individual flags.
  *
  * <p>Loading is one-directional: there is no GuitarPro export.
  */
@@ -237,16 +245,25 @@ public final class GuitarProImporter {
                     ? KeySignature.cMajor()
                     : keyFrom(masterBars.get(0));
 
+            // GP only stores a Time on master bars where it changes; carry the
+            // last-seen signature forward so beam grouping stays correct.
+            TimeSignature currentTime = TimeSignature.fourFour();
+
             for (int m = 0; m < masterBars.size(); m++) {
                 Element masterBar = masterBars.get(m);
                 int[] barIds = intList(textOf(firstChild(masterBar, "Bars")));
                 Measure.Builder measure = Measure.builder(m + 1);
 
+                TimeSignature explicit = explicitTime(masterBar);
+                if (explicit != null) {
+                    currentTime = explicit;
+                }
+
                 if (m == 0) {
                     Attributes.Builder attributes = Attributes.builder()
                             .divisions(TICKS_PER_QUARTER)
                             .keySignature(partKey)
-                            .timeSignature(timeFrom(masterBar))
+                            .timeSignature(currentTime)
                             .staves(numberOfStaves);
                     for (int s = 0; s < numberOfStaves; s++) {
                         attributes.addClef(clefFrom(barAt(bars, barIds, barOffset[t] + s)));
@@ -263,9 +280,17 @@ public final class GuitarProImporter {
                     if (voice == null) {
                         continue;
                     }
+                    List<BeatItem> items = new ArrayList<>();
                     for (int beatId : intList(textOf(firstChild(voice, "Beats")))) {
-                        appendBeat(measure, beats.get(beatId), rhythms, notes,
+                        BeatItem item = beatItem(beats.get(beatId), rhythms, notes,
                                 staves.get(s), s + 1, partKey);
+                        if (item != null) {
+                            items.add(item);
+                        }
+                    }
+                    assignBeams(items, currentTime);
+                    for (BeatItem item : items) {
+                        measure.addElement(toElement(item));
                     }
                 }
 
@@ -278,40 +303,159 @@ public final class GuitarProImporter {
         return score.build();
     }
 
-    private void appendBeat(Measure.Builder measure, Element beat, Map<Integer, Element> rhythms,
-                            Map<Integer, Element> notesById, StaffInfo staff, int staffNumber,
-                            KeySignature key) {
+    /**
+     * Resolve one GPIF beat into pitches + duration + beam level, without yet
+     * committing beam entries (those are assigned once the whole staff's beat
+     * sequence is known). Returns {@code null} only for a missing beat.
+     */
+    private BeatItem beatItem(Element beat, Map<Integer, Element> rhythms,
+                              Map<Integer, Element> notesById, StaffInfo staff, int staffNumber,
+                              KeySignature key) {
         if (beat == null) {
-            return;
+            return null;
         }
         Element rhythmRef = firstChild(beat, "Rhythm");
         Integer rhythmId = rhythmRef == null ? null : attrInt(rhythmRef, "ref");
-        Duration duration = durationFrom(rhythmId == null ? null : rhythms.get(rhythmId));
+        Element rhythm = rhythmId == null ? null : rhythms.get(rhythmId);
+        Duration duration = durationFrom(rhythm);
+        int beamLevels = beamLevels(rhythm);
 
-        int[] noteIds = intList(textOf(firstChild(beat, "Notes")));
-        if (noteIds.length == 0) {
-            measure.addElement(Rest.builder().duration(duration).staff(staffNumber).build());
-            return;
-        }
-
-        List<Note> notes = new ArrayList<>();
-        for (int noteId : noteIds) {
+        List<Pitch> pitches = new ArrayList<>();
+        for (int noteId : intList(textOf(firstChild(beat, "Notes")))) {
             Integer midi = midiOf(notesById.get(noteId), staff);
             if (midi != null) {
-                notes.add(Note.builder()
-                        .pitch(Pitch.fromMidiNumber(clampMidi(midi), key))
-                        .duration(duration)
-                        .staff(staffNumber)
-                        .build());
+                pitches.add(Pitch.fromMidiNumber(clampMidi(midi), key));
             }
         }
-        if (notes.isEmpty()) {
-            measure.addElement(Rest.builder().duration(duration).staff(staffNumber).build());
-        } else if (notes.size() == 1) {
-            measure.addElement(notes.get(0));
-        } else {
-            measure.addElement(new Chord(notes));
+        return new BeatItem(pitches, duration, staffNumber, beamLevels);
+    }
+
+    /** Build the model element for a resolved beat, attaching any beams. */
+    private MusicElement toElement(BeatItem item) {
+        if (item.isRest()) {
+            return Rest.builder().duration(item.duration).staff(item.staffNumber).build();
         }
+        if (item.pitches.size() == 1) {
+            return buildNote(item.pitches.get(0), item);
+        }
+        List<Note> chordNotes = new ArrayList<>(item.pitches.size());
+        for (Pitch pitch : item.pitches) {
+            chordNotes.add(buildNote(pitch, item));
+        }
+        return new Chord(chordNotes);
+    }
+
+    private Note buildNote(Pitch pitch, BeatItem item) {
+        Note.Builder note = Note.builder()
+                .pitch(pitch)
+                .duration(item.duration)
+                .staff(item.staffNumber);
+        for (Beam beam : item.beams) {
+            note.addBeam(beam);
+        }
+        return note.build();
+    }
+
+    // ------------------------------------------------------------------
+    // Beaming (reconstructed: GPIF has no explicit beam grouping)
+    // ------------------------------------------------------------------
+
+    /**
+     * Assign beam entries to a staff's ordered beats. Consecutive beamable
+     * beats that begin within the same beat of the time signature are joined
+     * into one beamed group; rests and quarter-or-longer notes break the group.
+     */
+    private void assignBeams(List<BeatItem> items, TimeSignature time) {
+        int groupTicks = beamGroupTicks(time);
+        int n = items.size();
+        int[] startPos = new int[n];
+        int cursor = 0;
+        for (int i = 0; i < n; i++) {
+            startPos[i] = cursor;
+            cursor += items.get(i).duration.value();
+        }
+        int i = 0;
+        while (i < n) {
+            if (!items.get(i).beamable()) {
+                i++;
+                continue;
+            }
+            int group = startPos[i] / groupTicks;
+            int j = i + 1;
+            while (j < n && items.get(j).beamable() && startPos[j] / groupTicks == group) {
+                j++;
+            }
+            if (j - i >= 2) {
+                applyBeamRun(items.subList(i, j));
+            }
+            i = j;
+        }
+    }
+
+    /**
+     * Assign begin/continue/end beam states across one beamed run, per beam
+     * level. A secondary beam that occurs in isolation (e.g. the sixteenth of a
+     * dotted-eighth + sixteenth pair) becomes a hook pointing back toward the
+     * run when it has a predecessor, otherwise forward.
+     */
+    private void applyBeamRun(List<BeatItem> run) {
+        int maxLevel = 0;
+        for (BeatItem item : run) {
+            maxLevel = Math.max(maxLevel, item.beamLevels);
+        }
+        int size = run.size();
+        for (int level = 1; level <= maxLevel; level++) {
+            int k = 0;
+            while (k < size) {
+                if (run.get(k).beamLevels < level) {
+                    k++;
+                    continue;
+                }
+                int start = k;
+                int end = k;
+                while (end + 1 < size && run.get(end + 1).beamLevels >= level) {
+                    end++;
+                }
+                if (end == start) {
+                    Beam.State state = start > 0 ? Beam.State.BACKWARD_HOOK : Beam.State.FORWARD_HOOK;
+                    run.get(start).beams.add(new Beam(level, state));
+                } else {
+                    run.get(start).beams.add(new Beam(level, Beam.State.BEGIN));
+                    for (int x = start + 1; x < end; x++) {
+                        run.get(x).beams.add(new Beam(level, Beam.State.CONTINUE));
+                    }
+                    run.get(end).beams.add(new Beam(level, Beam.State.END));
+                }
+                k = end + 1;
+            }
+        }
+    }
+
+    /** Ticks per beam group: one time-signature beat, or a dotted beat in compound meter. */
+    private int beamGroupTicks(TimeSignature time) {
+        int beatType = time.beatType();
+        int quarterUnits = TICKS_PER_QUARTER * 4;
+        int denomBeat = beatType > 0 && quarterUnits % beatType == 0
+                ? quarterUnits / beatType
+                : TICKS_PER_QUARTER;
+        if (beatType >= 8 && time.beats() % 3 == 0) {
+            return denomBeat * 3;
+        }
+        return denomBeat;
+    }
+
+    /** Number of beams a rhythm's base note value carries (0 for quarter or longer, or a rest). */
+    private int beamLevels(Element rhythm) {
+        if (rhythm == null) {
+            return 0;
+        }
+        double base = baseTicks(textOf(firstChild(rhythm, "NoteValue")));
+        int levels = 0;
+        while (base < TICKS_PER_QUARTER) {
+            base *= 2;
+            levels++;
+        }
+        return levels;
     }
 
     private Element barAt(Map<Integer, Element> bars, int[] barIds, int index) {
@@ -405,7 +549,8 @@ public final class GuitarProImporter {
     // Attribute mapping
     // ------------------------------------------------------------------
 
-    private TimeSignature timeFrom(Element masterBar) {
+    /** The master bar's explicit time signature, or {@code null} when it carries none. */
+    private TimeSignature explicitTime(Element masterBar) {
         String time = textOf(firstChild(masterBar, "Time"));
         if (time != null && time.contains("/")) {
             String[] parts = time.split("/");
@@ -415,7 +560,7 @@ public final class GuitarProImporter {
                 return new TimeSignature(beats, beatType);
             }
         }
-        return TimeSignature.fourFour();
+        return null;
     }
 
     private KeySignature keyFrom(Element masterBar) {
@@ -644,5 +789,35 @@ public final class GuitarProImporter {
 
     /** Tuning (open-string MIDI values, per string index) and capo for one staff. */
     private record StaffInfo(List<Integer> tuning, int capo) {
+    }
+
+    /**
+     * A GPIF beat resolved to model data, awaiting beam assignment. An empty
+     * {@link #pitches} list denotes a rest. {@link #beamLevels} is the number of
+     * beams the note value carries (0 = quarter or longer); {@link #beams} is
+     * filled in by {@link #assignBeams}.
+     */
+    private static final class BeatItem {
+        private final List<Pitch> pitches;
+        private final Duration duration;
+        private final int staffNumber;
+        private final int beamLevels;
+        private final List<Beam> beams = new ArrayList<>();
+
+        BeatItem(List<Pitch> pitches, Duration duration, int staffNumber, int beamLevels) {
+            this.pitches = pitches;
+            this.duration = duration;
+            this.staffNumber = staffNumber;
+            this.beamLevels = beamLevels;
+        }
+
+        boolean isRest() {
+            return pitches.isEmpty();
+        }
+
+        /** Whether this beat can participate in a beam (a note, eighth or shorter). */
+        boolean beamable() {
+            return beamLevels > 0 && !isRest();
+        }
     }
 }

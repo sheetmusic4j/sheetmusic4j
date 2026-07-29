@@ -3,6 +3,7 @@ package com.sheetmusic4j.fxdemo;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
+import com.sheetmusic4j.fxdemo.inspector.ScoreInspector;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;

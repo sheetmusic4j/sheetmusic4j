@@ -1,4 +1,4 @@
-package com.sheetmusic4j.fxdemo;
+package com.sheetmusic4j.fxdemo.inspector;
 
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Chord;

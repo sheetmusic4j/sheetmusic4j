@@ -1,4 +1,4 @@
-package com.sheetmusic4j.fxdemo;
+package com.sheetmusic4j.fxdemo.render;
 
 import java.awt.BasicStroke;
 import java.awt.Color;

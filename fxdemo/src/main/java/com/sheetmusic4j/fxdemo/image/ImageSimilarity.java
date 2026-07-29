@@ -1,4 +1,4 @@
-package com.sheetmusic4j.fxdemo;
+package com.sheetmusic4j.fxdemo.image;
 
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;

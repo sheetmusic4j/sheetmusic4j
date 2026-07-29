@@ -68,6 +68,31 @@ class GuitarProImporterTest {
     }
 
     @Test
+    void reconstructsBeamsForShortNotes() {
+        Path path = fixture("death-painkiller/death-painkiller.gp");
+        assumeTrue(path != null, "GuitarPro .gp fixture not available");
+
+        Score score = new GuitarProImporter().fromGuitarPro(path);
+
+        boolean anyBeamed = false;
+        for (Part part : score.parts()) {
+            for (Measure measure : part.measures()) {
+                for (MusicElement element : measure.elements()) {
+                    for (Note note : notesOf(element)) {
+                        if (note.isBeamed()) {
+                            anyBeamed = true;
+                            // A beam only makes sense on eighth-or-shorter notes.
+                            assertTrue(note.duration().inQuarters() < 1.0,
+                                    "beamed note must be shorter than a quarter");
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(anyBeamed, "expected reconstructed beams on eighth/sixteenth notes");
+    }
+
+    @Test
     void scoreFileDispatchesGuitarProExtension() {
         Path path = fixture("death-painkiller/death-painkiller.gp");
         assumeTrue(path != null, "GuitarPro .gp fixture not available");
@@ -109,6 +134,16 @@ class GuitarProImporterTest {
             }
         }
         return true;
+    }
+
+    private static java.util.List<Note> notesOf(MusicElement element) {
+        if (element instanceof Note note) {
+            return java.util.List.of(note);
+        }
+        if (element instanceof Chord chord) {
+            return chord.notes();
+        }
+        return java.util.List.of();
     }
 
     private static int staffOf(MusicElement element) {

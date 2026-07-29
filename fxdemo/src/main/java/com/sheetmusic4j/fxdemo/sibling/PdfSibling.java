@@ -1,4 +1,4 @@
-package com.sheetmusic4j.fxdemo;
+package com.sheetmusic4j.fxdemo.sibling;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

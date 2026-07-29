@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.musicxml.MusicXmlReader;
+import com.sheetmusic4j.fxdemo.image.ImageSimilarity;
+import com.sheetmusic4j.fxdemo.render.HeadlessScoreImage;
 
 /**
  * Non-comparative smoke test for the headless engraving pipeline. Ensures the

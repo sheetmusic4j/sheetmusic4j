@@ -19,10 +19,14 @@ import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.NoteAnchor;
+import com.sheetmusic4j.fxdemo.inspector.ScoreInspector;
 import com.sheetmusic4j.fxdemo.reference.DiagnosticComparator;
 import com.sheetmusic4j.fxdemo.reference.DiffReportWriter;
 import com.sheetmusic4j.fxdemo.reference.ImageStack;
 import com.sheetmusic4j.fxdemo.reference.PdfRasterizer;
+import com.sheetmusic4j.fxdemo.render.HeadlessScoreImage;
+import com.sheetmusic4j.fxdemo.sibling.ImageSibling;
+import com.sheetmusic4j.fxdemo.sibling.PdfSibling;
 import com.sheetmusic4j.fxviewer.SheetView;
 
 import javafx.animation.Animation;
@@ -191,6 +195,8 @@ public final class SheetDemoApp extends Application {
     public void start(Stage stage) {
         this.stage = stage;
         configurePreviewImageView();
+
+        pdfView.setShowThumbnails(false);
 
         BorderPane root = new BorderPane();
         root.setTop(buildMenuBar());
