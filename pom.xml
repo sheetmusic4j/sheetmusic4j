@@ -44,6 +44,8 @@
         <!-- Dependencies -->
         <javafx.version>21.0.4</javafx.version>
         <pdfviewfx.version>3.4.2</pdfviewfx.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <log4j.version>2.24.3</log4j.version>
 
         <!-- Test dependencies -->
         <junit.version>5.11.0</junit.version>
@@ -95,9 +97,9 @@
                 <groupId>com.dlsc.pdfviewfx</groupId>
                 <artifactId>pdfviewfx</artifactId>
                 <version>${pdfviewfx.version}</version>
-            </dependency>
+                </dependency>
 
-            <!-- JavaFX -->
+                <!-- JavaFX -->
             <dependency>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-controls</artifactId>
@@ -122,6 +124,28 @@
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-swing</artifactId>
                 <version>${javafx.version}</version>
+            </dependency>
+
+            <!-- Logging: SLF4J API for the library, Log4j2 binding for the demo app -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-core</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-api</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-slf4j2-impl</artifactId>
+                <version>${log4j.version}</version>
             </dependency>
 
             <!-- Testing -->
