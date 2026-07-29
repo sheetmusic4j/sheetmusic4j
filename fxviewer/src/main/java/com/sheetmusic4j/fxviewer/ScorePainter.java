@@ -32,29 +32,6 @@ public final class ScorePainter {
     private static final int STAFF_LINES = 5;
     private static final double STEM_LENGTH_GAPS = 3.5;
 
-    /**
-     * Horizontal padding to the left of a note-background rectangle,
-     * expressed in staff-line gaps. Wider than the right padding so the
-     * rectangle covers the accidental slot that sits to the left of the
-     * notehead.
-     */
-    private static final double BG_PAD_LEFT_GAPS = 2.2;
-
-    /**
-     * Horizontal padding to the right of a note-background rectangle.
-     */
-    private static final double BG_PAD_RIGHT_GAPS = 0.6;
-
-    /**
-     * Vertical padding above/below a note-background rectangle.
-     */
-    private static final double BG_PAD_Y_GAPS = 0.4;
-
-    /**
-     * Corner arc radius for a note-background rectangle, in staff-line gaps.
-     */
-    private static final double BG_ARC_GAPS = 1.0;
-
     private final EnumSet<MarkingCategory> hiddenCategories =
             EnumSet.noneOf(MarkingCategory.class);
 
@@ -77,6 +54,12 @@ public final class ScorePainter {
      * is drawn. {@code null} disables the mechanism.
      */
     private Function<MusicElement, Optional<RenderColor>> noteBackgroundProvider;
+
+    /**
+     * Geometry of the note-background rectangle. Never {@code null}; defaults to
+     * {@link NoteBackgroundStyle#defaults()}.
+     */
+    private NoteBackgroundStyle backgroundStyle = NoteBackgroundStyle.defaults();
 
     /**
      * Optional per-element accidental override provider. When set, the
@@ -268,6 +251,23 @@ public final class ScorePainter {
     }
 
     /**
+     * @return the current note-background geometry (never {@code null}).
+     */
+    public NoteBackgroundStyle getNoteBackgroundStyle() {
+        return backgroundStyle;
+    }
+
+    /**
+     * Configure the geometry (paddings, corner arc, height cap) of the rounded
+     * rectangle drawn behind highlighted notes. See {@link NoteBackgroundStyle}.
+     *
+     * @param style the new geometry, or {@code null} to restore the defaults
+     */
+    public void setNoteBackgroundStyle(NoteBackgroundStyle style) {
+        this.backgroundStyle = style != null ? style : NoteBackgroundStyle.defaults();
+    }
+
+    /**
      * Install a per-element accidental override provider. When the
      * returned {@link Accidental} is present, its SMuFL glyph is drawn to
      * the immediate left of that element's notehead - at the same
@@ -424,23 +424,27 @@ public final class ScorePainter {
             return;
         }
         double gap = referenceLineGap(layout);
-        double padLeft = gap * BG_PAD_LEFT_GAPS;
-        double padRight = gap * BG_PAD_RIGHT_GAPS;
-        double padY = gap * BG_PAD_Y_GAPS;
-        double arc = gap * BG_ARC_GAPS;
-        // Cap the rectangle height at a reasonable multiple of the gap so
-        // a chord anchor whose bounding box also includes its long stem
-        // doesn't produce a hugely tall highlight rectangle.
-        double maxBgHeight = gap * 4.5;
+        double padLeft = gap * backgroundStyle.padLeftGaps();
+        double padRight = gap * backgroundStyle.padRightGaps();
+        double padTop = gap * backgroundStyle.padTopGaps();
+        double padBottom = gap * backgroundStyle.padBottomGaps();
+        double arc = gap * backgroundStyle.arcGaps();
+        double offsetY = gap * backgroundStyle.offsetYGaps();
+        // Cap the note-derived content height so a chord anchor whose bounding
+        // box also includes its long stem doesn't produce a hugely tall rect.
+        double maxContentHeight = gap * backgroundStyle.maxHeightGaps();
         for (NoteAnchor anchor : layout.noteAnchors()) {
             RenderColor bg = backgroundFor(anchor.elementRef());
             if (bg == null) {
                 continue;
             }
-            double rectHeight = Math.min(anchor.height(), maxBgHeight) + padY * 2;
+            // The box is anchored to the note's rendered size and position and
+            // grows outward by the configured padding on each side.
+            double contentHeight = Math.min(anchor.height(), maxContentHeight);
             double rectWidth = anchor.width() + padLeft + padRight;
-            double rectX = anchor.x() - anchor.width() / 2.0 - padLeft + padRight;
-            double rectY = anchor.y() - rectHeight / 2.0;
+            double rectHeight = contentHeight + padTop + padBottom;
+            double rectX = anchor.x() - anchor.width() / 2.0 - padLeft;
+            double rectY = anchor.y() - contentHeight / 2.0 - padTop + offsetY;
             surface.fillRoundedRect(rectX, rectY, rectWidth, rectHeight, arc, arc, bg);
         }
     }

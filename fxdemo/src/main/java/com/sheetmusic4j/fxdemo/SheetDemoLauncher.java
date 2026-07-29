@@ -8,9 +8,9 @@ package com.sheetmusic4j.fxdemo;
  * components are missing". Delegating through this launcher avoids that check and
  * lets the demo run from a standard Java run/launch configuration.
  */
-public final class DemoLauncher {
+public final class SheetDemoLauncher {
 
-    private DemoLauncher() {
+    private SheetDemoLauncher() {
     }
 
     /**

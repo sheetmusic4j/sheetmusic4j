@@ -91,6 +91,21 @@ public final class ScoreRenderer {
     }
 
     /**
+     * @return the underlying painter's note-background geometry.
+     */
+    public NoteBackgroundStyle getNoteBackgroundStyle() {
+        return painter.getNoteBackgroundStyle();
+    }
+
+    /**
+     * Configure the geometry of the note-background rectangle on the underlying
+     * painter. See {@link ScorePainter#setNoteBackgroundStyle(NoteBackgroundStyle)}.
+     */
+    public void setNoteBackgroundStyle(NoteBackgroundStyle style) {
+        painter.setNoteBackgroundStyle(style);
+    }
+
+    /**
      * Install a per-element accidental override provider on the
      * underlying painter. See
      * {@link ScorePainter#setNoteAccidentalProvider(Function)}.

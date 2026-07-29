@@ -31,7 +31,7 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    `RenderSurface` interface (stroke/fill/oval/text primitives) rather than directly against JavaFX. `FxRenderSurface`
    implements `RenderSurface` for a JavaFX `GraphicsContext`; `SheetView` is the `Region`/`Canvas` control that ties
    `Engraver` + `ScorePainter` + `FxRenderSurface` together for on-screen display.
-4. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `DemoLauncher` to avoid classpath
+4. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `SheetDemoLauncher` to avoid classpath
    JavaFX-runtime errors). Lets you open a MusicXML/MIDI file, shows a debug pane (`ScoreInspector`), and shows a
    companion PDF side-by-side via `com.dlsc.pdfviewfx:pdfviewfx` when one exists next to the loaded file (same basename,
    `.pdf`; resolved by `PdfSibling`).

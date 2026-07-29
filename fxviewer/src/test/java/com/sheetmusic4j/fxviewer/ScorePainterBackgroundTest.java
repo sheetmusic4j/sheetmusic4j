@@ -226,6 +226,69 @@ class ScorePainterBackgroundTest {
                 "alpha channel must survive from provider to surface");
     }
 
+    @Test
+    void backgroundStyleControlsRectangleSize() {
+        Note[] notes = new Note[2];
+        Score score = twoNoteScore(notes);
+        LayoutResult layout = new Engraver().layout(score, LayoutOptions.defaults());
+
+        Map<MusicElement, RenderColor> backgrounds = new IdentityHashMap<>();
+        backgrounds.put(notes[0], YELLOW);
+
+        ScorePainter painter = new ScorePainter();
+        painter.setNoteBackgroundProvider(e -> Optional.ofNullable(backgrounds.get(e)));
+
+        painter.setNoteBackgroundStyle(NoteBackgroundStyle.defaults());
+        BackgroundSpyingSurface wide = new BackgroundSpyingSurface();
+        painter.paint(wide, layout, layout.width(), layout.height());
+
+        painter.setNoteBackgroundStyle(NoteBackgroundStyle.tight());
+        BackgroundSpyingSurface tight = new BackgroundSpyingSurface();
+        painter.paint(tight, layout, layout.width(), layout.height());
+
+        assertEquals(1, wide.roundedRects.size());
+        assertEquals(1, tight.roundedRects.size());
+        RoundedRect w = wide.roundedRects.get(0);
+        RoundedRect t = tight.roundedRects.get(0);
+        assertTrue(t.w < w.w, "the tight style must produce a narrower background rect");
+        assertTrue(t.h < w.h, "the tight style must produce a shorter background rect");
+        assertTrue(t.aw < w.aw, "the tight style must use a smaller corner arc");
+    }
+
+    @Test
+    void backgroundStyleOffsetYShiftsRectDown() {
+        Note[] notes = new Note[2];
+        Score score = twoNoteScore(notes);
+        LayoutResult layout = new Engraver().layout(score, LayoutOptions.defaults());
+
+        Map<MusicElement, RenderColor> backgrounds = new IdentityHashMap<>();
+        backgrounds.put(notes[0], YELLOW);
+
+        ScorePainter painter = new ScorePainter();
+        painter.setNoteBackgroundProvider(e -> Optional.ofNullable(backgrounds.get(e)));
+
+        painter.setNoteBackgroundStyle(NoteBackgroundStyle.defaults());
+        BackgroundSpyingSurface centred = new BackgroundSpyingSurface();
+        painter.paint(centred, layout, layout.width(), layout.height());
+
+        painter.setNoteBackgroundStyle(NoteBackgroundStyle.defaults().withOffsetY(1.0));
+        BackgroundSpyingSurface shifted = new BackgroundSpyingSurface();
+        painter.paint(shifted, layout, layout.width(), layout.height());
+
+        RoundedRect c = centred.roundedRects.get(0);
+        RoundedRect s = shifted.roundedRects.get(0);
+        assertTrue(s.y > c.y, "a positive offsetY must move the background rect down");
+        assertEquals(c.h, s.h, 1e-9, "offsetY must not change the rect height");
+    }
+
+    @Test
+    void nullBackgroundStyleRestoresDefaults() {
+        ScorePainter painter = new ScorePainter();
+        painter.setNoteBackgroundStyle(NoteBackgroundStyle.tight());
+        painter.setNoteBackgroundStyle(null);
+        assertEquals(NoteBackgroundStyle.defaults(), painter.getNoteBackgroundStyle());
+    }
+
     private static final class BackgroundSpyingSurface implements RenderSurface {
         final List<RoundedRect> roundedRects = new ArrayList<>();
         final List<RenderColor> fillsSet = new ArrayList<>();

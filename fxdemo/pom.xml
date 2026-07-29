@@ -88,4 +88,14 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Run the strip-view showcase: mvn -pl fxdemo -Pstrip javafx:run -->
+        <profile>
+            <id>strip</id>
+            <properties>
+                <exec.mainClass>com.sheetmusic4j.fxdemo.StripDemoApp</exec.mainClass>
+            </properties>
+        </profile>
+    </profiles>
 </project>

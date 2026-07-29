@@ -70,8 +70,18 @@ public final class StripSheetView extends Region {
     private final ObservableMap<MusicElement, Accidental> noteAccidentals =
             FXCollections.observableMap(new IdentityHashMap<>());
 
+    private final ObjectProperty<NoteBackgroundStyle> noteBackgroundStyle =
+            new SimpleObjectProperty<>(this, "noteBackgroundStyle", NoteBackgroundStyle.defaults());
+
     private Score score;
     private LayoutResult layout;
+
+    /**
+     * When set (not NaN), the cursor is pinned to this explicit x in layout
+     * (pre-zoom) units instead of the time-based {@link LayoutResult#xAtTime}
+     * placement. Cleared by {@link #setCursorTime}.
+     */
+    private double cursorLayoutX = Double.NaN;
 
     /**
      * Creates an empty strip view.
@@ -86,6 +96,7 @@ public final class StripSheetView extends Region {
         renderer.setNoteColorProvider(this::highlightFor);
         renderer.setNoteBackgroundProvider(this::backgroundFor);
         renderer.setNoteAccidentalProvider(this::accidentalFor);
+        renderer.setNoteBackgroundStyle(noteBackgroundStyle.get());
 
         cursorTime.addListener((obs, o, n) -> updateCursor());
         cursorScreenPosition.addListener((obs, o, n) -> updateCursor());
@@ -93,6 +104,10 @@ public final class StripSheetView extends Region {
         noteHighlights.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
         noteBackgrounds.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
         noteAccidentals.addListener((MapChangeListener<MusicElement, Accidental>) c -> repaint());
+        noteBackgroundStyle.addListener((obs, o, n) -> {
+            renderer.setNoteBackgroundStyle(n);
+            repaint();
+        });
 
         widthProperty().addListener((obs, o, n) -> {
             clip.setWidth(n.doubleValue());
@@ -168,7 +183,25 @@ public final class StripSheetView extends Region {
     }
 
     public void setCursorTime(double quarters) {
+        cursorLayoutX = Double.NaN;
         cursorTime.set(quarters);
+        updateCursor();
+    }
+
+    /**
+     * Pin the cursor to an explicit x position in layout (pre-zoom) units,
+     * overriding the time-based {@link LayoutResult#xAtTime} placement until
+     * the next {@link #setCursorTime} call. Use this to align the cursor
+     * exactly with a note's rendered centre (its
+     * {@link com.sheetmusic4j.engraving.layout.NoteAnchor} x) rather than the
+     * piecewise-linear time interpolation, which spaces time evenly across a
+     * measure and so does not land on individual noteheads.
+     *
+     * @param layoutX the x coordinate in layout units to place under the cursor
+     */
+    public void setCursorLayoutX(double layoutX) {
+        cursorLayoutX = layoutX;
+        updateCursor();
     }
 
     /**
@@ -264,6 +297,27 @@ public final class StripSheetView extends Region {
     }
 
     /**
+     * Geometry of the rounded rectangle drawn behind
+     * {@link #noteBackgrounds() background}-highlighted notes: how far it
+     * extends beyond the note on each side, its corner radius and a height cap.
+     * Changing it repaints the strip without a re-engrave. See
+     * {@link NoteBackgroundStyle}.
+     *
+     * @return the observable style property (never {@code null})
+     */
+    public ObjectProperty<NoteBackgroundStyle> noteBackgroundStyleProperty() {
+        return noteBackgroundStyle;
+    }
+
+    public NoteBackgroundStyle getNoteBackgroundStyle() {
+        return noteBackgroundStyle.get();
+    }
+
+    public void setNoteBackgroundStyle(NoteBackgroundStyle style) {
+        noteBackgroundStyle.set(style != null ? style : NoteBackgroundStyle.defaults());
+    }
+
+    /**
      * Render zoom factor (positive). Values above 1 enlarge the score.
      */
     public DoubleProperty zoomProperty() {
@@ -343,8 +397,8 @@ public final class StripSheetView extends Region {
             return;
         }
         double zoomFactor = Math.max(zoom.get(), 0.01);
-        double xInLayout = layout.xAtTime(cursorTime.get()) * zoomFactor;
-        canvas.setLayoutX(cursorScreenX - xInLayout);
+        double layoutX = Double.isNaN(cursorLayoutX) ? layout.xAtTime(cursorTime.get()) : cursorLayoutX;
+        canvas.setLayoutX(cursorScreenX - layoutX * zoomFactor);
     }
 
     @Override
