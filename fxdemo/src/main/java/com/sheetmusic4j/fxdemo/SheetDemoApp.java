@@ -94,7 +94,7 @@ public final class SheetDemoApp extends Application {
 
     /** Extensions the resource tree lists as loadable scores. */
     private static final List<String> SCORE_EXTENSIONS =
-            List.of(".musicxml", ".xml", ".mxl", ".mid", ".midi", ".abc");
+            List.of(".musicxml", ".xml", ".mxl", ".mid", ".midi", ".abc", ".gp");
     /** Extensions the resource tree lists as directly previewable images. */
     private static final List<String> IMAGE_EXTENSIONS =
             List.of(".png", ".jpg", ".jpeg", ".gif", ".bmp");
