@@ -244,6 +244,13 @@ public final class Engraver {
     private static final double MIN_NOTE_ADVANCE_GAPS = 1.2;
 
     /**
+     * Uniform scale applied to the time-proportional STRIP spacing so notes
+     * sit at a comfortable, readable density rather than the bare minimum-slot
+     * packing. A pure scale - it does not affect the constant-speed property.
+     */
+    private static final double STRIP_SPACING_FACTOR = 3.0;
+
+    /**
      * Left-side shift (in staff-line gaps) applied to a note's x position
      * when it carries an accidental. This ensures the accidental glyph sits
      * inside the note's reserved slot rather than colliding with the
@@ -350,10 +357,20 @@ public final class Engraver {
         List<Double> sharedMinWidths = sharedMeasureMinWidths(parts, measureCount, options);
         List<Double> baseWidths;
         List<int[]> rows;
+        // In STRIP mode the horizontal axis is time-proportional: every measure
+        // is sized to its musical duration via one global pixels-per-quarter, so
+        // a constant-tempo playback cursor moves at constant pixel speed (equal
+        // note durations occupy equal width, with no notation "fill" gap before
+        // a barline). Zero in PAGE mode.
+        double stripPixelsPerQuarter = 0.0;
         if (stripMode) {
-            baseWidths = new ArrayList<>(sharedMinWidths);
+            stripPixelsPerQuarter = stripPixelsPerQuarter(parts, options);
+            baseWidths = new ArrayList<>(measureCount);
             double contentSum = 0.0;
-            for (double w : baseWidths) {
+            for (int m = 0; m < measureCount; m++) {
+                double durQ = m < measureDurationQuarters.length ? measureDurationQuarters[m] : 0.0;
+                double w = durQ > 0 ? durQ * stripPixelsPerQuarter : sharedMinWidths.get(m);
+                baseWidths.add(w);
                 contentSum += w;
             }
             effectiveSystemWidth = contentLeft + firstSystemHeader + contentSum + options.rightMargin();
@@ -426,7 +443,8 @@ public final class Engraver {
                             p, staffIdx, contentLeft, staffTop,
                             options, start, endExclusive, rowWidths, rowIdx == 0, texts,
                             partIdx, systemStaffIndex,
-                            measureStartQuarters, measureDurationQuarters, anchors);
+                            measureStartQuarters, measureDurationQuarters, anchors,
+                            stripPixelsPerQuarter, rowHeader);
                     systemStaffIndex++;
                     stavesForRow.add(sl);
                     if (firstStaffOfPart == null) {
@@ -1520,7 +1538,8 @@ public final class Engraver {
                                        int partIndex, int systemStaffIndex,
                                        double[] measureStartQuarters,
                                        double[] measureDurationQuarters,
-                                       List<NoteAnchor> anchors) {
+                                       List<NoteAnchor> anchors,
+                                       double pixelsPerQuarter, double rowHeader) {
         Part part = partInfo.part();
         int staveCount = partInfo.staveCount();
         int staffNumber = staffIdx + 1;
@@ -1543,6 +1562,8 @@ public final class Engraver {
 
         double cursorX = x;
         boolean firstMeasureInRow = true;
+        // Layout x of musical time zero for the time-proportional STRIP path.
+        double timeZeroX = x + rowHeader + options.staffLineGap() * 0.5;
 
         for (int idx = start; idx < endExclusive; idx++) {
             if (idx >= part.measures().size()) {
@@ -1553,9 +1574,18 @@ public final class Engraver {
             KeySignature currentKey = partInfo.keyAt(idx);
             TimeSignature currentTime = partInfo.timeAt(idx);
 
-            double measureWidth = rowWidths.get(idx - start);
             double measureStartQ = idx < measureStartQuarters.length ? measureStartQuarters[idx] : 0.0;
             double measureDurQ = idx < measureDurationQuarters.length ? measureDurationQuarters[idx] : 0.0;
+            double measureWidth = rowWidths.get(idx - start);
+            if (pixelsPerQuarter > 0) {
+                // Notes are placed by absolute onset (independent of measure
+                // geometry), so we're free to sit the barline at the MIDPOINT
+                // of the whitespace between this measure's last note and the
+                // next downbeat: right edge = time (measureEnd - lastDur/2).
+                double lastDurQ = lastTimedDurationQuarters(measure, staffNumber, staveCount);
+                double barlineX = timeZeroX + (measureStartQ + measureDurQ - lastDurQ / 2.0) * pixelsPerQuarter;
+                measureWidth = Math.max(barlineX - cursorX, options.staffLineGap());
+            }
             measureLayouts.add(new MeasureLayout(measure.number(), cursorX, measureWidth,
                     measureStartQ, measureStartQ + measureDurQ,
                     measure.barline().orElse(null), measure.leadingRepeatStart(),
@@ -1615,7 +1645,19 @@ public final class Engraver {
             double available = (cursorX + measureWidth) - contentStart - options.staffLineGap();
             double gap = options.staffLineGap();
             double[] timedX = new double[timedElements.size()];
-            if (!timedElements.isEmpty()) {
+            if (pixelsPerQuarter > 0 && !timedElements.isEmpty()) {
+                // Time-proportional (STRIP) placement: x is a global linear
+                // function of absolute musical onset, so equal durations get
+                // equal width and the cursor moves at constant speed across the
+                // whole score (including over barlines). The single per-note
+                // offset from the staff's time-zero keeps every downbeat the
+                // same small distance past its barline.
+                double onsetInMeasure = 0.0;
+                for (int i = 0; i < timedElements.size(); i++) {
+                    timedX[i] = timeZeroX + (measureStartQ + onsetInMeasure) * pixelsPerQuarter;
+                    onsetInMeasure += Math.max(0.0, timedElements.get(i).duration().inQuarters());
+                }
+            } else if (!timedElements.isEmpty()) {
                 double[] weights = new double[timedElements.size()];
                 for (int i = 0; i < timedElements.size(); i++) {
                     double w = noteWidthWeight(timedElements.get(i));
@@ -1830,12 +1872,56 @@ public final class Engraver {
     }
 
     /**
+     * The global pixels-per-quarter scale for STRIP (time-proportional) layout:
+     * the largest ratio of any element's minimum slot to its duration, so even
+     * the shortest / widest-glyph note still gets at least its minimum advance
+     * while every note's width stays strictly proportional to its duration.
+     */
+    private static double stripPixelsPerQuarter(List<PartInfo> parts, LayoutOptions options) {
+        double gap = options.staffLineGap();
+        double ppq = MIN_NOTE_ADVANCE_GAPS * gap;
+        for (PartInfo p : parts) {
+            for (Measure measure : p.part().measures()) {
+                for (MusicElement element : measure.elements()) {
+                    double durQ = element.duration().inQuarters();
+                    if (durQ > 0) {
+                        ppq = Math.max(ppq, minSlotFor(element, gap) / durQ);
+                    }
+                }
+            }
+        }
+        // The bare minimum-slot scale packs notes tightly; give the strip more
+        // breathing room so a quarter note occupies a comfortable, readable
+        // width. Purely a uniform scale - it does not affect proportionality.
+        return ppq * STRIP_SPACING_FACTOR;
+    }
+
+    /**
      * Minimum horizontal slot an element needs, in pixels: normally just
      * {@code MIN_NOTE_ADVANCE_GAPS * gap}, but widened for augmentation dots
      * so the dot(s) — drawn starting at {@code noteX + 1.2 * gap} and spaced
      * {@code 0.6 * gap} apart, see the dot loop in {@code placeNote} — have
      * room before the next element's slot begins.
      */
+    /**
+     * Duration (in quarters) of the last time-consuming element on the given
+     * staff of a measure - i.e. the note/rest whose trailing whitespace runs up
+     * to the next downbeat. Zero when the measure has no timed content.
+     */
+    private static double lastTimedDurationQuarters(Measure measure, int staffNumber, int staveCount) {
+        double lastDur = 0.0;
+        for (MusicElement element : filterElementsForStaff(measure.elements(), staffNumber, staveCount)) {
+            if (element instanceof Direction || element instanceof Harmony) {
+                continue;
+            }
+            double d = element.duration().inQuarters();
+            if (d > 0) {
+                lastDur = d;
+            }
+        }
+        return lastDur;
+    }
+
     private static double minSlotFor(MusicElement element, double gap) {
         double slot = MIN_NOTE_ADVANCE_GAPS * gap;
         int dots = dotCount(element);

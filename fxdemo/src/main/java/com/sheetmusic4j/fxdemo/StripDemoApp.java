@@ -104,10 +104,14 @@ public final class StripDemoApp extends Application {
     private boolean playing;
     /** Continuous musical playhead in quarter notes. */
     private double playhead;
-    /** Smoothed cursor x in layout units; eases toward the target note position. NaN = uninitialised. */
-    private double cursorX = Double.NaN;
-    /** Smoothing time constant (seconds): smaller = snappier, larger = more glide. */
-    private static final double CURSOR_GLIDE_TAU = 0.09;
+    /**
+     * Cursor position timeline: strictly increasing note onsets and the layout
+     * x of each. The cursor x is interpolated across these so it moves
+     * continuously (passing exactly through each notehead at its onset) rather
+     * than parking on a held note.
+     */
+    private double[] sampleOnset = new double[0];
+    private double[] sampleX = new double[0];
 
     private Stage stage;
 
@@ -292,7 +296,6 @@ public final class StripDemoApp extends Application {
             stripView.setScore(score);
             recomputeAnchors();
             playhead = 0;
-            cursorX = Double.NaN;
             stripView.setCursorTime(0);
             updateTimeLabel();
             stage.setTitle(TITLE + " - " + path.getFileName());
@@ -318,6 +321,52 @@ public final class StripDemoApp extends Application {
             }
         }
         soundingAnchors = anchors;
+        buildCursorTimeline(layout);
+    }
+
+    /**
+     * Build the {@link #sampleOnset}/{@link #sampleX} timeline the cursor
+     * interpolates over: every anchor's onset mapped to its layout x, sorted
+     * and deduplicated by onset, bracketed by the start and end of the layout
+     * so the cursor keeps moving before the first note and after the last.
+     */
+    private void buildCursorTimeline(LayoutResult layout) {
+        if (layout == null || layout.noteAnchors().isEmpty()) {
+            sampleOnset = new double[0];
+            sampleX = new double[0];
+            return;
+        }
+        List<NoteAnchor> sorted = new ArrayList<>(layout.noteAnchors());
+        sorted.sort(java.util.Comparator.comparingDouble(NoteAnchor::onsetQuarters));
+
+        List<Double> onsets = new ArrayList<>();
+        List<Double> xs = new ArrayList<>();
+        // Leading sample so the cursor eases in from the staff start.
+        if (sorted.get(0).onsetQuarters() > 0) {
+            onsets.add(0.0);
+            xs.add(layout.xAtTime(0));
+        }
+        for (NoteAnchor a : sorted) {
+            if (!onsets.isEmpty() && a.onsetQuarters() == onsets.get(onsets.size() - 1)) {
+                continue; // same time column (e.g. chord members) -> one sample
+            }
+            onsets.add(a.onsetQuarters());
+            xs.add(a.x());
+        }
+        // Trailing sample at the end of the piece so motion continues through
+        // the final note's duration to the closing barline.
+        double total = layout.totalDurationQuarters();
+        if (total > onsets.get(onsets.size() - 1)) {
+            onsets.add(total);
+            xs.add(layout.xAtTime(total));
+        }
+
+        sampleOnset = new double[onsets.size()];
+        sampleX = new double[xs.size()];
+        for (int i = 0; i < onsets.size(); i++) {
+            sampleOnset[i] = onsets.get(i);
+            sampleX[i] = xs.get(i);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -354,7 +403,6 @@ public final class StripDemoApp extends Application {
         }
         lastNanos = -1L;
         playhead = 0;
-        cursorX = Double.NaN;
         stripView.setCursorTime(0);
         clearHighlights();
         updateTimeLabel();
@@ -380,10 +428,9 @@ public final class StripDemoApp extends Application {
             if (loop.isSelected()) {
                 playhead = total <= 0 ? 0 : playhead % total;
                 clearHighlights();
-                cursorX = Double.NaN; // re-seed so the cursor doesn't slide all the way back
             } else {
                 playhead = total;
-                syncToPlayhead(dt);
+                syncToPlayhead();
                 playing = false;
                 timer.stop();
                 statusLabel.setText("Finished.");
@@ -392,55 +439,61 @@ public final class StripDemoApp extends Application {
             }
         }
 
-        syncToPlayhead(dt);
+        syncToPlayhead();
     }
 
     /**
-     * Highlight the notes sounding at the current {@link #playhead} and glide the
-     * cursor toward the target position - the most-recently-started sounding
-     * note's centre, or the time-based position during rests. The cursor eases
-     * in: its speed is proportional to the remaining distance, so a far jump
-     * moves quickly then slows as it arrives rather than teleporting.
+     * Highlight the notes sounding at the current {@link #playhead} and move the
+     * cursor to the continuous, note-aware position for that time: interpolated
+     * across the note timeline so the marker glides the whole time it is
+     * playing, speeds up or slows with the note spacing, and still passes
+     * exactly through each notehead at its onset.
      */
-    private void syncToPlayhead(double dt) {
-        NoteAnchor snap = updateHighlights(playhead);
-        double target = snap != null ? snap.x() : timeBasedX(playhead);
-
-        if (Double.isNaN(cursorX)) {
-            cursorX = target;
-        } else {
-            // Frame-rate-independent exponential approach toward the target.
-            double alpha = 1.0 - Math.exp(-dt / CURSOR_GLIDE_TAU);
-            cursorX += (target - cursorX) * alpha;
-        }
-        stripView.setCursorLayoutX(cursorX);
+    private void syncToPlayhead() {
+        updateHighlights(playhead);
+        stripView.setCursorLayoutX(cursorXForTime(playhead));
         updateTimeLabel();
     }
 
-    /** The time-based cursor x (used between notes), or 0 when nothing is laid out. */
-    private double timeBasedX(double quarters) {
-        LayoutResult layout = stripView.getLayout();
-        return layout != null ? layout.xAtTime(quarters) : 0.0;
+    /**
+     * Interpolate the cursor x across the {@link #sampleOnset}/{@link #sampleX}
+     * note timeline for the given musical time, clamped to its ends. Falls back
+     * to the layout's time-based x when no timeline is available.
+     */
+    private double cursorXForTime(double quarters) {
+        int n = sampleOnset.length;
+        if (n == 0) {
+            LayoutResult layout = stripView.getLayout();
+            return layout != null ? layout.xAtTime(quarters) : 0.0;
+        }
+        if (quarters <= sampleOnset[0]) {
+            return sampleX[0];
+        }
+        if (quarters >= sampleOnset[n - 1]) {
+            return sampleX[n - 1];
+        }
+        int i = 1;
+        while (i < n && sampleOnset[i] < quarters) {
+            i++;
+        }
+        double span = sampleOnset[i] - sampleOnset[i - 1];
+        double f = span <= 0 ? 0 : (quarters - sampleOnset[i - 1]) / span;
+        return sampleX[i - 1] + f * (sampleX[i] - sampleX[i - 1]);
     }
 
     /**
-     * Highlight every note whose sounding window contains {@code t}, unhighlight
-     * the rest, and return the most-recently-started note now sounding (so the
-     * cursor can snap to it), or {@code null} if none sound.
+     * Highlight every note whose sounding window contains {@code t} and
+     * unhighlight the rest.
      */
-    private NoteAnchor updateHighlights(double t) {
+    private void updateHighlights(double t) {
         Color tint = highlightColor.getValue();
         Color background = backgroundColor.getValue();
 
         Set<MusicElement> current = Collections.newSetFromMap(new IdentityHashMap<>());
-        NoteAnchor newest = null;
         for (NoteAnchor anchor : soundingAnchors) {
             double onset = anchor.onsetQuarters();
             if (onset <= t && t < onset + anchor.durationQuarters()) {
                 current.add(anchor.elementRef());
-                if (newest == null || onset > newest.onsetQuarters()) {
-                    newest = anchor;
-                }
             }
         }
 
@@ -458,7 +511,6 @@ public final class StripDemoApp extends Application {
         }
         active.clear();
         active.addAll(current);
-        return newest;
     }
 
     private void reapplyActiveColours() {

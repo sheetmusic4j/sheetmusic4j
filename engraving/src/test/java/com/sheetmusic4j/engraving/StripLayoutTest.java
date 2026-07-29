@@ -78,6 +78,35 @@ class StripLayoutTest {
     }
 
     @Test
+    void stripModeSpacesNotesProportionallyToTime() {
+        LayoutOptions options = LayoutOptions.builder().layoutMode(LayoutMode.STRIP).build();
+        // 3 measures of 4 equal quarter notes each.
+        LayoutResult layout = new Engraver().layout(manyMeasureScore(3), options);
+
+        java.util.List<com.sheetmusic4j.engraving.layout.NoteAnchor> notes = new java.util.ArrayList<>();
+        for (var a : layout.noteAnchors()) {
+            if (a.elementRef() instanceof Note) {
+                notes.add(a);
+            }
+        }
+        notes.sort(java.util.Comparator.comparingDouble(
+                com.sheetmusic4j.engraving.layout.NoteAnchor::onsetQuarters));
+        assertEquals(12, notes.size(), "3 measures x 4 quarters");
+
+        // Every consecutive equal-duration step must span the same x distance,
+        // INCLUDING across barlines (indices 3->4, 7->8) - that is what makes a
+        // constant-tempo cursor move at constant speed with no pre-barline jump.
+        double firstGap = notes.get(1).x() - notes.get(0).x();
+        assertTrue(firstGap > 0, "notes must advance left-to-right");
+        for (int i = 1; i < notes.size(); i++) {
+            double gap = notes.get(i).x() - notes.get(i - 1).x();
+            assertEquals(firstGap, gap, firstGap * 0.02,
+                    "equal quarter notes must be equally spaced at step " + i
+                            + " (including across the barline)");
+        }
+    }
+
+    @Test
     void pageModeStillBreaksIntoRows() {
         LayoutOptions narrow = LayoutOptions.builder().systemWidth(400).build();
         LayoutResult layout = new Engraver().layout(manyMeasureScore(10), narrow);
