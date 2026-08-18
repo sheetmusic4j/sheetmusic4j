@@ -2,7 +2,9 @@ package com.sheetmusic4j.core.io;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,7 +38,7 @@ class ScoreFileTest {
      * .xml, .mxl (MusicXML), .mid, .midi (MIDI) and .abc (ABC) in one place.
      */
     @ParameterizedTest(name = ".{0} round-trips through ScoreFile")
-    @ValueSource(strings = {"musicxml", "xml", "mxl", "mid", "midi", "abc"})
+    @ValueSource(strings = {"musicxml", "xml", "mxl", "mid", "midi", "abc", "ly"})
     void writableExtensionRoundTripsThroughFacade(String extension, @TempDir Path dir) {
         Score original = baseScore();
 
@@ -80,6 +82,31 @@ class ScoreFileTest {
         Score score = baseScore();
         assertThrows(IllegalArgumentException.class,
                 () -> ScoreFile.save(score, dir.resolve("mystery.foo")));
+    }
+
+    @Test
+    void supportedExtensionsMatchesEnum() {
+        // The facade's derived list must contain every extension declared
+        // on Format, and nothing else. This is the anchor test callers
+        // (SheetDemoApp, StripDemoApp) rely on when they enumerate
+        // supportedExtensions() to build file filters.
+        List<String> declared = new java.util.ArrayList<>();
+        for (ScoreFile.Format f : ScoreFile.Format.values()) {
+            declared.addAll(f.extensions());
+        }
+        assertEquals(declared, ScoreFile.supportedExtensions());
+        // Sanity: LilyPond and ABC are known to be present.
+        assertTrue(ScoreFile.supportedExtensions().contains("ly"));
+        assertTrue(ScoreFile.supportedExtensions().contains("abc"));
+    }
+
+    @Test
+    void writableFlagReflectsSupport() {
+        assertTrue(ScoreFile.Format.MUSICXML.writable());
+        assertTrue(ScoreFile.Format.MIDI.writable());
+        assertTrue(ScoreFile.Format.ABC.writable());
+        assertTrue(ScoreFile.Format.LILYPOND.writable());
+        assertFalse(ScoreFile.Format.GUITARPRO.writable());
     }
 
     @Test

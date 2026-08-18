@@ -96,12 +96,14 @@ public final class SheetDemoApp extends Application {
             (float) Double.parseDouble(
                     System.getProperty("sheetmusic4j.compare.pdf.dpi", "150"));
 
-    /** Extensions the resource tree lists as loadable scores. */
+    /**
+     * Extensions the resource tree lists as loadable scores. Sourced from
+     * {@link ScoreFile#supportedExtensions()} so that adding a new format to
+     * the core facade automatically surfaces it here too. Extensions are
+     * stored with a leading dot to match the tree's {@code endsWith} filter.
+     */
     private static final List<String> SCORE_EXTENSIONS =
-            List.of(".musicxml", ".xml", ".mxl", ".mid", ".midi", ".abc", ".gp");
-    /** Extensions the resource tree lists as directly previewable images. */
-    private static final List<String> IMAGE_EXTENSIONS =
-            List.of(".png", ".jpg", ".jpeg", ".gif", ".bmp");
+            ScoreFile.supportedExtensions().stream().map(ext -> "." + ext).toList();
 
     private static final double TREE_DIVIDER = 0.18;
     private static final Log log = LogFactory.getLog(SheetDemoApp.class);
@@ -668,12 +670,17 @@ public final class SheetDemoApp extends Application {
     private void chooseAndOpen() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Open score");
-        chooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("Score files",
-                        "*.musicxml", "*.xml", "*.mxl", "*.mid", "*.midi", "*.abc"),
-                new FileChooser.ExtensionFilter("MusicXML", "*.musicxml", "*.xml", "*.mxl"),
-                new FileChooser.ExtensionFilter("MIDI", "*.mid", "*.midi"),
-                new FileChooser.ExtensionFilter("ABC", "*.abc"),
+        List<String> allGlobs = ScoreFile.supportedExtensions().stream()
+                .map(ext -> "*." + ext).toList();
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Score files", allGlobs));
+        for (ScoreFile.Format format : ScoreFile.Format.values()) {
+            List<String> globs = format.extensions().stream()
+                    .map(ext -> "*." + ext).toList();
+            chooser.getExtensionFilters().add(
+                    new FileChooser.ExtensionFilter(format.name(), globs));
+        }
+        chooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("All files", "*.*"));
         var file = chooser.showOpenDialog(stage);
         if (file != null) {

@@ -296,13 +296,17 @@ public final class StripDemoApp extends Application {
     private void chooseAndOpen() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Open score");
-        chooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("Score files",
-                        "*.musicxml", "*.xml", "*.mxl", "*.mid", "*.midi", "*.abc", "*.gp"),
-                new FileChooser.ExtensionFilter("MusicXML", "*.musicxml", "*.xml", "*.mxl"),
-                new FileChooser.ExtensionFilter("MIDI", "*.mid", "*.midi"),
-                new FileChooser.ExtensionFilter("GuitarPro", "*.gp"),
-                new FileChooser.ExtensionFilter("ABC", "*.abc"),
+        List<String> allGlobs = ScoreFile.supportedExtensions().stream()
+                .map(ext -> "*." + ext).toList();
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Score files", allGlobs));
+        for (ScoreFile.Format format : ScoreFile.Format.values()) {
+            List<String> globs = format.extensions().stream()
+                    .map(ext -> "*." + ext).toList();
+            chooser.getExtensionFilters().add(
+                    new FileChooser.ExtensionFilter(format.name(), globs));
+        }
+        chooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("All files", "*.*"));
         var file = chooser.showOpenDialog(stage);
         if (file != null) {

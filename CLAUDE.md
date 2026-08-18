@@ -20,9 +20,10 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 
 1. **`core`** — domain model (`Score`, `Part`, `Measure`, `Attributes`, `Note`, `Chord`, `Rest`, `Pitch`, `Clef`,
    `KeySignature`, `TimeSignature`, etc.) plus MusicXML read/write (`com.sheetmusic4j.core.musicxml`, StAX-based,
-   XXE-hardened) and MIDI import/export (`com.sheetmusic4j.core.midi`, `javax.sound.midi`).
+   XXE-hardened), MIDI import/export (`com.sheetmusic4j.core.midi`, `javax.sound.midi`), ABC import/export
+   (`com.sheetmusic4j.core.abc`), and LilyPond import/export (`com.sheetmusic4j.core.lilypond`).
    `com.sheetmusic4j.core.io.ScoreFile` is the load/save facade that dispatches by file extension (`.musicxml`/`.xml`/
-   `.mxl` → MusicXML, `.mid`/`.midi` → MIDI). **No JavaFX dependency.**
+   `.mxl` → MusicXML, `.mid`/`.midi` → MIDI, `.abc` → ABC, `.ly` → LilyPond). **No JavaFX dependency.**
 2. **`engraving`** — pure layout engine. `Engraver.layout(Score, LayoutOptions)` walks parts/measures and produces a
    `LayoutResult` (`SystemLayout` → `StaffLayout` → `MeasureLayout`/`GlyphPlacement`) as plain doubles + a
    renderer-agnostic `Glyph` enum. No JavaFX, no I/O — this is what makes layout unit-testable headlessly. Vertical note
