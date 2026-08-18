@@ -349,9 +349,40 @@ public final class LilyPondReader {
      * variable references — {@link BodyParser} descends into those inline,
      * so returning the raw score body (rather than the first {@code Staff}
      * block) keeps top-level constructs available for the parser to walk.
+     *
+     * <p>Search order:
+     * <ol>
+     *   <li>First {@code \score {…}} at the file's top level (depth 0).</li>
+     *   <li>If none, first {@code \score {…}} inside a top-level
+     *       {@code \book {…}} wrapper, so files structured as
+     *       {@code \book { \score { … } } } surface their music the same
+     *       way flat files do.</li>
+     *   <li>If still none, the entire file.</li>
+     * </ol>
+     * A nested {@code \score} inside a variable definition (e.g. a
+     * {@code \markup { \score { … } }} used for an incipit) is deliberately
+     * ignored — those score blocks are display fragments, not the
+     * document's main music.
      */
     private static String extractMusicExpression(String text) {
         int scorePos = indexOfTopLevelDirective(text, "\\score");
+        if (scorePos < 0) {
+            // Look inside \book { … } for the score.
+            int bookPos = indexOfTopLevelDirective(text, "\\book");
+            if (bookPos >= 0) {
+                int bookBrace = text.indexOf('{', bookPos);
+                if (bookBrace >= 0) {
+                    int bookClose = findMatchingBrace(text, bookBrace);
+                    if (bookClose > 0) {
+                        int inner = indexOfImmediateChildDirective(
+                                text, bookBrace + 1, bookClose, "\\score");
+                        if (inner >= 0) {
+                            scorePos = inner;
+                        }
+                    }
+                }
+            }
+        }
         if (scorePos < 0) {
             return text;
         }
@@ -364,6 +395,55 @@ public final class LilyPondReader {
             return text;
         }
         return text.substring(brace + 1, close);
+    }
+
+    /**
+     * The index of the first occurrence of {@code directive} in
+     * {@code text[from, to)} that sits at brace-depth 0 relative to
+     * {@code from} — i.e. directly inside the block that starts at
+     * {@code from - 1}. Honors strings.
+     */
+    private static int indexOfImmediateChildDirective(String text, int from, int to, String directive) {
+        int depth = 0;
+        int i = from;
+        while (i < to) {
+            char c = text.charAt(i);
+            if (c == '"') {
+                i++;
+                while (i < to && text.charAt(i) != '"') {
+                    if (text.charAt(i) == '\\' && i + 1 < to) {
+                        i += 2;
+                    } else {
+                        i++;
+                    }
+                }
+                if (i < to) {
+                    i++;
+                }
+                continue;
+            }
+            if (c == '{') {
+                depth++;
+                i++;
+                continue;
+            }
+            if (c == '}') {
+                if (depth > 0) {
+                    depth--;
+                }
+                i++;
+                continue;
+            }
+            if (depth == 0 && c == '\\'
+                    && text.regionMatches(i, directive, 0, directive.length())) {
+                int after = i + directive.length();
+                if (after >= to || !Character.isLetterOrDigit(text.charAt(after))) {
+                    return i;
+                }
+            }
+            i++;
+        }
+        return -1;
     }
 
     /**

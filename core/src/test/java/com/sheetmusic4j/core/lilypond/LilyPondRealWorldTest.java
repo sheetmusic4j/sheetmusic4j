@@ -92,4 +92,20 @@ class LilyPondRealWorldTest {
         assertTrue(notes >= 8,
                 "aucun-snippet.ly should produce at least 8 notes, got " + notes);
     }
-}
+
+    @Test
+    void sestoFullSurvivesBookWrapper() throws Exception {
+        // sesto-full.ly wraps its music in `\book { \score { … } }`, and
+        // all pitches live in an `\include "sesto.ily"` we cannot resolve
+        // (the file is not shipped alongside the example). The parser must
+        // still descend into the \book wrapper to reach the \score body
+        // and produce a non-empty part with the declared attributes,
+        // rather than swallowing the whole score block.
+        Score score = readFixture("sesto-full.ly");
+        assertFalse(score.parts().isEmpty(),
+                "parser must reach the \\score body inside \\book { … }");
+        assertFalse(score.parts().get(0).measures().isEmpty(),
+                "the score's staff should surface at least one measure of "
+                        + "attributes even when notes come from an unavailable include");
+    }
+    }
