@@ -102,6 +102,23 @@ class LilyPondReaderTest {
     }
 
     @Test
+    void bareRelativeDefaultsToFReference() {
+        // Per the LilyPond spec, `\relative { … }` with no explicit
+        // reference pitch uses `f` (bass F, F3) — the F below middle C —
+        // as the reference, not c'. This affects real-world files like
+        // chart.ly whose melody starts with `\relative { d'4 … }`: the
+        // first note must render as D4 (closest D to F3 is D3, then the
+        // `'` shifts up one octave to D4), not D5.
+        String ly = "\\score { \\new Staff { \\time 4/4 \\key c \\major \\clef treble\n"
+                + "  \\relative { d'4 g4 b8 a }\n"
+                + "} }\n";
+        List<Note> notes = notesOf(read(ly).parts().get(0));
+        assertEquals(Step.D, notes.get(0).pitch().step());
+        assertEquals(4, notes.get(0).pitch().octave(),
+                "d' after bare \\relative should land on D4, not D5");
+    }
+
+    @Test
     void readsRelativeMode() {
         String ly = "\\score { \\new Staff { \\time 4/4 \\key c \\major \\clef treble\n"
                 + "  \\relative c' { c4 d4 e4 f4 | g4 a4 b4 c4 }\n"

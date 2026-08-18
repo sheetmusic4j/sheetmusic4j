@@ -990,11 +990,19 @@ public final class LilyPondReader {
             switch (name) {
                 case "relative" -> {
                     // \relative [c'] { ... }
+                    //
+                    // Per the LilyPond spec, when no explicit reference
+                    // pitch is given, the default reference is `f` (bass
+                    // F, i.e. F3 — the F below middle C), NOT c'. This
+                    // affects where the first note in a bare
+                    // `\relative { … }` block lands: e.g. `d'4` becomes
+                    // D4 (closest D to F3 is D3, then `'` shifts up one
+                    // octave to D4), not D5.
                     int p = i;
                     while (p < n && Character.isWhitespace(s.charAt(p))) {
                         p++;
                     }
-                    Pitch reference = new Pitch(Step.C, 4);
+                    Pitch reference = new Pitch(Step.F, 3);
                     if (p < n && s.charAt(p) >= 'a' && s.charAt(p) <= 'g') {
                         LilyPondPitch.Parsed pp = LilyPondPitch.parse(s, p);
                         if (pp != null) {
