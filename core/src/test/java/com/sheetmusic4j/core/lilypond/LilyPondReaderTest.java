@@ -238,6 +238,59 @@ class LilyPondReaderTest {
     }
 
     @Test
+    void resolvesVariableReferences() {
+        // Real-world LilyPond files usually assign the melody to a variable
+        // and reference it inside \score. Our parser must expand the
+        // variable to reach the notes.
+        String ly = "melody = \\relative c' { c4 d e f | g a b c }\n"
+                + "\\score { \\new Staff { \\time 4/4 \\key c \\major \\clef treble\n"
+                + "  \\melody\n"
+                + "} }\n";
+        List<Note> notes = notesOf(read(ly).parts().get(0));
+        assertEquals(8, notes.size(), "variable body should have been expanded");
+        assertEquals(Step.C, notes.get(0).pitch().step());
+        assertEquals(Step.C, notes.get(7).pitch().step());
+    }
+
+    @Test
+    void descendsIntoContextAndNewBlocks() {
+        // \context Voice = "vocal" { ... } and \new Staff { ... } must not
+        // swallow their music — the parser needs to recurse into the block.
+        String ly = "\\score {\n"
+                + "  \\new Staff {\n"
+                + "    \\time 4/4 \\key c \\major \\clef treble\n"
+                + "    \\context Voice = \"vocal\" { c'4 d'4 e'4 f'4 }\n"
+                + "  }\n"
+                + "}\n";
+        List<Note> notes = notesOf(read(ly).parts().get(0));
+        assertEquals(4, notes.size());
+    }
+
+    @Test
+    void repeatVoltaExpandsInnerMusic() {
+        String ly = "\\score { \\new Staff { \\time 4/4 \\key c \\major \\clef treble\n"
+                + "  \\repeat volta 2 { c'4 d'4 e'4 f'4 }\n"
+                + "} }\n";
+        List<Note> notes = notesOf(read(ly).parts().get(0));
+        assertEquals(4, notes.size());
+    }
+
+    @Test
+    void polyphonyDoublePointyBracketsDescends() {
+        // `<< ... >>` runs sub-expressions in parallel; the MVP flattens
+        // them but must at least pick up all notes.
+        String ly = "\\score {\n"
+                + "  \\new Staff {\n"
+                + "    \\time 4/4 \\key c \\major \\clef treble\n"
+                + "    << { c'4 d'4 } { e'4 f'4 } >>\n"
+                + "  }\n"
+                + "}\n";
+        List<Note> notes = notesOf(read(ly).parts().get(0));
+        assertTrue(notes.size() >= 4,
+                "expected at least 4 notes from the two parallel voices, got " + notes.size());
+    }
+
+    @Test
     void stripsLineAndBlockComments() {
         String ly = "%{ big block comment %}\n"
                 + "\\version \"2.24.0\" % trailing comment\n"

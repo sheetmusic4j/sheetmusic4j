@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -112,12 +113,13 @@ public final class LilyPondReader {
             }
         }
 
+        Map<String, String> variables = extractVariables(text);
         String musicExpression = extractMusicExpression(text);
         List<String> addLyricsBlocks = extractAddLyricsBlocks(text);
         List<String> chordBlocks = extractChordModeBlocks(text);
 
         Part.Builder partBuilder = Part.builder("P1");
-        BodyParser body = new BodyParser(partBuilder, DIVISIONS);
+        BodyParser body = new BodyParser(partBuilder, DIVISIONS, variables);
         body.parse(musicExpression);
         for (String lyrics : addLyricsBlocks) {
             body.applyLyrics(lyrics);
@@ -340,38 +342,185 @@ public final class LilyPondReader {
     }
 
     /**
-     * Extract the primary music expression: the contents of the first
-     * {@code \new Staff} / {@code \new Voice} block found (searching first
-     * inside {@code \score {…}}, then falling back to the whole file if no
-     * {@code \score} is present).
+     * Extract the primary music expression: the body of the first
+     * {@code \score {…}} block (or the entire file when there is no
+     * {@code \score}). The body may itself contain {@code \new PianoStaff},
+     * {@code \new StaffGroup}, {@code \new Staff}, {@code \context}, or
+     * variable references — {@link BodyParser} descends into those inline,
+     * so returning the raw score body (rather than the first {@code Staff}
+     * block) keeps top-level constructs available for the parser to walk.
      */
     private static String extractMusicExpression(String text) {
-        int scorePos = text.indexOf("\\score");
-        String searchScope = text;
-        if (scorePos >= 0) {
-            int brace = text.indexOf('{', scorePos);
-            if (brace >= 0) {
-                int close = findMatchingBrace(text, brace);
-                if (close > 0) {
-                    searchScope = text.substring(brace + 1, close);
-                }
-            }
+        int scorePos = indexOfTopLevelDirective(text, "\\score");
+        if (scorePos < 0) {
+            return text;
         }
-        // Prefer \new Staff, then \new Voice, then \relative, then the
-        // outer brace of the search scope.
-        for (String needle : new String[]{"\\new Staff", "\\new Voice"}) {
-            int p = searchScope.indexOf(needle);
-            if (p >= 0) {
-                int brace = searchScope.indexOf('{', p);
-                if (brace >= 0) {
-                    int close = findMatchingBrace(searchScope, brace);
-                    if (close > 0) {
-                        return searchScope.substring(brace + 1, close);
+        int brace = text.indexOf('{', scorePos);
+        if (brace < 0) {
+            return text;
+        }
+        int close = findMatchingBrace(text, brace);
+        if (close < 0) {
+            return text;
+        }
+        return text.substring(brace + 1, close);
+    }
+
+    /**
+     * Scan the file for top-level {@code name = <value>} assignments and
+     * return them as a map. Values are captured verbatim; only assignments
+     * whose value contains a {@code {…}} block are recorded, so plain
+     * scheme/number assignments (like {@code #(set-global-staff-size 24)})
+     * are skipped. {@link BodyParser} then resolves {@code \name}
+     * references inline against this map so that LilyPond files structured
+     * as {@code melody = \relative { … }} followed by {@code \score {
+     * \new Staff { \melody } }} are parseable without pre-substituting the
+     * whole file.
+     */
+    static Map<String, String> extractVariables(String text) {
+        Map<String, String> vars = new LinkedHashMap<>();
+        int i = 0;
+        int n = text.length();
+        int depth = 0;
+        while (i < n) {
+            char c = text.charAt(i);
+            if (c == '"') {
+                int end = text.indexOf('"', i + 1);
+                i = end < 0 ? n : end + 1;
+                continue;
+            }
+            if (c == '{') {
+                depth++;
+                i++;
+                continue;
+            }
+            if (c == '}') {
+                if (depth > 0) {
+                    depth--;
+                }
+                i++;
+                continue;
+            }
+            if (depth == 0 && (Character.isLetter(c) || c == '_')) {
+                int nameStart = i;
+                while (i < n && (Character.isLetterOrDigit(text.charAt(i)) || text.charAt(i) == '_')) {
+                    i++;
+                }
+                String name = text.substring(nameStart, i);
+                int save = i;
+                while (i < n && Character.isWhitespace(text.charAt(i))) {
+                    i++;
+                }
+                if (i < n && text.charAt(i) == '=') {
+                    i++;
+                    while (i < n && Character.isWhitespace(text.charAt(i))) {
+                        i++;
+                    }
+                    int valueStart = i;
+                    int valueEnd = skipValueExpression(text, i);
+                    if (valueEnd > valueStart) {
+                        String value = text.substring(valueStart, valueEnd).trim();
+                        // Only keep values whose body contains a music block.
+                        if (value.contains("{") && !name.isEmpty()
+                                && Character.isLetter(name.charAt(0))) {
+                            vars.put(name, value);
+                        }
+                        i = valueEnd;
+                        continue;
                     }
                 }
+                i = save;
+                continue;
             }
+            i++;
         }
-        return searchScope;
+        return vars;
+    }
+
+    /**
+     * Skip one value expression starting at {@code start}: a quoted string,
+     * a {@code { … }} block, a {@code \command [args] { … }} sequence,
+     * a number, or a bare identifier. Returns the index one past the end
+     * of the value.
+     */
+    private static int skipValueExpression(String text, int start) {
+        int i = start;
+        int n = text.length();
+        if (i >= n) {
+            return start;
+        }
+        char c = text.charAt(i);
+        if (c == '"') {
+            int end = text.indexOf('"', i + 1);
+            return end < 0 ? n : end + 1;
+        }
+        if (c == '{') {
+            int close = findMatchingBrace(text, i);
+            return close < 0 ? n : close + 1;
+        }
+        if (c == '\\') {
+            // Consume `\command` then any trailing scalar / \arg tokens,
+            // ending at the first {…} block that follows.
+            i++;
+            while (i < n && (Character.isLetter(text.charAt(i)) || text.charAt(i) == '-')) {
+                i++;
+            }
+            while (i < n) {
+                while (i < n && Character.isWhitespace(text.charAt(i))
+                        && text.charAt(i) != '\n') {
+                    i++;
+                }
+                if (i >= n) {
+                    break;
+                }
+                char cc = text.charAt(i);
+                if (cc == '\n') {
+                    // A newline without a {…} block terminates the value.
+                    // Peek past whitespace to see if a { follows on the next
+                    // line — if so continue; otherwise stop.
+                    int peek = i;
+                    while (peek < n && Character.isWhitespace(text.charAt(peek))) {
+                        peek++;
+                    }
+                    if (peek < n && text.charAt(peek) == '{') {
+                        i = peek;
+                        continue;
+                    }
+                    return i;
+                }
+                if (cc == '"') {
+                    int end = text.indexOf('"', i + 1);
+                    i = end < 0 ? n : end + 1;
+                    continue;
+                }
+                if (cc == '{') {
+                    int close = findMatchingBrace(text, i);
+                    return close < 0 ? n : close + 1;
+                }
+                if (cc == '\\') {
+                    i++;
+                    while (i < n && (Character.isLetter(text.charAt(i)) || text.charAt(i) == '-')) {
+                        i++;
+                    }
+                    continue;
+                }
+                if (Character.isLetterOrDigit(cc) || cc == '#' || cc == '\''
+                        || cc == ',' || cc == '.' || cc == '-' || cc == '/') {
+                    while (i < n && !Character.isWhitespace(text.charAt(i))
+                            && text.charAt(i) != '{' && text.charAt(i) != '\\') {
+                        i++;
+                    }
+                    continue;
+                }
+                return i;
+            }
+            return i;
+        }
+        // Single number/word
+        while (i < n && !Character.isWhitespace(text.charAt(i)) && text.charAt(i) != '\n') {
+            i++;
+        }
+        return i;
     }
 
     /** All top-level {@code \addlyrics { … }} / {@code \lyricmode { … }} blocks. */
@@ -554,6 +703,13 @@ public final class LilyPondReader {
 
         private final Part.Builder part;
         private final int divisions;
+        private final Map<String, String> variables;
+        /**
+         * Depth of variable-substitution recursion, capped so a cyclic
+         * definition ({@code a = \b; b = \a}) cannot spin forever.
+         */
+        private int variableExpansionDepth;
+        private static final int MAX_VARIABLE_DEPTH = 16;
 
         private KeySignature key = KeySignature.cMajor();
         private TimeSignature timeSignature = TimeSignature.fourFour();
@@ -605,8 +761,13 @@ public final class LilyPondReader {
         private Direction pendingTempo;
 
         BodyParser(Part.Builder part, int divisions) {
+            this(part, divisions, Map.of());
+        }
+
+        BodyParser(Part.Builder part, int divisions, Map<String, String> variables) {
             this.part = part;
             this.divisions = divisions;
+            this.variables = variables;
             startMeasure();
         }
 
@@ -644,8 +805,17 @@ public final class LilyPondReader {
                     continue;
                 }
                 if (c == '<' && i + 1 < n && music.charAt(i + 1) == '<') {
-                    // Polyphony start — skip to matching >>. MVP drops it.
-                    i = skipPolyphony(music, i);
+                    // Polyphony `<< … >>`: LilyPond runs each sub-expression
+                    // in parallel. Our MVP has no way to represent that, so
+                    // we descend into the contents as if the braces were
+                    // transparent — voices' notes end up appended
+                    // sequentially rather than played in parallel, but at
+                    // least none of them get dropped.
+                    i += 2;
+                    continue;
+                }
+                if (c == '>' && i + 1 < n && music.charAt(i + 1) == '>') {
+                    i += 2;
                     continue;
                 }
                 if (c == '<') {
@@ -1073,42 +1243,133 @@ public final class LilyPondReader {
                     }
                     return p;
                 }
-                case "version", "language", "score", "book", "header", "paper",
-                        "layout", "midi", "new", "with", "addlyrics", "lyricmode",
-                        "lyrics", "chordmode", "chords", "context" -> {
-                    // Consume any trailing arg-block(s): "..." string, then { ... } if present.
+                case "context", "new" -> {
+                    // `\context ClassName [= "instanceName"] [\with { … }] { … }`
+                    // or `\new ClassName [\with { … }] { … }`. We skip the
+                    // context class + optional instance name / \with block
+                    // and then recurse into the music block.
+                    return handleContextOrNew(s, i);
+                }
+                case "repeat" -> {
+                    // `\repeat volta N { … }` / `\repeat unfold N { … }` —
+                    // MVP just parses the inner music once, dropping the
+                    // repeat markup.
+                    return handleRepeat(s, i);
+                }
+                case "scaleDurations" -> {
+                    // `\scaleDurations N/D { … }` — the ratio scales the
+                    // sounding duration only; we recurse into the block
+                    // without applying the scaling for MVP.
                     int p = skipWhitespace(s, i);
-                    while (p < n) {
-                        char c = s.charAt(p);
-                        if (c == '"') {
-                            int close = s.indexOf('"', p + 1);
-                            p = close < 0 ? n : close + 1;
-                            p = skipWhitespace(s, p);
-                            continue;
+                    while (p < n && (Character.isDigit(s.charAt(p)) || s.charAt(p) == '/')) {
+                        p++;
+                    }
+                    p = skipWhitespace(s, p);
+                    if (p < n && s.charAt(p) == '{') {
+                        int close = findMatchingBrace(s, p);
+                        if (close > 0) {
+                            parse(s.substring(p + 1, close));
+                            return close + 1;
                         }
-                        if (c == '{') {
-                            int close = findMatchingBrace(s, p);
-                            // Only consume the block, don't recurse (top-level
-                            // extractors already handled these).
-                            p = close < 0 ? n : close + 1;
-                            break;
-                        }
-                        if (c == '\\' || Character.isLetter(c)) {
-                            // Consume one more command / identifier and keep looking.
-                            if (c == '\\') {
-                                p++;
-                            }
-                            while (p < n && (Character.isLetter(s.charAt(p)) || s.charAt(p) == '-')) {
-                                p++;
-                            }
-                            p = skipWhitespace(s, p);
-                            continue;
-                        }
-                        break;
                     }
                     return p;
                 }
+                case "partial" -> {
+                    // `\partial 4` / `\partial 8.` — anacrusis marker,
+                    // dropped for MVP but its duration argument is skipped.
+                    int p = skipWhitespace(s, i);
+                    while (p < n && (Character.isDigit(s.charAt(p)) || s.charAt(p) == '.')) {
+                        p++;
+                    }
+                    return p;
+                }
+                case "change" -> {
+                    // `\change Staff = "name"` — skip the class + "name" pair.
+                    int p = skipWhitespace(s, i);
+                    while (p < n && Character.isLetter(s.charAt(p))) {
+                        p++;
+                    }
+                    p = skipWhitespace(s, p);
+                    if (p < n && s.charAt(p) == '=') {
+                        p++;
+                        p = skipWhitespace(s, p);
+                        if (p < n && s.charAt(p) == '"') {
+                            int close = s.indexOf('"', p + 1);
+                            p = close < 0 ? n : close + 1;
+                        } else {
+                            while (p < n && Character.isLetterOrDigit(s.charAt(p))) {
+                                p++;
+                            }
+                        }
+                    }
+                    return p;
+                }
+                case "include", "accidentalStyle", "language" -> {
+                    // Single-token argument (quoted string or bare identifier).
+                    int p = skipWhitespace(s, i);
+                    if (p < n && s.charAt(p) == '"') {
+                        int close = s.indexOf('"', p + 1);
+                        p = close < 0 ? n : close + 1;
+                    } else {
+                        while (p < n && !Character.isWhitespace(s.charAt(p))
+                                && s.charAt(p) != '{' && s.charAt(p) != '\\') {
+                            p++;
+                        }
+                    }
+                    return p;
+                }
+                case "hide", "omit", "undo", "tieDown", "tieUp", "tieNeutral",
+                        "stemDown", "stemUp", "stemNeutral", "revert", "unset" -> {
+                    // Grob-path argument (e.g. `Staff.BarLine`). Skip one token.
+                    int p = skipWhitespace(s, i);
+                    while (p < n && !Character.isWhitespace(s.charAt(p))
+                            && s.charAt(p) != '{' && s.charAt(p) != '\\'
+                            && s.charAt(p) != '(' && s.charAt(p) != ')') {
+                        p++;
+                    }
+                    return p;
+                }
+                case "set", "override" -> {
+                    // `\set/override Context.Property = value` — skip to the
+                    // end of the line or the next block boundary. Scheme
+                    // values `#(…)` may span multiple lines, so track paren
+                    // depth.
+                    return skipToEndOfSetting(s, i);
+                }
+                case "voiceOne", "voiceTwo", "voiceThree", "voiceFour",
+                        "oneVoice", "cadenzaOn", "cadenzaOff",
+                        "numericTimeSignature", "defaultTimeSignature",
+                        "melisma", "melismaEnd", "startGroup", "stopGroup",
+                        "break", "noBreak", "finalis", "divisioMinima",
+                        "divisioMaior", "divisioMaxima", "pes", "flexa",
+                        "virga", "inclinatum", "deminutum", "quilisma" -> {
+                    // Mode-toggles / one-shot markers with no arguments.
+                    return i;
+                }
+                case "version", "score", "book", "header", "paper",
+                        "layout", "midi", "with", "addlyrics", "lyricmode",
+                        "lyrics", "chordmode", "chords", "figures",
+                        "figuremode", "drums", "drummode", "markup",
+                        "lyricsto" -> {
+                    // Consume arg-block(s): "..." string, then { ... } if
+                    // present. Top-level extractors already handled these
+                    // for lyrics/chord-mode; here we just make sure they
+                    // don't leak into the music stream.
+                    return skipCommandArgs(s, i);
+                }
                 default -> {
+                    // Variable reference: `\melody`, `\global`, `\sopran`, …
+                    // Substitute the definition and recursively parse it.
+                    if (variables != null && variables.containsKey(name)
+                            && variableExpansionDepth < MAX_VARIABLE_DEPTH) {
+                        variableExpansionDepth++;
+                        try {
+                            parse(variables.get(name));
+                        } finally {
+                            variableExpansionDepth--;
+                        }
+                        return i;
+                    }
                     // Unknown \command — skip identifier only; args are left
                     // for the outer scanner to consume.
                     return i;
@@ -1159,28 +1420,167 @@ public final class LilyPondReader {
             }
         }
 
-        private int skipPolyphony(String s, int start) {
-            int depth = 0;
-            int i = start;
+        /**
+         * Handle {@code \context ClassName [= "name"] [\with { … }] { … }}
+         * or {@code \new ClassName [\with { … }] { … }}: skip the context
+         * class + optional instance name / {@code \with} block, then
+         * recurse into the music block so it contributes to the current
+         * part rather than being swallowed.
+         */
+        private int handleContextOrNew(String s, int start) {
             int n = s.length();
-            while (i < n) {
-                if (i + 1 < n && s.charAt(i) == '<' && s.charAt(i + 1) == '<') {
-                    depth++;
-                    i += 2;
-                    continue;
-                }
-                if (i + 1 < n && s.charAt(i) == '>' && s.charAt(i + 1) == '>') {
-                    depth--;
-                    i += 2;
-                    if (depth == 0) {
-                        return i;
-                    }
-                    continue;
-                }
-                i++;
+            int p = skipWhitespace(s, start);
+            // Context class name.
+            while (p < n && (Character.isLetterOrDigit(s.charAt(p)) || s.charAt(p) == '_')) {
+                p++;
             }
-            return i;
+            p = skipWhitespace(s, p);
+            // Optional `= "instanceName"` (or unquoted identifier).
+            if (p < n && s.charAt(p) == '=') {
+                p++;
+                p = skipWhitespace(s, p);
+                if (p < n && s.charAt(p) == '"') {
+                    int close = s.indexOf('"', p + 1);
+                    p = close < 0 ? n : close + 1;
+                } else {
+                    while (p < n && (Character.isLetterOrDigit(s.charAt(p)) || s.charAt(p) == '_')) {
+                        p++;
+                    }
+                }
+                p = skipWhitespace(s, p);
+            }
+            // Optional `\with { … }` context modification block.
+            if (p + 4 < n && s.charAt(p) == '\\' && s.regionMatches(p, "\\with", 0, 5)
+                    && (p + 5 >= n || !Character.isLetter(s.charAt(p + 5)))) {
+                p += 5;
+                p = skipWhitespace(s, p);
+                if (p < n && s.charAt(p) == '{') {
+                    int close = findMatchingBrace(s, p);
+                    p = close < 0 ? n : close + 1;
+                    p = skipWhitespace(s, p);
+                }
+            }
+            // Music block, or a bare reference like `\context Voice = "vocal" \melody`.
+            if (p < n && s.charAt(p) == '{') {
+                int close = findMatchingBrace(s, p);
+                if (close > 0) {
+                    parse(s.substring(p + 1, close));
+                    return close + 1;
+                }
+                return p;
+            }
+            if (p < n && s.charAt(p) == '\\') {
+                // Recurse into the following command (typically a variable
+                // reference that expands to the music itself).
+                return handleCommand(s, p);
+            }
+            return p;
         }
+
+        /**
+         * Handle {@code \repeat volta N { … }} / {@code \repeat unfold N {
+         * … }}: skip the modifier + count and recurse into the music.
+         */
+        private int handleRepeat(String s, int start) {
+            int n = s.length();
+            int p = skipWhitespace(s, start);
+            while (p < n && Character.isLetter(s.charAt(p))) {
+                p++;
+            }
+            p = skipWhitespace(s, p);
+            while (p < n && Character.isDigit(s.charAt(p))) {
+                p++;
+            }
+            p = skipWhitespace(s, p);
+            if (p < n && s.charAt(p) == '{') {
+                int close = findMatchingBrace(s, p);
+                if (close > 0) {
+                    parse(s.substring(p + 1, close));
+                    // Optional `\alternative { { … } { … } }` block.
+                    int after = close + 1;
+                    after = skipWhitespace(s, after);
+                    if (after + 12 <= n && s.regionMatches(after, "\\alternative", 0, 12)) {
+                        int b = s.indexOf('{', after);
+                        if (b > 0) {
+                            int ac = findMatchingBrace(s, b);
+                            if (ac > 0) {
+                                parse(s.substring(b + 1, ac));
+                                return ac + 1;
+                            }
+                        }
+                    }
+                    return close + 1;
+                }
+            }
+            return p;
+        }
+
+        /** Skip to the end of a `\set` or `\override` statement. */
+        private int skipToEndOfSetting(String s, int start) {
+            int n = s.length();
+            int p = start;
+            int parens = 0;
+            while (p < n) {
+                char cc = s.charAt(p);
+                if (cc == '(') {
+                    parens++;
+                } else if (cc == ')') {
+                    if (parens > 0) {
+                        parens--;
+                    }
+                } else if (parens == 0) {
+                    if (cc == '\n' || cc == '{' || cc == '}' || cc == '\\') {
+                        return p;
+                    }
+                }
+                p++;
+            }
+            return p;
+        }
+
+        /**
+         * Skip a command's trailing arguments: any run of quoted strings,
+         * {@code \command} tokens, and identifiers, ending at either the
+         * end of input or the closing brace of the last {@code { … }}
+         * block that follows.
+         */
+        private int skipCommandArgs(String s, int start) {
+            int n = s.length();
+            int p = skipWhitespace(s, start);
+            while (p < n) {
+                char c = s.charAt(p);
+                if (c == '"') {
+                    int close = s.indexOf('"', p + 1);
+                    p = close < 0 ? n : close + 1;
+                    p = skipWhitespace(s, p);
+                    continue;
+                }
+                if (c == '{') {
+                    int close = findMatchingBrace(s, p);
+                    return close < 0 ? n : close + 1;
+                }
+                if (c == '\\') {
+                    p++;
+                    while (p < n && (Character.isLetter(s.charAt(p)) || s.charAt(p) == '-')) {
+                        p++;
+                    }
+                    p = skipWhitespace(s, p);
+                    continue;
+                }
+                if (Character.isLetterOrDigit(c) || c == '_' || c == '.') {
+                    while (p < n && (Character.isLetterOrDigit(s.charAt(p)) || s.charAt(p) == '_'
+                            || s.charAt(p) == '.')) {
+                        p++;
+                    }
+                    p = skipWhitespace(s, p);
+                    continue;
+                }
+                break;
+            }
+            return p;
+        }
+
+
 
         private static int skipWhitespace(String s, int i) {
             int n = s.length();
