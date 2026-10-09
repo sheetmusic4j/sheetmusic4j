@@ -52,8 +52,9 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    are the `Region`/`Canvas` controls that tie `Engraver` + `ScorePainter` + `FxRenderSurface` together, sharing their
    per-note overlays through `NoteDecorations`. `FlyOverSheetView` is the 3D variant of the strip (JavaFX `SubScene`):
    the strip's ink is painted once into transparent image tiles (`ScorePainter.setPageColor(null)`) over a coloured
-   paper plane with a travelling light, a perspective camera follows the cursor, and sounding noteheads float above the
-   paper as glowing copies (`ScorePainter.paintNotehead`) along `JumpCurve`, a pure function of time. All colours and
+   paper plane with a travelling light, a perspective camera follows the cursor, a glowing ball per (part, staff, voice)
+   hops from note to note landing at each onset, and sounding noteheads light up as glowing copies
+   (`ScorePainter.paintNotehead`); hops and glow are `JumpCurve`, pure functions of time. All colours and
    sizes are properties. Gradient-filled shapes don't render reliably inside the 3D `SubScene`; bake them into images.
 5. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `SheetDemoLauncher` to avoid classpath
    JavaFX-runtime errors). Lets you open a MusicXML/MIDI file, shows a debug pane (`ScoreInspector`), and shows a

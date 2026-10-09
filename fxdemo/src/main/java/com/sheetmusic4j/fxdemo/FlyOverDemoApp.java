@@ -197,7 +197,8 @@ public final class FlyOverDemoApp extends Application {
         ToolBar notes = new ToolBar(
                 new Label("Staff colours:"), noteColorPicker(0), noteColorPicker(1), noteColorPicker(2),
                 new Label("Glow:"), slider(flyOver.noteGlowProperty(), 0, 2, "%.1f"),
-                new Label("Jump:"), slider(flyOver.jumpHeightProperty(), 0, 6, "%.1f"),
+                new Label("Jump:"), slider(flyOver.jumpHeightProperty(), 0, 8, "%.1f"),
+                new Label("Ball:"), slider(flyOver.ballSizeProperty(), 0, 6, "%.1f"),
                 cursorVisible,
                 new Separator(),
                 new Label("Spacing:"), slider(flyOver.stripSpacingFactorProperty(), 1, 6, "%.1f", true),

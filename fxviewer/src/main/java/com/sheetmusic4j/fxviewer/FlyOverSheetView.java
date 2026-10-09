@@ -44,27 +44,30 @@ import javafx.scene.transform.Rotate;
 import javafx.scene.transform.Translate;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Play-along "fly-over" view: the {@link LayoutMode#STRIP} engraving of a
  * score lies on a lit sheet of paper in a 3D scene, a low perspective camera
  * glides along it following {@link #cursorTimeProperty() cursorTime}, and
- * every played notehead lights up in its staff's colour and floats above the
- * paper while it sounds.
+ * a glowing ball per voice hops from note to note, landing on each one as it
+ * starts; every played notehead lights up in its staff's colour while it
+ * sounds.
  *
  * <p>The ink is the regular {@link ScorePainter} output, rendered once into
  * transparent image tiles (GPUs limit texture size, so a long strip is split
  * into {@value #TILE_WIDTH}-unit wide tiles) laid over a coloured paper plane
- * with a moving pool of light. The floating noteheads are copies drawn with
- * {@link ScorePainter#paintNotehead}; the engraved notehead stays on the
- * paper as the floating one's shadow, so beams and stems are never torn
- * apart. The float itself is a pure function of time ({@link JumpCurve}), so
- * the cursor can be scrubbed.
+ * with a moving pool of light. The lit noteheads are glowing copies drawn
+ * with {@link ScorePainter#paintNotehead} over the engraved ones. The hops and
+ * the glow are pure functions of time ({@link JumpCurve}), so the cursor can
+ * be scrubbed.
  *
  * <p>Every colour and size of the look is a property. Sizes are relative to
  * the score so one setting suits a single staff and a piano score alike:
@@ -73,7 +76,7 @@ import java.util.Map;
  * {@value #MIN_STAFF_BLOCK} units), note sizes in staff line gaps.
  *
  * <p>Like {@link StripSheetView}, advancing the cursor never re-engraves or
- * repaints: it only moves the camera, the light and the noteheads in the air.
+ * repaints: it only moves the camera, the light and the balls.
  * Requires {@link ConditionalFeature#SCENE3D}; see {@link #is3DSupported()}.
  *
  * <p>The scene uses layout units: the paper lies in the x/y plane at
@@ -85,11 +88,14 @@ public final class FlyOverSheetView extends Region {
     /** Width of one ink tile, in layout units. */
     private static final double TILE_WIDTH = 1024;
 
-    /** Size of a floating-notehead sprite, in staff line gaps (room for its glow). */
+    /** Size of a lit-notehead sprite, in staff line gaps (room for its glow). */
     private static final double SPRITE_GAPS = 4.0;
 
     /** Sprites are seen up close, so render them sharper than the paper. */
     private static final double SPRITE_OVERSAMPLE = 2.0;
+
+    /** Radius of a ball's solid core, as a fraction of its sprite size (the rest is glow). */
+    private static final double BALL_CORE = 0.15;
 
     /** Smallest staff block height the camera and light distances scale with, in layout units. */
     private static final double MIN_STAFF_BLOCK = 120;
@@ -104,6 +110,7 @@ public final class FlyOverSheetView extends Region {
     private final Rectangle cursor = new Rectangle();
     private final Group poolLayer = new Group();
     private final Group noteLayer = new Group();
+    private final Group ballLayer = new Group();
     private final PerspectiveCamera camera = new PerspectiveCamera(true);
     private final SubScene subScene;
     /** 2D overlay fading the far distance (and a little of the foreground) into the background. */
@@ -142,7 +149,8 @@ public final class FlyOverSheetView extends Region {
             Color.web("#ffb02e"), Color.web("#33e0ff"), Color.web("#f5f542"),
             Color.web("#ff6fae"), Color.web("#5cff8a"));
     private final DoubleProperty noteGlow = new SimpleDoubleProperty(this, "noteGlow", 0.5);
-    private final DoubleProperty jumpHeight = new SimpleDoubleProperty(this, "jumpHeight", 1.5);
+    private final DoubleProperty jumpHeight = new SimpleDoubleProperty(this, "jumpHeight", 3.0);
+    private final DoubleProperty ballSize = new SimpleDoubleProperty(this, "ballSize", 2.5);
 
     private final ObjectProperty<Color> cursorColor =
             new SimpleObjectProperty<>(this, "cursorColor", Color.web("#ffffff", 0.5));
@@ -154,14 +162,17 @@ public final class FlyOverSheetView extends Region {
 
     private final Map<SpriteKey, Image> sprites = new HashMap<>();
     private final Map<Color, Image> pools = new HashMap<>();
-    private final List<Jumper> lifted = new ArrayList<>();
+    private final Map<Color, Image> balls = new HashMap<>();
+    private final List<LitNote> lit = new ArrayList<>();
 
     private Score score;
     private LayoutResult layout;
-    /** Jumpers sorted by onset, so a frame only visits the ones near the playhead. */
-    private Jumper[] jumpers = new Jumper[0];
-    /** Longest time any note stays off the paper, bounding the per-frame scan. */
-    private double maxAirborne;
+    /** Lit notes sorted by onset, so a frame only visits the ones near the playhead. */
+    private LitNote[] notes = new LitNote[0];
+    /** Longest time any note keeps glowing, bounding the per-frame scan. */
+    private double maxAfterglow;
+    /** One bouncing ball per voice. */
+    private Hopper[] hoppers = new Hopper[0];
     private double staffCenterY;
     private double staffBlockHeight = MIN_STAFF_BLOCK;
 
@@ -184,9 +195,9 @@ public final class FlyOverSheetView extends Region {
         fade.setMouseTransparent(true);
 
         // No depth buffer: everything is drawn in scene-graph order (paper,
-        // light, ink, cursor, light pools, noteheads), which is exactly right
-        // for things floating above a flat sheet and avoids z-fighting.
-        world.getChildren().addAll(paper, light, ink, cursor, poolLayer, noteLayer, camera);
+        // light, ink, cursor, light pools, lit noteheads, balls), which is
+        // exactly right for things above a flat sheet and avoids z-fighting.
+        world.getChildren().addAll(paper, light, ink, cursor, poolLayer, noteLayer, ballLayer, camera);
         subScene = new SubScene(world, 800, 450, false, SceneAntialiasing.BALANCED);
         subScene.setCamera(camera);
         subScene.fillProperty().bind(backgroundColor);
@@ -194,7 +205,7 @@ public final class FlyOverSheetView extends Region {
 
         cursorTime.addListener((obs, o, n) -> update());
         for (DoubleProperty p : List.of(cameraPitch, cameraYaw, cameraDistance, lookAhead,
-                lightRadius, lightAhead, jumpHeight)) {
+                lightRadius, lightAhead, jumpHeight, ballSize)) {
             p.addListener((obs, o, n) -> update());
         }
         lightColor.addListener((obs, o, n) -> updateLight());
@@ -251,9 +262,9 @@ public final class FlyOverSheetView extends Region {
     }
 
     /**
-     * Musical time (in quarter notes) the camera follows and the noteheads
-     * float to. Cheap to animate at 60 fps: only the camera, the light and the
-     * noteheads in the air move.
+     * Musical time (in quarter notes) the camera follows and the balls hop
+     * to. Cheap to animate at 60 fps: only the camera, the light and the balls
+     * move.
      */
     public DoubleProperty cursorTimeProperty() {
         return cursorTime;
@@ -272,11 +283,11 @@ public final class FlyOverSheetView extends Region {
     /**
      * Follow an explicit x position in layout units instead of
      * {@link LayoutResult#xAtTime} until the next {@link #setCursorTime}; the
-     * noteheads still follow {@code quarters}. Same idea as
+     * balls still follow {@code quarters}. Same idea as
      * {@link StripSheetView#setCursorLayoutX}.
      *
      * @param layoutX  the x coordinate in layout units the camera follows
-     * @param quarters the musical time the noteheads float to
+     * @param quarters the musical time the balls hop to
      */
     public void setCursor(double layoutX, double quarters) {
         cursorLayoutX = layoutX;
@@ -371,16 +382,16 @@ public final class FlyOverSheetView extends Region {
     }
 
     /**
-     * Colours of the floating noteheads, by staff: staff {@code i} of the
-     * system uses entry {@code i % size}. Editing the list recolours the
-     * noteheads; an empty list falls back to white.
+     * Colours of the balls and lit noteheads, by staff: staff {@code i} of the
+     * system uses entry {@code i % size}. Editing the list recolours them; an
+     * empty list falls back to white.
      */
     public ObservableList<Color> noteColors() {
         return noteColors;
     }
 
     /**
-     * Radius of the glow around a floating notehead, in staff line gaps;
+     * Radius of the glow around a lit notehead, in staff line gaps;
      * {@code 0} switches the glow off.
      */
     public DoubleProperty noteGlowProperty() {
@@ -388,10 +399,18 @@ public final class FlyOverSheetView extends Region {
     }
 
     /**
-     * How high a sounding notehead floats above the paper, in staff line gaps.
+     * How high a ball hops between two notes at least a quarter note apart,
+     * in staff line gaps (shorter hops are lower).
      */
     public DoubleProperty jumpHeightProperty() {
         return jumpHeight;
+    }
+
+    /**
+     * Size of a ball including its glow, in staff line gaps.
+     */
+    public DoubleProperty ballSizeProperty() {
+        return ballSize;
     }
 
     /**
@@ -402,7 +421,7 @@ public final class FlyOverSheetView extends Region {
     }
 
     /**
-     * Whether the cursor line is drawn (off by default: the floating notes
+     * Whether the cursor line is drawn (off by default: the balls
      * already show where the music is).
      */
     public BooleanProperty cursorVisibleProperty() {
@@ -442,11 +461,14 @@ public final class FlyOverSheetView extends Region {
         ink.getChildren().clear();
         poolLayer.getChildren().clear();
         noteLayer.getChildren().clear();
-        lifted.clear();
+        ballLayer.getChildren().clear();
+        lit.clear();
         sprites.clear();
         pools.clear();
-        jumpers = new Jumper[0];
-        maxAirborne = 0;
+        balls.clear();
+        notes = new LitNote[0];
+        hoppers = new Hopper[0];
+        maxAfterglow = 0;
         if (score == null) {
             layout = null;
             update();
@@ -461,7 +483,7 @@ public final class FlyOverSheetView extends Region {
         measureStaffBlock(layout);
         buildPaper();
         buildInk();
-        buildJumpers();
+        buildNotes();
         updateLight();
         update();
     }
@@ -544,10 +566,11 @@ public final class FlyOverSheetView extends Region {
     }
 
     /**
-     * One floating copy per engraved notehead of a sounding note. Chord
-     * members each get their own, timed by their own anchor.
+     * One glowing copy per engraved notehead of a sounding note (chord members
+     * each get their own, timed by their own anchor), and one ball per voice
+     * that lands on the top notehead at every onset of the voice.
      */
-    private void buildJumpers() {
+    private void buildNotes() {
         Map<MusicElement, NoteAnchor> anchorByElement = new IdentityHashMap<>();
         for (NoteAnchor anchor : layout.noteAnchors()) {
             if (anchor.durationQuarters() > 0
@@ -555,23 +578,51 @@ public final class FlyOverSheetView extends Region {
                 anchorByElement.putIfAbsent(anchor.elementRef(), anchor);
             }
         }
-        List<Jumper> list = new ArrayList<>();
+        List<LitNote> list = new ArrayList<>();
+        Map<VoiceKey, Map<Double, Landing>> landingsByVoice = new LinkedHashMap<>();
         for (StaffLayout staff : layout.staves()) {
             for (GlyphPlacement glyph : staff.glyphs()) {
                 NoteAnchor anchor = glyph.elementRef() == null ? null : anchorByElement.get(glyph.elementRef());
                 if (anchor == null || !isNotehead(glyph.glyph())) {
                     continue;
                 }
-                Jumper jumper = new Jumper(glyph, staff.lineGap(), anchor);
-                paintJumper(jumper);
-                list.add(jumper);
-                maxAirborne = Math.max(maxAirborne, JumpCurve.airborne(jumper.duration));
-                poolLayer.getChildren().add(jumper.pool);
-                noteLayer.getChildren().add(jumper.view);
+                LitNote note = new LitNote(glyph, staff.lineGap(), anchor);
+                paintNote(note);
+                list.add(note);
+                maxAfterglow = Math.max(maxAfterglow, JumpCurve.afterglow(note.duration));
+                poolLayer.getChildren().add(note.pool);
+                noteLayer.getChildren().add(note.view);
+
+                VoiceKey voice = new VoiceKey(anchor.partIndex(), anchor.staffIndex(), voiceOf(anchor.elementRef()));
+                landingsByVoice.computeIfAbsent(voice, k -> new TreeMap<>())
+                        .merge(anchor.onsetQuarters(),
+                                new Landing(anchor.onsetQuarters(), anchor.durationQuarters(),
+                                        glyph.x(), glyph.y(), staff.lineGap()),
+                                Landing::higher);
             }
         }
-        list.sort(Comparator.comparingDouble(j -> j.onset));
-        jumpers = list.toArray(new Jumper[0]);
+        list.sort(Comparator.comparingDouble(n -> n.onset));
+        notes = list.toArray(new LitNote[0]);
+
+        List<Hopper> hopperList = new ArrayList<>();
+        landingsByVoice.forEach((voice, landings) -> {
+            Hopper hopper = new Hopper(voice.staffIndex(), List.copyOf(landings.values()));
+            paintHopper(hopper);
+            hopperList.add(hopper);
+            poolLayer.getChildren().add(hopper.pool);
+            ballLayer.getChildren().add(hopper.ball);
+        });
+        hoppers = hopperList.toArray(new Hopper[0]);
+    }
+
+    private static int voiceOf(MusicElement element) {
+        if (element instanceof Note note) {
+            return note.voice();
+        }
+        if (element instanceof Chord chord) {
+            return chord.voice();
+        }
+        return 1;
     }
 
     private static boolean isNotehead(Glyph glyph) {
@@ -588,12 +639,27 @@ public final class FlyOverSheetView extends Region {
         return noteColors.get(Math.floorMod(staffIndex, noteColors.size()));
     }
 
-    private void paintJumper(Jumper jumper) {
-        Color color = noteColor(jumper.staffIndex);
-        jumper.view.setImage(sprites.computeIfAbsent(
-                new SpriteKey(jumper.glyph, jumper.lineGap, color, noteGlow.get()), this::paintSprite));
-        jumper.pool.setImage(pools.computeIfAbsent(color, c -> radialGlow(
-                new Stop(0, c.deriveColor(0, 1, 1, 0.55)), new Stop(1, Color.TRANSPARENT))));
+    private void paintNote(LitNote note) {
+        Color color = noteColor(note.staffIndex);
+        note.view.setImage(sprites.computeIfAbsent(
+                new SpriteKey(note.glyph, note.lineGap, color, noteGlow.get()), this::paintSprite));
+        note.pool.setImage(pool(color));
+    }
+
+    private void paintHopper(Hopper hopper) {
+        Color color = noteColor(hopper.staffIndex);
+        // A white-hot core in the voice's colour, fading out into its glow.
+        hopper.ball.setImage(balls.computeIfAbsent(color, c -> radialGlow(
+                new Stop(0, Color.WHITE),
+                new Stop(BALL_CORE * 2 * 0.6, c.deriveColor(0, 0.6, 1.4, 1)),
+                new Stop(BALL_CORE * 2, c.deriveColor(0, 1, 1, 0.6)),
+                new Stop(1, Color.TRANSPARENT))));
+        hopper.pool.setImage(pool(color));
+    }
+
+    private Image pool(Color color) {
+        return pools.computeIfAbsent(color, c -> radialGlow(
+                new Stop(0, c.deriveColor(0, 1, 1, 0.55)), new Stop(1, Color.TRANSPARENT)));
     }
 
     /** A glowing notehead, centred in a transparent square. */
@@ -636,8 +702,12 @@ public final class FlyOverSheetView extends Region {
     private void repaintSprites() {
         sprites.clear();
         pools.clear();
-        for (Jumper jumper : jumpers) {
-            paintJumper(jumper);
+        balls.clear();
+        for (LitNote note : notes) {
+            paintNote(note);
+        }
+        for (Hopper hopper : hoppers) {
+            paintHopper(hopper);
         }
     }
 
@@ -685,33 +755,36 @@ public final class FlyOverSheetView extends Region {
         light.setTranslateX(x + lightAhead.get() * staffBlockHeight - radius);
         light.setTranslateY(staffCenterY - staffBlockHeight * 0.3 - radius);
 
-        updateJumpers(time);
-    }
-
-    private void updateJumpers(double time) {
-        for (Jumper jumper : lifted) {
-            jumper.land();
-        }
-        lifted.clear();
+        updateNotes(time);
         double yaw = cameraYaw.get();
         double pitch = cameraPitch.get();
-        for (int i = firstOnsetAtOrAfter(time - maxAirborne);
-             i < jumpers.length && jumpers[i].onset <= time; i++) {
-            Jumper jumper = jumpers[i];
-            double lift = JumpCurve.lift(time, jumper.onset, jumper.duration);
-            if (lift > 0) {
-                jumper.lift(lift, jumpHeight.get(), yaw, pitch);
-                lifted.add(jumper);
+        for (Hopper hopper : hoppers) {
+            hopper.update(time, jumpHeight.get(), ballSize.get(), yaw, pitch);
+        }
+    }
+
+    private void updateNotes(double time) {
+        for (LitNote note : lit) {
+            note.dim();
+        }
+        lit.clear();
+        for (int i = firstOnsetAtOrAfter(time - maxAfterglow);
+             i < notes.length && notes[i].onset <= time; i++) {
+            LitNote note = notes[i];
+            double glow = JumpCurve.glow(time, note.onset, note.duration);
+            if (glow > 0) {
+                note.light(glow);
+                lit.add(note);
             }
         }
     }
 
     private int firstOnsetAtOrAfter(double time) {
         int lo = 0;
-        int hi = jumpers.length;
+        int hi = notes.length;
         while (lo < hi) {
             int mid = (lo + hi) >>> 1;
-            if (jumpers[mid].onset < time) {
+            if (notes[mid].onset < time) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -723,11 +796,24 @@ public final class FlyOverSheetView extends Region {
     private record SpriteKey(Glyph glyph, double lineGap, Color color, double glow) {
     }
 
+    /** A ball's voice: each (part, staff, voice) is its own timeline. */
+    private record VoiceKey(int partIndex, int staffIndex, int voice) {
+    }
+
+    /** Where and when a ball touches down: the top notehead of a voice at one onset. */
+    private record Landing(double onset, double duration, double x, double y, double lineGap) {
+
+        static Landing higher(Landing a, Landing b) {
+            Landing top = b.y < a.y ? b : a;
+            return new Landing(a.onset, Math.max(a.duration, b.duration), top.x, top.y, top.lineGap);
+        }
+    }
+
     /**
-     * A notehead copy that floats above the paper, plus the pool of its
-     * light on the paper below it.
+     * A glowing notehead copy lying on the engraved one, plus the pool of its
+     * light on the paper.
      */
-    private static final class Jumper {
+    private static final class LitNote {
 
         final Glyph glyph;
         final double lineGap;
@@ -736,11 +822,8 @@ public final class FlyOverSheetView extends Region {
         final double duration;
         final ImageView view = new ImageView();
         final ImageView pool = new ImageView();
-        final Translate position;
-        final Rotate yaw = new Rotate(0, Rotate.Z_AXIS);
-        final Rotate pitch = new Rotate(0, Rotate.X_AXIS);
 
-        Jumper(GlyphPlacement glyph, double lineGap, NoteAnchor anchor) {
+        LitNote(GlyphPlacement glyph, double lineGap, NoteAnchor anchor) {
             this.glyph = glyph.glyph();
             this.lineGap = lineGap;
             this.staffIndex = anchor.staffIndex();
@@ -750,27 +833,97 @@ public final class FlyOverSheetView extends Region {
             view.setSmooth(true);
             view.setFitWidth(size);
             view.setFitHeight(size);
-            position = new Translate(glyph.x(), glyph.y(), 0);
-            // Rise, then turn to face the camera, around the notehead centre.
-            view.getTransforms().setAll(position, yaw, pitch, new Translate(-size / 2, -size / 2));
+            view.setTranslateX(glyph.x() - size / 2);
+            view.setTranslateY(glyph.y() - size / 2);
             pool.setFitWidth(lineGap * 3.2);
             pool.setFitHeight(lineGap * 2.4);
             pool.setTranslateX(glyph.x() - lineGap * 1.6);
             pool.setTranslateY(glyph.y() - lineGap * 1.2);
-            land();
+            dim();
         }
 
-        void lift(double lift, double heightGaps, double cameraYaw, double cameraPitch) {
-            position.setZ(-lift * heightGaps * lineGap);
-            yaw.setAngle(cameraYaw * lift);
-            pitch.setAngle(cameraPitch * lift);
+        void light(double glow) {
+            view.setOpacity(glow);
             view.setVisible(true);
-            pool.setOpacity(lift);
+            pool.setOpacity(glow);
             pool.setVisible(true);
         }
 
-        void land() {
+        void dim() {
             view.setVisible(false);
+            pool.setVisible(false);
+        }
+    }
+
+    /**
+     * The ball of one voice: it lands on every note of the voice at its onset
+     * and hops along a parabola to the next, casting a pool of light on the
+     * paper below it. It appears on the first note and disappears once the
+     * last one has ended.
+     */
+    private static final class Hopper {
+
+        final int staffIndex;
+        final double[] onsets;
+        final Landing[] landings;
+        final double end;
+        final ImageView ball = new ImageView();
+        final ImageView pool = new ImageView();
+        final Translate position = new Translate();
+        final Rotate yaw = new Rotate(0, Rotate.Z_AXIS);
+        final Rotate pitch = new Rotate(0, Rotate.X_AXIS);
+        final Translate centre = new Translate();
+
+        Hopper(int staffIndex, List<Landing> landings) {
+            this.staffIndex = staffIndex;
+            this.landings = landings.toArray(new Landing[0]);
+            this.onsets = landings.stream().mapToDouble(Landing::onset).toArray();
+            Landing last = this.landings[this.landings.length - 1];
+            this.end = last.onset() + last.duration();
+            ball.setSmooth(true);
+            // Turn to face the camera around the ball's centre.
+            ball.getTransforms().setAll(position, yaw, pitch, centre);
+            hide();
+        }
+
+        void update(double time, double heightGaps, double sizeGaps, double cameraYaw, double cameraPitch) {
+            int i = Arrays.binarySearch(onsets, time);
+            i = i >= 0 ? i : -i - 2;
+            if (i < 0 || time > end) {
+                hide();
+                return;
+            }
+            Landing from = landings[i];
+            Landing to = i + 1 < landings.length ? landings[i + 1] : from;
+            double s = JumpCurve.progress(time, from.onset(), to.onset());
+            double height = JumpCurve.height(time, from.onset(), to.onset());
+            double x = from.x() + (to.x() - from.x()) * s;
+            double y = from.y() + (to.y() - from.y()) * s;
+            double lineGap = from.lineGap() + (to.lineGap() - from.lineGap()) * s;
+
+            double size = Math.max(sizeGaps, 0) * lineGap;
+            ball.setFitWidth(size);
+            ball.setFitHeight(size);
+            centre.setX(-size / 2);
+            centre.setY(-size / 2);
+            position.setX(x);
+            position.setY(y);
+            // Resting on the paper, the core touches it rather than sinking in.
+            position.setZ(-size * BALL_CORE - height * heightGaps * lineGap);
+            yaw.setAngle(cameraYaw);
+            pitch.setAngle(cameraPitch);
+            ball.setVisible(size > 0);
+
+            pool.setFitWidth(lineGap * 3.2);
+            pool.setFitHeight(lineGap * 2.4);
+            pool.setTranslateX(x - lineGap * 1.6);
+            pool.setTranslateY(y - lineGap * 1.2);
+            pool.setOpacity(1 - 0.7 * height);
+            pool.setVisible(true);
+        }
+
+        void hide() {
+            ball.setVisible(false);
             pool.setVisible(false);
         }
     }
