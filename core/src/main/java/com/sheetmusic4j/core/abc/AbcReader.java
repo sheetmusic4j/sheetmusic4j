@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import com.sheetmusic4j.core.io.ScoreReader;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
@@ -56,11 +57,12 @@ import com.sheetmusic4j.core.model.Tuplet;
  * <p>Only the first tune (leading {@code X:} block) is loaded; subsequent
  * tunes in a multi-tune file are ignored for MVP.
  */
-public final class AbcReader {
+public final class AbcReader implements ScoreReader {
 
     /** Divisions per quarter note used by the produced {@link Score}. */
     private static final int DIVISIONS = 96;
 
+    @Override
     public Score read(Path path) {
         try (InputStream in = Files.newInputStream(path)) {
             return read(in);
@@ -69,6 +71,7 @@ public final class AbcReader {
         }
     }
 
+    @Override
     public Score read(InputStream in) {
         try {
             String text = readAll(in);
@@ -1345,6 +1348,7 @@ public final class AbcReader {
             boolean explicitAccidental;
             AbcNoteLength.Fraction length;
             boolean isRest;
+            boolean isInvisibleRest;
             boolean isMeasureRest;
             int consumed;
         }
@@ -1384,6 +1388,7 @@ public final class AbcReader {
 
             if (letter == 'z' || letter == 'x') {
                 out.isRest = true;
+                out.isInvisibleRest = letter == 'x';
                 AbcNoteLength.Parsed p = AbcNoteLength.parseSuffix(line, i);
                 i += p.consumed();
                 out.length = p.multiplier();
@@ -1393,6 +1398,7 @@ public final class AbcReader {
             if (letter == 'Z' || letter == 'X') {
                 // Whole-measure rest (Z), possibly repeated (Z2 = 2 measures).
                 out.isRest = true;
+                out.isInvisibleRest = letter == 'X';
                 out.isMeasureRest = true;
                 AbcNoteLength.Parsed p = AbcNoteLength.parseSuffix(line, i);
                 i += p.consumed();
@@ -1472,6 +1478,7 @@ public final class AbcReader {
                     Rest rest = Rest.builder()
                             .duration(measureDuration())
                             .type(NoteType.WHOLE)
+                            .visible(!parsed.isInvisibleRest)
                             .build();
                     pendingElements.add(rest);
                     lyricNoteAnchors.add(null);
@@ -1496,7 +1503,7 @@ public final class AbcReader {
                 effective = effective.times(tupletNormalNotes, tupletActualNotes);
             }
             Duration duration = toDuration(effective);
-            Rest.Builder rb = Rest.builder().duration(duration);
+            Rest.Builder rb = Rest.builder().duration(duration).visible(!parsed.isInvisibleRest);
             setTypeAndDots(rb, writtenDuration);
             pendingElements.add(rb.build());
             lyricNoteAnchors.add(null);
@@ -1619,7 +1626,7 @@ public final class AbcReader {
                 }
                 if (el instanceof Rest rest) {
                     Duration scaled = scale(rest.duration(), mul);
-                    Rest.Builder rb = Rest.builder().duration(scaled);
+                    Rest.Builder rb = Rest.builder().duration(scaled).visible(rest.visible());
                     setTypeAndDots(rb, scaled);
                     pendingElements.set(i, rb.build());
                     return;

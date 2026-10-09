@@ -2,11 +2,9 @@ package com.sheetmusic4j.fxdemo;
 
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.musicxml.MusicXmlReader;
-import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.fxdemo.image.ImageSimilarity;
-import com.sheetmusic4j.fxdemo.render.HeadlessScoreImage;
+import com.sheetmusic4j.render.awt.HeadlessScoreImage;
 import com.sheetmusic4j.fxdemo.sibling.PdfSibling;
-import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.fxdemo.reference.DiagnosticComparator;
 import com.sheetmusic4j.fxdemo.reference.DiffReportWriter;
@@ -186,19 +184,6 @@ class CompareFxViewWithReferenceTest {
         }
     }
 
-    private static LayoutOptions layoutOptions() {
-        LayoutOptions defaults = LayoutOptions.defaults();
-        return new LayoutOptions(
-                defaults.staffLineGap(),
-                defaults.staffSpacing(),
-                WIDTH,
-                defaults.leftMargin(),
-                defaults.rightMargin(),
-                defaults.topMargin(),
-                defaults.measureMinWidth(),
-                defaults.fontSize());
-    }
-
     @ParameterizedTest(name = "{0}")
     @MethodSource("fixtures")
     void engravingMatchesReference(String name, Path xmlPath, int expectedPages) throws Exception {
@@ -219,8 +204,9 @@ class CompareFxViewWithReferenceTest {
                 pages.get(), 8, Color.WHITE);
 
         Score score = loadScore(xmlPath);
-        LayoutResult layout = new Engraver().layout(score, layoutOptions());
-        BufferedImage rendered = HeadlessScoreImage.render(score, WIDTH);
+        HeadlessScoreImage.Rendering rendering = HeadlessScoreImage.renderWithLayout(score, WIDTH);
+        LayoutResult layout = rendering.layout();
+        BufferedImage rendered = rendering.image();
         double ink = ImageSimilarity.inkRatio(rendered);
         assertTrue(ink > MIN_INK, "rendered score should not be blank, ink ratio was " + ink);
 

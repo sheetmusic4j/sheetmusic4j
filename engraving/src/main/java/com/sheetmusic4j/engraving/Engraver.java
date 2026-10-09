@@ -16,8 +16,8 @@ import com.sheetmusic4j.engraving.page.SystemEngraver;
 import com.sheetmusic4j.engraving.page.TextBlockLayout;
 import com.sheetmusic4j.engraving.placement.TextPlacement;
 import com.sheetmusic4j.engraving.spacing.HorizontalSpacing;
+import com.sheetmusic4j.engraving.spacing.MeasureColumns;
 import com.sheetmusic4j.engraving.spacing.RowPlan;
-import com.sheetmusic4j.engraving.staff.NoteAnchors;
 import com.sheetmusic4j.engraving.staff.StaffRowEngraver;
 
 import java.util.ArrayList;
@@ -78,7 +78,7 @@ public final class Engraver {
         List<PartInfo> parts = new ArrayList<>(score.parts().size());
         int measureCount = 0;
         for (Part part : score.parts()) {
-            parts.add(PartInfo.of(part));
+            parts.add(PartInfo.of(part, options));
             measureCount = Math.max(measureCount, part.measures().size());
         }
         if (measureCount == 0) {
@@ -92,10 +92,12 @@ public final class Engraver {
         double labelReserve = TextBlockLayout.computeLabelReserve(score, options, partGroups.maxNestingDepth());
         double contentLeft = options.leftMargin() + labelReserve;
 
-        // 4. Musical timing per measure, then measure widths and the split into rows.
+        // 4. Musical timing per measure, the onset columns every staff aligns to,
+        //    then measure widths and the split into rows.
         MeasureTimeline timeline = MeasureTimeline.of(parts, measureCount);
-        RowPlan plan = RowPlan.of(parts, timeline, measureCount, contentLeft, options);
-        SystemEngraver systemEngraver = new SystemEngraver(options, parts, partGroups, plan, timeline,
+        List<MeasureColumns> columns = MeasureColumns.forScore(parts, measureCount, options);
+        RowPlan plan = RowPlan.of(parts, columns, timeline, measureCount, contentLeft, options);
+        SystemEngraver systemEngraver = new SystemEngraver(options, parts, partGroups, plan, timeline, columns,
                 contentLeft, texts, anchors);
 
         // 5. Lay out each row as a system, stacked top to bottom.
@@ -117,7 +119,7 @@ public final class Engraver {
         // staff line, like C2 on a bass staff). Without this,
         // downstream renderers that size their surface to
         // layout.height() clip low ledger lines at the canvas edge.
-        double contentBottom = NoteAnchors.contentBottom(systems, anchors);
+        double contentBottom = new LayoutResult(systems, texts, anchors, plan.systemWidth(), 0).contentBottom();
         double height = Math.max(staffOnlyHeight,
                 contentBottom + options.rightMargin());
 

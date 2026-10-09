@@ -7,9 +7,8 @@ import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.layout.LayoutMode;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.render.NoteBackgroundStyle;
 import javafx.beans.property.*;
-import javafx.collections.FXCollections;
-import javafx.collections.MapChangeListener;
 import javafx.collections.ObservableMap;
 import javafx.geometry.Insets;
 import javafx.scene.canvas.Canvas;
@@ -19,8 +18,6 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Rectangle;
 
-import java.util.IdentityHashMap;
-import java.util.Optional;
 
 /**
  * One-line "strip" score view designed for play-along use. The score is
@@ -64,17 +61,10 @@ public final class StripSheetView extends Region {
     private final DoubleProperty stripSpacingFactor =
             new SimpleDoubleProperty(this, "stripSpacingFactor", LayoutOptions.DEFAULT_STRIP_SPACING_FACTOR);
 
-    private final ObservableMap<MusicElement, Color> noteHighlights =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
-    private final ObservableMap<MusicElement, Color> noteBackgrounds =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
-    private final ObservableMap<MusicElement, Accidental> noteAccidentals =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
     private final ObjectProperty<NoteBackgroundStyle> noteBackgroundStyle =
             new SimpleObjectProperty<>(this, "noteBackgroundStyle", NoteBackgroundStyle.defaults());
+
+    private final NoteDecorations decorations = new NoteDecorations(renderer, this::repaint);
 
     private Score score;
     private LayoutResult layout;
@@ -96,18 +86,12 @@ public final class StripSheetView extends Region {
         cursor.setStrokeWidth(2.0);
         cursor.strokeProperty().bind(cursorColor);
         cursor.visibleProperty().bind(cursorVisible);
-        renderer.setNoteColorProvider(this::highlightFor);
-        renderer.setNoteBackgroundProvider(this::backgroundFor);
-        renderer.setNoteAccidentalProvider(this::accidentalFor);
         renderer.setNoteBackgroundStyle(noteBackgroundStyle.get());
 
         cursorTime.addListener((obs, o, n) -> updateCursor());
         cursorScreenPosition.addListener((obs, o, n) -> updateCursor());
         zoom.addListener((obs, o, n) -> rebuild());
         stripSpacingFactor.addListener((obs, o, n) -> rebuild());
-        noteHighlights.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
-        noteBackgrounds.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
-        noteAccidentals.addListener((MapChangeListener<MusicElement, Accidental>) c -> repaint());
         noteBackgroundStyle.addListener((obs, o, n) -> {
             renderer.setNoteBackgroundStyle(n);
             repaint();
@@ -125,17 +109,6 @@ public final class StripSheetView extends Region {
         canvas.setHeight(FALLBACK_HEIGHT);
         setMinSize(200, 60);
         setPrefSize(400, FALLBACK_HEIGHT);
-    }
-
-    private static Optional<RenderColor> toRenderColor(Color c) {
-        if (c == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new RenderColor(
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255),
-                (int) Math.round(c.getOpacity() * 255)));
     }
 
     private static double clamp01(double v) {
@@ -268,7 +241,7 @@ public final class StripSheetView extends Region {
      * on keys; mutations only trigger a canvas repaint.
      */
     public ObservableMap<MusicElement, Color> noteHighlights() {
-        return noteHighlights;
+        return decorations.highlights();
     }
 
     /**
@@ -281,7 +254,7 @@ public final class StripSheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Color> noteBackgrounds() {
-        return noteBackgrounds;
+        return decorations.backgrounds();
     }
 
     /**
@@ -297,7 +270,7 @@ public final class StripSheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Accidental> noteAccidentals() {
-        return noteAccidentals;
+        return decorations.accidentals();
     }
 
     /**
@@ -357,18 +330,6 @@ public final class StripSheetView extends Region {
         if (factor > 0) {
             stripSpacingFactor.set(factor);
         }
-    }
-
-    private Optional<RenderColor> highlightFor(MusicElement element) {
-        return toRenderColor(noteHighlights.get(element));
-    }
-
-    private Optional<RenderColor> backgroundFor(MusicElement element) {
-        return toRenderColor(noteBackgrounds.get(element));
-    }
-
-    private Optional<Accidental> accidentalFor(MusicElement element) {
-        return Optional.ofNullable(noteAccidentals.get(element));
     }
 
     private void rebuild() {

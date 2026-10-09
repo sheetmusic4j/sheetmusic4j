@@ -4,7 +4,12 @@ import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.engraving.layout.TextMetrics;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
+import com.sheetmusic4j.render.NoteBackgroundStyle;
+import com.sheetmusic4j.render.RenderColor;
+import com.sheetmusic4j.render.RenderSurface;
+import com.sheetmusic4j.render.ScorePainter;
 import javafx.scene.canvas.GraphicsContext;
 
 import java.util.Optional;
@@ -103,6 +108,14 @@ public final class ScoreRenderer {
      */
     public void setNoteBackgroundStyle(NoteBackgroundStyle style) {
         painter.setNoteBackgroundStyle(style);
+    }
+
+    /**
+     * How text is measured for alignment; see
+     * {@link ScorePainter#setTextMetrics(TextMetrics)}.
+     */
+    public void setTextMetrics(TextMetrics metrics) {
+        painter.setTextMetrics(metrics);
     }
 
     /**

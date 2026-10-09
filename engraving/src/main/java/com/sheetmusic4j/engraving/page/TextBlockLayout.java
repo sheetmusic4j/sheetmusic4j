@@ -29,13 +29,6 @@ public final class TextBlockLayout {
     public static final double PART_LABEL_FONT_SIZE_GAPS = 1.4;
 
     /**
-     * Character-to-em ratio used by both {@code ScorePainter}'s alignment
-     * fallback and {@link #computeLabelReserve}. Keep in sync with the value
-     * in {@code ScorePainter.drawText}.
-     */
-    private static final double LABEL_CHAR_WIDTH_RATIO = 0.55;
-
-    /**
      * Small trailing gap (in staff-line gaps) added after the longest label
      * so labels never abut the system left barline.
      */
@@ -62,7 +55,7 @@ public final class TextBlockLayout {
         double consumed = 0.0;
 
         String workTitle = score.workTitle().orElse(null);
-        if (workTitle != null && !workTitle.isBlank()) {
+        if (workTitle != null && !workTitle.isBlank() && options.isVisible(MarkingCategory.TITLE)) {
             double fontSize = gap * 2.4;
             texts.add(new TextPlacement(workTitle, centerX, y + fontSize,
                     fontSize, TextPlacement.Align.CENTER, MarkingCategory.TITLE));
@@ -71,7 +64,8 @@ public final class TextBlockLayout {
             consumed += advance;
         }
         String movement = score.movementTitle().orElse(null);
-        if (movement != null && !movement.isBlank() && !movement.equals(workTitle)) {
+        if (movement != null && !movement.isBlank() && !movement.equals(workTitle)
+                && options.isVisible(MarkingCategory.SUBTITLE)) {
             double fontSize = gap * 1.6;
             texts.add(new TextPlacement(movement, centerX, y + fontSize,
                     fontSize, TextPlacement.Align.CENTER, MarkingCategory.SUBTITLE));
@@ -83,7 +77,7 @@ public final class TextBlockLayout {
         // Creator rows: composer/arranger/transcriber to the right, lyricist/
         // poet/translator to the left; any other role stacks left below.
         List<Creator> creators = score.creators();
-        if (!creators.isEmpty()) {
+        if (!creators.isEmpty() && options.isVisible(MarkingCategory.CREATOR)) {
             List<Creator> rightColumn = new ArrayList<>();
             List<Creator> leftColumn = new ArrayList<>();
             for (Creator creator : creators) {
@@ -152,7 +146,7 @@ public final class TextBlockLayout {
     public static double layoutSectionTitle(List<PartInfo> parts, int rowStart, double staffTop,
                                      LayoutOptions options, List<TextPlacement> texts) {
         String sectionTitle = sectionTitleAt(parts, rowStart);
-        if (sectionTitle == null || !options.showTitleTexts()) {
+        if (sectionTitle == null || !options.showTitleTexts() || !options.isVisible(MarkingCategory.SUBTITLE)) {
             return staffTop;
         }
         double gap = options.staffLineGap();
@@ -194,7 +188,7 @@ public final class TextBlockLayout {
      */
     public static double layoutPostTuneText(Score score, LayoutOptions options,
                                      double startY, List<TextPlacement> texts) {
-        if (!options.showTitleTexts()) {
+        if (!options.showTitleTexts() || !options.isVisible(MarkingCategory.LYRIC)) {
             return startY;
         }
         boolean any = false;
@@ -229,10 +223,9 @@ public final class TextBlockLayout {
      * abbreviation and there are no {@link PartGroup part groups}, so
      * single-part unlabeled scores keep their pre-existing layout.
      *
-     * <p>Width estimate for labels matches the
-     * {@code 0.55 * fontSize * length} heuristic used by
-     * {@code ScorePainter} for right/center alignment, then adds a small
-     * padding so labels never abut the system barline. Group-name /
+     * <p>Labels are measured with {@link LayoutOptions#textMetrics()} -
+     * the same metrics the painter aligns text with - plus a small padding
+     * so labels never abut the system barline. Group-name /
      * abbreviation lengths participate in the same longest-label search.
      * When any group is declared we additionally reserve room for the
      * bracket columns themselves, sized so the outermost column sits
@@ -249,19 +242,18 @@ public final class TextBlockLayout {
                                       int maxGroupNestingDepth) {
         double gap = options.staffLineGap();
         double fontSize = gap * PART_LABEL_FONT_SIZE_GAPS;
-        int longest = 0;
+        double widest = 0.0;
         for (Part part : score.parts()) {
-            longest = Math.max(longest, labelLength(part.name()));
-            longest = Math.max(longest, labelLength(part.abbreviation()));
+            widest = Math.max(widest, labelWidth(part.name(), fontSize, options));
+            widest = Math.max(widest, labelWidth(part.abbreviation(), fontSize, options));
         }
         for (PartGroup group : score.partGroups()) {
-            longest = Math.max(longest, labelLength(group.name()));
-            longest = Math.max(longest, labelLength(group.abbreviation()));
+            widest = Math.max(widest, labelWidth(group.name(), fontSize, options));
+            widest = Math.max(widest, labelWidth(group.abbreviation(), fontSize, options));
         }
         double labelReserve = 0.0;
-        if (longest > 0) {
-            labelReserve = longest * LABEL_CHAR_WIDTH_RATIO * fontSize
-                    + gap * PART_LABEL_TRAILING_PAD_GAPS;
+        if (widest > 0 && options.isVisible(MarkingCategory.PART_LABEL)) {
+            labelReserve = widest + gap * PART_LABEL_TRAILING_PAD_GAPS;
         }
         double bracketReserve = 0.0;
         if (maxGroupNestingDepth >= 0) {
@@ -271,11 +263,12 @@ public final class TextBlockLayout {
     }
 
     /**
-     * Length of a label for the purposes of {@link #computeLabelReserve}
-     * width estimation. Returns {@code 0} for {@code null} or blank strings.
+     * Width of a label as measured by the layout's
+     * {@link LayoutOptions#textMetrics()}; {@code 0} for {@code null} or
+     * blank labels.
      */
-    private static int labelLength(String label) {
-        return label == null || label.isBlank() ? 0 : label.length();
+    private static double labelWidth(String label, double fontSize, LayoutOptions options) {
+        return label == null || label.isBlank() ? 0.0 : options.textMetrics().width(label, fontSize);
     }
 
     /**
@@ -302,7 +295,7 @@ public final class TextBlockLayout {
         } else {
             labelText = part.abbreviation() != null ? part.abbreviation() : part.name();
         }
-        if (labelText == null || labelText.isBlank()) {
+        if (labelText == null || labelText.isBlank() || !options.isVisible(MarkingCategory.PART_LABEL)) {
             return;
         }
         double gap = options.staffLineGap();

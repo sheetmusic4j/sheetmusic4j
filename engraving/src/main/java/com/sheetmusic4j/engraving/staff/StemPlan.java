@@ -1,10 +1,13 @@
 package com.sheetmusic4j.engraving.staff;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
+import com.sheetmusic4j.core.model.MeasureTiming;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
@@ -17,8 +20,10 @@ import static com.sheetmusic4j.engraving.staff.StaffGeometry.staffStep;
  * Stem direction and tip for every time-consuming element of one measure on
  * one staff, indexed parallel to that element list.
  *
- * <p>Elements are first given their own {@link #naturalStem} independently;
- * then every level-1 beam run (start..end) is flattened to share one
+ * <p>Elements are first given their own {@link #naturalStem} independently
+ * - in a measure where several voices share the staff, odd voices stem up
+ * and even voices stem down unless the source says otherwise - then every
+ * level-1 beam run (start..end, tracked per voice) is flattened to share one
  * direction and one tip - the extreme across every note the whole run
  * spans, not just each note's own pitch - so every stem in the run reaches
  * the identical beam height instead of each independently falling short of
@@ -73,40 +78,51 @@ public final class StemPlan {
         return top;
     }
 
-    public static StemPlan compute(List<MusicElement> elements, Clef clef, double staffY, LayoutOptions options) {
+    /**
+     * @param elements    the staff's placed elements in this measure, in
+     *                    document order
+     * @param polyphonic  whether more than one voice shares the staff here
+     */
+    public static StemPlan compute(List<MusicElement> elements, Clef clef, double staffY, LayoutOptions options,
+                                   boolean polyphonic) {
         double[] outTipY = new double[elements.size()];
         boolean[] outStemUp = new boolean[elements.size()];
         boolean[] outHasStem = new boolean[elements.size()];
         for (int i = 0; i < elements.size(); i++) {
-            NaturalStem ns = naturalStem(elements.get(i), staffY, clef, options);
+            NaturalStem ns = naturalStem(elements.get(i), staffY, clef, options, polyphonic);
             outHasStem[i] = ns != null;
             if (ns != null) {
                 outStemUp[i] = ns.stemUp();
                 outTipY[i] = ns.tipY();
             }
         }
-        int runStart = -1;
+        Map<MeasureTiming.VoiceKey, Integer> runStarts = new HashMap<>();
         for (int i = 0; i < elements.size(); i++) {
             Beam.State state = beamLevelState(elements.get(i), 1);
             if (state == null) {
                 continue;
             }
+            MeasureTiming.VoiceKey voice = MeasureTiming.voiceKey(elements.get(i));
+            Integer open = runStarts.get(voice);
             if (state == Beam.State.BEGIN) {
-                runStart = i;
-            } else if (state == Beam.State.END && runStart >= 0) {
+                runStarts.put(voice, i);
+            } else if (state == Beam.State.END && open != null) {
+                int runStart = open;
                 boolean up = outStemUp[runStart];
                 double extreme = outTipY[runStart];
                 for (int j = runStart; j <= i; j++) {
-                    if (!outHasStem[j]) {
+                    if (!outHasStem[j] || !MeasureTiming.voiceKey(elements.get(j)).equals(voice)) {
                         continue;
                     }
                     extreme = up ? Math.min(extreme, outTipY[j]) : Math.max(extreme, outTipY[j]);
                 }
                 for (int j = runStart; j <= i; j++) {
-                    outTipY[j] = extreme;
-                    outStemUp[j] = up;
+                    if (MeasureTiming.voiceKey(elements.get(j)).equals(voice)) {
+                        outTipY[j] = extreme;
+                        outStemUp[j] = up;
+                    }
                 }
-                runStart = -1;
+                runStarts.remove(voice);
             }
         }
         return new StemPlan(outTipY, outStemUp, outHasStem);
@@ -124,14 +140,16 @@ public final class StemPlan {
      * isolation, or {@code null} for elements with no stem (rests,
      * whole/breve/long/maxima notes): explicit {@code <stem>} wins when
      * present (checking every note of a chord, since MusicXML normally
-     * repeats the same value on each), otherwise the pitch farthest from
+     * repeats the same value on each), otherwise the voice decides when
+     * several voices share the staff, otherwise the pitch farthest from
      * the middle line decides. The tip is measured from the pitch
      * <em>extreme</em> in the stem direction - the highest notehead for
      * stem-up, lowest for stem-down - across every note of a chord, not
      * just one, so it's guaranteed to clear every notehead the stem passes
      * through.
      */
-    private static NaturalStem naturalStem(MusicElement element, double staffY, Clef clef, LayoutOptions options) {
+    private static NaturalStem naturalStem(MusicElement element, double staffY, Clef clef, LayoutOptions options,
+                                           boolean polyphonic) {
         double gap = options.staffLineGap();
         if (element instanceof Note note) {
             if (!hasStemForType(note.type())) {
@@ -139,7 +157,9 @@ public final class StemPlan {
             }
             int step = staffStep(note.pitch(), clef);
             double y = staffY + step * (gap / 2.0);
-            boolean stemUp = note.stemUp().orElse(step >= MIDDLE_LINE_STAFF_STEP);
+            boolean stemUp = note.stemUp().orElse(polyphonic
+                    ? note.voice() % 2 == 1
+                    : step >= MIDDLE_LINE_STAFF_STEP);
             double tipY = stemUp ? y - gap * STEM_LENGTH_GAPS : y + gap * STEM_LENGTH_GAPS;
             return new NaturalStem(stemUp, tipY);
         }
@@ -169,7 +189,9 @@ public final class StemPlan {
             }
             boolean stemUp = explicitStemUp != null
                     ? explicitStemUp
-                    : staffStep(outerNote.pitch(), clef) >= MIDDLE_LINE_STAFF_STEP;
+                    : polyphonic
+                        ? chord.voice() % 2 == 1
+                        : staffStep(outerNote.pitch(), clef) >= MIDDLE_LINE_STAFF_STEP;
             double tipY = stemUp ? minY - gap * STEM_LENGTH_GAPS : maxY + gap * STEM_LENGTH_GAPS;
             return new NaturalStem(stemUp, tipY);
         }

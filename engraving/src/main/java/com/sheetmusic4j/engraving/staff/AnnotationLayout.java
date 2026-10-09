@@ -72,7 +72,7 @@ public final class AnnotationLayout {
     /**
      * Multiplier applied to the staff-line gap to derive the lyric font size.
      */
-    private static final double LYRIC_FONT_SIZE_GAPS = 1.4;
+    public static final double LYRIC_FONT_SIZE_GAPS = 1.4;
 
     /**
      * Distance (in staff-line gaps) from the bottom staff line to the baseline
@@ -115,6 +115,9 @@ public final class AnnotationLayout {
      *                    (see {@link StemPlan#topY})
      */
     public void placeDirection(Direction direction, double x, double measureTopY) {
+        if (!options.isVisible(ScoreAnalysis.categoryOf(direction.type()))) {
+            return;
+        }
         double gap = options.staffLineGap();
         Placement side = ScoreAnalysis.resolvedPlacement(direction);
         DirectionType type = direction.type();
@@ -185,6 +188,9 @@ public final class AnnotationLayout {
      * appear on the same measure.
      */
     public void placeHarmony(Harmony harmony, double x) {
+        if (!options.isVisible(MarkingCategory.CHORD_SYMBOL)) {
+            return;
+        }
         double gap = options.staffLineGap();
         double fontSize = gap * HARMONY_FONT_SIZE_GAPS;
         double y = staffY - gap * HARMONY_OFFSET_GAPS;
@@ -199,7 +205,7 @@ public final class AnnotationLayout {
      */
     public void placeLyrics(MusicElement element, double noteX) {
         Note note = ScoreAnalysis.lyricCarrier(element);
-        if (note == null || note.lyrics().isEmpty()) {
+        if (note == null || note.lyrics().isEmpty() || !options.isVisible(MarkingCategory.LYRIC)) {
             return;
         }
         double gap = options.staffLineGap();
@@ -214,7 +220,7 @@ public final class AnnotationLayout {
             if (text.isEmpty()) {
                 continue;
             }
-            String rendered = text + syllabicSuffix(lyric.syllabic());
+            String rendered = lyricText(lyric);
             texts.add(new TextPlacement(rendered, noteX, baselineY, fontSize,
                     TextPlacement.Align.CENTER, MarkingCategory.LYRIC));
         }
@@ -236,6 +242,14 @@ public final class AnnotationLayout {
         };
         String dotSuffix = metronome.dotted() ? "." : "";
         return beatChar + dotSuffix + " = " + metronome.perMinute();
+    }
+
+    /**
+     * A syllable as drawn: its text plus a trailing hyphen when the word
+     * continues.
+     */
+    public static String lyricText(Lyric lyric) {
+        return lyric.text() + syllabicSuffix(lyric.syllabic());
     }
 
     /**

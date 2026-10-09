@@ -13,6 +13,7 @@ import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import com.sheetmusic4j.core.io.ScoreWriter;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
@@ -22,11 +23,13 @@ import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
+import com.sheetmusic4j.core.model.Fraction;
 import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MeasureTiming;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
@@ -44,13 +47,14 @@ import com.sheetmusic4j.core.model.Tuplet;
  * Produces the subset understood by {@link MusicXmlReader} so that a
  * read/write/read round-trip is structurally stable.
  */
-public final class MusicXmlWriter {
+public final class MusicXmlWriter implements ScoreWriter {
 
     private static final String NEWLINE = System.lineSeparator();
     private static final String INDENT = "  ";
 
     private final XMLOutputFactory factory = XMLOutputFactory.newFactory();
 
+    @Override
     public void write(Score score, Path path) {
         try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(path))) {
             write(score, out);
@@ -59,6 +63,7 @@ public final class MusicXmlWriter {
         }
     }
 
+    @Override
     public void write(Score score, OutputStream out) {
         try {
             XMLStreamWriter writer = factory.createXMLStreamWriter(out, StandardCharsets.UTF_8.name());
@@ -183,16 +188,35 @@ public final class MusicXmlWriter {
 
     private void writePart(IndentingWriter w, Part part) throws XMLStreamException {
         w.start("part", "id", part.id());
+        int divisions = 1;
         for (Measure measure : part.measures()) {
-            writeMeasure(w, measure);
+            if (measure.attributes().isPresent() && measure.attributes().get().divisions().isPresent()) {
+                divisions = measure.attributes().get().divisions().get();
+            }
+            writeMeasure(w, measure, divisions);
         }
         w.end("part");
     }
 
-    private void writeMeasure(IndentingWriter w, Measure measure) throws XMLStreamException {
+    /**
+     * Write a measure's elements in document order. Before each element the
+     * write position is moved to the element's onset (see
+     * {@link MeasureTiming}) with {@code <backup>} or {@code <forward>}, which
+     * is how MusicXML expresses several voices and staves within one
+     * measure. Invisible rests are not written: the {@code <forward>} in
+     * front of the next element of their voice covers the gap.
+     */
+    private void writeMeasure(IndentingWriter w, Measure measure, int divisions) throws XMLStreamException {
         w.start("measure", "number", Integer.toString(measure.number()));
         measure.attributes().ifPresent(a -> writeAttributes(w, a));
-        for (MusicElement element : measure.elements()) {
+        MeasureTiming timing = MeasureTiming.of(measure);
+        Fraction position = Fraction.ZERO;
+        for (MeasureTiming.Timed timed : timing.elements()) {
+            MusicElement element = timed.element();
+            if (element instanceof Rest rest && !rest.visible()) {
+                continue;
+            }
+            position = moveTo(w, position, timed.onset(), divisions);
             if (element instanceof Note note) {
                 writeNote(w, note, false);
             } else if (element instanceof Rest rest) {
@@ -207,9 +231,29 @@ public final class MusicXmlWriter {
             } else if (element instanceof Harmony harmony) {
                 writeHarmony(w, harmony);
             }
+            if (MeasureTiming.isTimed(element)) {
+                position = timed.end();
             }
-            w.end("measure");
-            }
+        }
+        w.end("measure");
+    }
+
+    /**
+     * Emit a {@code <backup>} or {@code <forward>} moving the write position
+     * from {@code position} to {@code target}; returns {@code target}.
+     */
+    private Fraction moveTo(IndentingWriter w, Fraction position, Fraction target, int divisions)
+            throws XMLStreamException {
+        int cmp = target.compareTo(position);
+        if (cmp != 0) {
+            Fraction gap = cmp < 0 ? position.minus(target) : target.minus(position);
+            String element = cmp < 0 ? "backup" : "forward";
+            w.start(element);
+            w.textElement("duration", Long.toString(gap.times(divisions).round()));
+            w.end(element);
+        }
+        return target;
+    }
 
     private void writeAttributes(IndentingWriter w, Attributes attributes) {
         try {
@@ -259,8 +303,37 @@ public final class MusicXmlWriter {
         }
     }
 
+    /**
+     * Emit the note's grace-note run as {@code <grace/>} notes (eighths with
+     * a slash-free stem, no duration) ahead of the note itself.
+     */
+    private void writeGraceNotes(IndentingWriter w, Note note) throws XMLStreamException {
+        for (Pitch pitch : note.graceNotes()) {
+            w.start("note");
+            w.emptyElement("grace");
+            w.start("pitch");
+            w.textElement("step", pitch.step().name());
+            if (pitch.alter() != 0) {
+                w.textElement("alter", Integer.toString(pitch.alter()));
+            }
+            w.textElement("octave", Integer.toString(pitch.octave()));
+            w.end("pitch");
+            if (note.voice() != 1) {
+                w.textElement("voice", Integer.toString(note.voice()));
+            }
+            w.textElement("type", "eighth");
+            if (note.staff() > 1) {
+                w.textElement("staff", Integer.toString(note.staff()));
+            }
+            w.end("note");
+        }
+    }
+
     private void writeNote(IndentingWriter w, Note note, boolean chord) {
         try {
+            if (!chord) {
+                writeGraceNotes(w, note);
+            }
             w.start("note");
             if (chord) {
                 w.emptyElement("chord");
@@ -279,6 +352,9 @@ public final class MusicXmlWriter {
             }
             if (note.tieStop()) {
                 w.startEmptyWithAttr("tie", "type", "stop");
+            }
+            if (note.voice() != 1) {
+                w.textElement("voice", Integer.toString(note.voice()));
             }
             w.textElement("type", note.type().xmlValue());
             for (int i = 0; i < note.dots(); i++) {
@@ -494,6 +570,9 @@ public final class MusicXmlWriter {
             w.start("note");
             w.emptyElement("rest");
             w.textElement("duration", Integer.toString(rest.duration().value()));
+            if (rest.voice() != 1) {
+                w.textElement("voice", Integer.toString(rest.voice()));
+            }
             w.textElement("type", rest.type().xmlValue());
             for (int i = 0; i < rest.dots(); i++) {
                 w.emptyElement("dot");

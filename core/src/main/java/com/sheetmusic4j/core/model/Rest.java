@@ -13,6 +13,8 @@ public final class Rest implements MusicElement {
     private final List<Tuplet> tuplets;
     private final TimeModification timeModification;
     private final int staff;
+    private final int voice;
+    private final boolean visible;
 
     private Rest(Builder builder) {
         this.duration = builder.duration;
@@ -21,6 +23,8 @@ public final class Rest implements MusicElement {
         this.tuplets = List.copyOf(builder.tuplets);
         this.timeModification = builder.timeModification;
         this.staff = builder.staff;
+        this.voice = builder.voice;
+        this.visible = builder.visible;
     }
 
     @Override
@@ -42,6 +46,24 @@ public final class Rest implements MusicElement {
      */
     public int staff() {
         return staff;
+    }
+
+    /**
+     * The voice (1-based) this rest belongs to within its staff, see
+     * {@link Note#voice()}. Defaults to {@code 1}.
+     */
+    public int voice() {
+        return voice;
+    }
+
+    /**
+     * Whether the rest is printed. An invisible rest (MusicXML
+     * {@code print-object="no"} or {@code <forward>}, ABC {@code x},
+     * LilyPond {@code s}) only advances its voice's time - it fills the gap
+     * before a voice that starts mid-measure. Defaults to {@code true}.
+     */
+    public boolean visible() {
+        return visible;
     }
 
     /**
@@ -71,6 +93,8 @@ public final class Rest implements MusicElement {
         private java.util.List<Tuplet> tuplets = new java.util.ArrayList<>();
         private TimeModification timeModification;
         private int staff = 1;
+        private int voice = 1;
+        private boolean visible = true;
 
         public Builder duration(Duration duration) {
             this.duration = duration;
@@ -104,6 +128,16 @@ public final class Rest implements MusicElement {
 
         public Builder staff(int staff) {
             this.staff = staff;
+            return this;
+        }
+
+        public Builder voice(int voice) {
+            this.voice = voice;
+            return this;
+        }
+
+        public Builder visible(boolean visible) {
+            this.visible = visible;
             return this;
         }
 

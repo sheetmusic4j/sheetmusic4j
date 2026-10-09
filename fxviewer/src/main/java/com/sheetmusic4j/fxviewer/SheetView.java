@@ -8,6 +8,7 @@ import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.NoteAnchor;
+import com.sheetmusic4j.engraving.layout.StaffLayout;
 import com.sheetmusic4j.engraving.layout.SystemLayout;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
 import com.sheetmusic4j.engraving.placement.TextPlacement;
@@ -22,9 +23,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import java.util.EnumSet;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * A JavaFX control that renders a {@link Score}. It engraves the score into a
@@ -75,6 +74,13 @@ public final class SheetView extends Region {
      * {@link #updateWindow(boolean)}).
      */
     private static final double MAX_CANVAS_DIMENSION = 8000.0;
+
+    /**
+     * How far (in staff-line gaps) content may extend beyond the anchor y
+     * it is filtered by - ledger lines, stems, lyrics below a staff - when
+     * deciding what to paint into the current window.
+     */
+    private static final double WINDOW_SLACK_GAPS = 12.0;
 
     private final Canvas canvas = new Canvas();
     private final Engraver engraver = new Engraver();
@@ -135,31 +141,7 @@ public final class SheetView extends Region {
     private final BooleanProperty bracketsVisible =
             new SimpleBooleanProperty(this, "bracketsVisible", true);
 
-    /**
-     * Live map of per-element highlight colours. Uses identity comparisons
-     * on keys so a caller can hold the exact {@link MusicElement} instance
-     * returned by the model builder as the map key. Mutations trigger a
-     * cheap {@link #repaint()} - no re-engrave.
-     */
-    private final ObservableMap<MusicElement, Color> noteHighlights =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
-    /**
-     * Live map of per-element background colours. Independent of
-     * {@link #noteHighlights} - an element can carry a tint, a
-     * background, both, or neither.
-     */
-    private final ObservableMap<MusicElement, Color> noteBackgrounds =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
-    /**
-     * Live map of per-element accidental overlays. Independent of
-     * {@link #noteHighlights} and {@link #noteBackgrounds} - an element
-     * can carry any combination of tint, background, and accidental
-     * overlay.
-     */
-    private final ObservableMap<MusicElement, Accidental> noteAccidentals =
-            FXCollections.observableMap(new IdentityHashMap<>());
+    private final NoteDecorations decorations = new NoteDecorations(renderer, this::repaint);
 
     private Score score;
     private LayoutResult layout;
@@ -175,26 +157,9 @@ public final class SheetView extends Region {
         viewportHeight.addListener((obs, oldV, newV) -> updateWindow(false));
         hiddenTextCategories.addListener((SetChangeListener<MarkingCategory>) change -> repaint());
         bracketsVisible.addListener((obs, oldV, newV) -> repaint());
-        noteHighlights.addListener((MapChangeListener<MusicElement, Color>) change -> repaint());
-        noteBackgrounds.addListener((MapChangeListener<MusicElement, Color>) change -> repaint());
-        noteAccidentals.addListener((MapChangeListener<MusicElement, Accidental>) change -> repaint());
-        renderer.setNoteColorProvider(this::highlightFor);
-        renderer.setNoteBackgroundProvider(this::backgroundFor);
-        renderer.setNoteAccidentalProvider(this::accidentalFor);
         setMinSize(200, 120);
         // Initial empty canvas at the default width; setScore replaces it.
         rebuild();
-    }
-
-    private static Optional<RenderColor> toRenderColor(Color c) {
-        if (c == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new RenderColor(
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255),
-                (int) Math.round(c.getOpacity() * 255)));
     }
 
     /**
@@ -351,7 +316,7 @@ public final class SheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Color> noteHighlights() {
-        return noteHighlights;
+        return decorations.highlights();
     }
 
     /**
@@ -368,7 +333,7 @@ public final class SheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Color> noteBackgrounds() {
-        return noteBackgrounds;
+        return decorations.backgrounds();
     }
 
     /**
@@ -399,32 +364,7 @@ public final class SheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Accidental> noteAccidentals() {
-        return noteAccidentals;
-    }
-
-    /**
-     * Look up the highlight colour for the given source element, if any.
-     * Wrapped as a {@link RenderColor} so the surface-agnostic
-     * {@link ScorePainter} can apply it without dragging in JavaFX.
-     */
-    private Optional<RenderColor> highlightFor(MusicElement element) {
-        return toRenderColor(noteHighlights.get(element));
-    }
-
-    /**
-     * Look up the background colour for the given source element, if any.
-     * Honours the JavaFX colour's opacity so callers can drive
-     * semi-transparent highlights straight from a {@link Color} literal.
-     */
-    private Optional<RenderColor> backgroundFor(MusicElement element) {
-        return toRenderColor(noteBackgrounds.get(element));
-    }
-
-    /**
-     * Look up the accidental overlay for the given source element, if any.
-     */
-    private Optional<Accidental> accidentalFor(MusicElement element) {
-        return Optional.ofNullable(noteAccidentals.get(element));
+        return decorations.accidentals();
     }
 
     /**
@@ -509,21 +449,36 @@ public final class SheetView extends Region {
     }
 
     /**
-     * Restricts a full layout to just the systems/texts/note-anchors whose
-     * y-position falls within {@code [startY, endY)}, so the Canvas only
-     * pays the drawing cost for its own window instead of the whole score.
+     * Restricts a full layout to just the systems/texts/note-anchors that
+     * overlap {@code [startY, endY)}, so the Canvas only pays the drawing
+     * cost for its own window instead of the whole score. A system counts
+     * when any part of it - from its top down to its last staff plus room
+     * for ledger lines and lyrics - reaches into the window, so a tall
+     * system that starts just above the window still draws its lower half.
+     * Texts and anchors get the same slack; whatever lands outside the
+     * canvas is simply clipped.
      */
     private static LayoutResult sliceForWindow(LayoutResult full, double startY, double endY) {
+        double slack = WINDOW_SLACK_GAPS * LayoutOptions.defaults().staffLineGap();
         List<SystemLayout> systems = full.systems().stream()
-                .filter(s -> s.y() >= startY && s.y() < endY)
+                .filter(s -> s.y() < endY && systemBottom(s) + slack >= startY)
                 .toList();
         List<TextPlacement> texts = full.texts().stream()
-                .filter(t -> t.y() >= startY && t.y() < endY)
+                .filter(t -> t.y() + slack >= startY && t.y() - slack < endY)
                 .toList();
         List<NoteAnchor> anchors = full.noteAnchors().stream()
-                .filter(a -> a.y() >= startY && a.y() < endY)
+                .filter(a -> a.y() + slack >= startY && a.y() - slack < endY)
                 .toList();
         return new LayoutResult(systems, texts, anchors, full.width(), endY - startY);
+    }
+
+    /**
+     * Y of the bottom line of a system's last staff, or its top when it has
+     * no staves.
+     */
+    private static double systemBottom(SystemLayout system) {
+        List<StaffLayout> staves = system.staves();
+        return staves.isEmpty() ? system.y() : staves.get(staves.size() - 1).lineY(4);
     }
 
     /**

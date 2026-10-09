@@ -2,8 +2,7 @@ package com.sheetmusic4j.engraving.analysis;
 
 import java.util.List;
 
-import com.sheetmusic4j.core.model.Measure;
-import com.sheetmusic4j.core.model.MusicElement;
+import com.sheetmusic4j.core.model.Fraction;
 import com.sheetmusic4j.core.model.TimeSignature;
 
 /**
@@ -24,52 +23,36 @@ public final class MeasureTimeline {
      * Compute the per-measure musical onset and duration across the whole
      * score.
      *
-     * <p>For each measure we take the maximum sum-of-durations found in any
-     * part's single staff — filtering by staff so a grand-staff part
-     * doesn't double-count its two staves' elements — then fall back to
+     * <p>A measure lasts as long as its longest voice in any part (see
+     * {@link com.sheetmusic4j.core.model.MeasureTiming}), falling back to
      * the effective time signature when the source measure carries no
      * time-consuming elements at all (a rare case, e.g. a measure that only
-     * contains a tempo direction).
+     * contains a tempo direction). Onsets are summed exactly, so long scores
+     * full of tuplets don't drift.
      */
     public static MeasureTimeline of(List<PartInfo> parts, int measureCount) {
         double[] start = new double[measureCount];
         double[] duration = new double[measureCount];
-        double cursor = 0.0;
+        Fraction cursor = Fraction.ZERO;
         for (int idx = 0; idx < measureCount; idx++) {
-            double dur = 0.0;
+            Fraction dur = Fraction.ZERO;
             for (PartInfo p : parts) {
-                if (idx >= p.measures().size()) {
-                    continue;
-                }
-                Measure m = p.measures().get(idx);
-                int staves = p.staveCount();
-                for (int staffIdx = 0; staffIdx < staves; staffIdx++) {
-                    int staffNumber = staffIdx + 1;
-                    double staffDur = 0.0;
-                    for (MusicElement e : m.elements()) {
-                        if (!ScoreAnalysis.isTimed(e)) {
-                            continue;
-                        }
-                        if (staves > 1 && ScoreAnalysis.elementStaff(e) != staffNumber) {
-                            continue;
-                        }
-                        staffDur += e.duration().inQuarters();
-                    }
-                    dur = Math.max(dur, staffDur);
+                if (idx < p.measures().size()) {
+                    dur = Fraction.max(dur, p.timing(idx).duration());
                 }
             }
-            if (dur == 0.0) {
+            if (dur.isZero()) {
                 for (PartInfo p : parts) {
                     TimeSignature ts = p.timeAt(idx);
                     if (ts != null) {
-                        dur = ts.beats() * 4.0 / ts.beatType();
+                        dur = Fraction.of(ts.beats() * 4L, ts.beatType());
                         break;
                     }
                 }
             }
-            start[idx] = cursor;
-            duration[idx] = dur;
-            cursor += dur;
+            start[idx] = cursor.toDouble();
+            duration[idx] = dur.toDouble();
+            cursor = cursor.plus(dur);
         }
         return new MeasureTimeline(start, duration);
     }

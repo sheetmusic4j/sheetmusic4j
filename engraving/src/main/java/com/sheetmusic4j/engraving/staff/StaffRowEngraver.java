@@ -1,17 +1,19 @@
 package com.sheetmusic4j.engraving.staff;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
-import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MeasureTiming;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Pitch;
@@ -30,7 +32,8 @@ import com.sheetmusic4j.engraving.placement.GlyphPlacement;
 import com.sheetmusic4j.engraving.placement.GraceNotePlacement;
 import com.sheetmusic4j.engraving.placement.StemPlacement;
 import com.sheetmusic4j.engraving.placement.TextPlacement;
-import com.sheetmusic4j.engraving.spacing.HorizontalSpacing;
+import com.sheetmusic4j.engraving.spacing.MeasureColumns;
+import com.sheetmusic4j.engraving.spacing.MeasureStart;
 import com.sheetmusic4j.engraving.staff.StemPlan.Stem;
 
 import static com.sheetmusic4j.engraving.glyph.GlyphMapper.accidentalGlyph;
@@ -41,7 +44,7 @@ import static com.sheetmusic4j.engraving.glyph.GlyphMapper.noteheadGlyph;
 import static com.sheetmusic4j.engraving.glyph.GlyphMapper.restGlyph;
 import static com.sheetmusic4j.engraving.staff.StaffGeometry.clefAnchorLineIndex;
 import static com.sheetmusic4j.engraving.staff.StaffGeometry.noteheadHalfWidth;
-import static com.sheetmusic4j.engraving.staff.StaffGeometry.restAnchorStaffStep;
+import static com.sheetmusic4j.engraving.staff.StaffGeometry.restStaffStep;
 import static com.sheetmusic4j.engraving.staff.StaffGeometry.staffStep;
 
 /**
@@ -133,19 +136,19 @@ public final class StaffRowEngraver {
     private double layoutMeasure(int idx, double cursorX, boolean firstMeasureInRow, double timeZeroX) {
         Measure measure = partInfo.measures().get(idx);
         Clef currentClef = partInfo.clefAt(idx, staffIdx);
+        MeasureColumns columns = row.columns(idx);
         double gap = options.staffLineGap();
 
         double measureStartQ = row.timeline().start(idx);
         double measureDurQ = row.timeline().duration(idx);
         double measureWidth = row.rowWidths().get(idx - row.start());
-        if (row.pixelsPerQuarter() > 0) {
+        if (row.isStrip()) {
             // Notes are placed by absolute onset (independent of measure
             // geometry), so we're free to sit the barline at the MIDPOINT
-            // of the whitespace between this measure's last note and the
-            // next downbeat: right edge = time (measureEnd - lastDur/2).
-            double lastDurQ = HorizontalSpacing.lastTimedDurationQuarters(measure, staffNumber,
-                    partInfo.staveCount());
-            double barlineX = timeZeroX + (measureStartQ + measureDurQ - lastDurQ / 2.0) * row.pixelsPerQuarter();
+            // of the whitespace between the system's last onset in this
+            // measure and the next downbeat.
+            double trailingQ = Math.max(0.0, Math.min(columns.trailingQuarters(), measureDurQ));
+            double barlineX = timeZeroX + (measureStartQ + measureDurQ - trailingQ / 2.0) * row.pixelsPerQuarter();
             measureWidth = Math.max(barlineX - cursorX, gap);
         }
         measureLayouts.add(new MeasureLayout(measure.number(), cursorX, measureWidth,
@@ -153,190 +156,142 @@ public final class StaffRowEngraver {
                 measure.barline().orElse(null), measure.leadingRepeatStart(),
                 measure.ending().orElse(null)));
 
-        double contentStart = placeMeasureStart(measure, idx, cursorX, firstMeasureInRow, currentClef);
+        placeMeasureStart(MeasureStart.of(partInfo, staffIdx, idx, firstMeasureInRow, row.firstRow(), options),
+                idx, cursorX, currentClef);
+        // Every staff places its notes from the system-wide content start,
+        // at its onset's column, so simultaneous notes line up across
+        // staves and voices.
+        double contentStart = cursorX + row.contentOffset(idx);
+        double[] columnX = row.isStrip()
+                ? columns.stripPositions(timeZeroX, measureStartQ, row.pixelsPerQuarter())
+                : columns.pagePositions(contentStart, (cursorX + measureWidth) - contentStart - gap);
 
-        List<MusicElement> elements = ScoreAnalysis.filterElementsForStaff(
-                measure.elements(), staffNumber, partInfo.staveCount());
-        // Directions and harmony markers occupy zero time but appear in
-        // document order among notes/rests/chords. We size the measure
-        // only by the time-consuming elements and then map each zero-
-        // duration element to the x of the *next* time-consuming element
-        // (falling back to the last one, or to the content start).
-        List<MusicElement> timedElements = new ArrayList<>(elements.size());
-        for (MusicElement element : elements) {
-            if (ScoreAnalysis.isTimed(element)) {
-                timedElements.add(element);
+        List<MeasureTiming.Timed> elements = elementsOnThisStaff(partInfo.timing(idx));
+        List<MusicElement> placed = new ArrayList<>(elements.size());
+        Set<Integer> voices = new HashSet<>();
+        for (MeasureTiming.Timed timed : elements) {
+            if (MeasureColumns.isPlaced(timed.element())) {
+                placed.add(timed.element());
+                voices.add(MeasureTiming.voiceKey(timed.element()).voice());
             }
         }
-        double[] timedX;
-        if (row.pixelsPerQuarter() > 0) {
-            timedX = HorizontalSpacing.stripPositions(timedElements, timeZeroX, measureStartQ,
-                    row.pixelsPerQuarter());
-        } else {
-            double available = (cursorX + measureWidth) - contentStart - gap;
-            timedX = HorizontalSpacing.pagePositions(timedElements, contentStart, available, gap);
-        }
-        StemPlan stemPlan = StemPlan.compute(timedElements, currentClef, staffY, options);
+        boolean polyphonic = voices.size() > 1;
+        StemPlan stemPlan = StemPlan.compute(placed, currentClef, staffY, options, polyphonic);
         double measureTopY = stemPlan.topY(staffY);
 
-        double localOnset = 0.0;
-        for (int i = 0, timedIdx = 0; i < elements.size(); i++) {
-            MusicElement element = elements.get(i);
+        int placedIdx = 0;
+        for (MeasureTiming.Timed timed : elements) {
+            MusicElement element = timed.element();
+            double elementX = columns.xAt(columnX, timed.onset(), contentStart);
             if (element instanceof Direction direction) {
-                // Fallback x when the measure has no time-consuming elements
-                // at all (rare, but possible for a measure that only carries
-                // directions) is the content start.
-                double dirX = anchorX(timedX, timedIdx, contentStart);
                 if (staffIdx == 0) {
-                    annotations.placeDirection(direction, dirX, measureTopY);
+                    annotations.placeDirection(direction, elementX, measureTopY);
                 }
             } else if (element instanceof Harmony harmony) {
-                double harmonyX = anchorX(timedX, timedIdx, contentStart);
                 if (staffIdx == 0) {
-                    annotations.placeHarmony(harmony, harmonyX);
+                    annotations.placeHarmony(harmony, elementX);
                 }
-            } else {
-                int ti = timedIdx++;
-                double noteX = timedX[ti];
-                Stem stem = stemPlan.stem(ti);
-                placeElement(element, noteX, currentClef, stem);
+            } else if (MeasureColumns.isPlaced(element)) {
+                Stem stem = stemPlan.stem(placedIdx++);
+                placeElement(element, elementX, currentClef, stem, polyphonic);
                 if (element instanceof Note note && !note.graceNotes().isEmpty()) {
-                    graceNotePlacements.add(buildGraceNotePlacement(note, noteX, currentClef));
+                    graceNotePlacements.add(buildGraceNotePlacement(note, elementX, currentClef));
                 }
                 if (staffIdx == 0) {
-                    annotations.placeLyrics(element, noteX);
+                    annotations.placeLyrics(element, elementX);
                 }
-                double elDur = element.duration().inQuarters();
-                NoteAnchors.emit(anchors, element, noteX, staffY, currentClef, options,
-                        stem.tipY(), stem.present(), new NoteAnchors.Position(partIndex, systemStaffIndex,
-                                measure.number(), measureStartQ + localOnset, elDur));
-                localOnset += elDur;
+                NoteAnchors.emit(anchors, element, elementX, staffY, currentClef, options,
+                        stem.tipY(), stem.present(), polyphonic,
+                        new NoteAnchors.Position(partIndex, systemStaffIndex, measure.number(),
+                                measureStartQ + timed.onset().toDouble(), element.duration().inQuarters()));
             }
         }
         return measureWidth;
     }
 
     /**
-     * Reserve room at the start of a measure - for repeat dots, and on the
-     * row's first measure for the clef / key / time-signature header, which
-     * is placed here too - and return the x where the measure's content
-     * starts.
+     * The measure's elements that belong on this staff, in document order.
+     * In a single-staff part that is all of them; in a multi-staff part,
+     * directions and chord symbols (which carry no staff) go with staff 1.
      */
-    private double placeMeasureStart(Measure measure, int idx, double cursorX, boolean firstMeasureInRow,
-                                     Clef currentClef) {
+    private List<MeasureTiming.Timed> elementsOnThisStaff(MeasureTiming timing) {
+        if (partInfo.staveCount() <= 1) {
+            return timing.elements();
+        }
+        List<MeasureTiming.Timed> result = new ArrayList<>();
+        for (MeasureTiming.Timed timed : timing.elements()) {
+            if (MeasureTiming.voiceKey(timed.element()).staff() == staffNumber) {
+                result.add(timed);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Draw what goes at the start of a measure - on the row's first measure
+     * the clef, key signature and time signature - at the offsets computed
+     * by {@link MeasureStart}.
+     */
+    private void placeMeasureStart(MeasureStart start, int idx, double cursorX, Clef currentClef) {
         double gap = options.staffLineGap();
-        double contentStart = cursorX + gap;
-        // A repeat-start mark (bare "|:") or the right-hand dots of a
-        // combined end+start repeat ("::") on the *previous* measure
-        // both draw repeat dots just past this measure's left edge (see
-        // ScorePainter#drawBarline); reserve the same clearance the
-        // first-measure-in-row branch below already gives its own
-        // leading repeat mark, or the dots land on top of - and the
-        // first note collides with - that clearance-free content start.
-        boolean midRowRepeatClearance = !firstMeasureInRow && measure.leadingRepeatStart();
-        if (!midRowRepeatClearance && !firstMeasureInRow && idx > 0) {
-            Barline previousBarline = partInfo.measures().get(idx - 1).barline().orElse(null);
-            midRowRepeatClearance = previousBarline != null
-                    && (previousBarline.repeat() == Barline.Repeat.FORWARD
-                        || previousBarline.repeat() == Barline.Repeat.BOTH);
-        }
-        if (midRowRepeatClearance) {
-            contentStart = cursorX + gap * 1.6;
-        }
-        if (firstMeasureInRow) {
-            KeySignature currentKey = partInfo.keyAt(idx);
-            TimeSignature currentTime = partInfo.timeAt(idx);
+        if (!Double.isNaN(start.clefOffset())) {
             double clefY = staffY + clefAnchorLineIndex(currentClef) * gap;
-            // A leading repeat-start mark (thick line + dots) is drawn at
-            // the staff's left edge (see ScorePainter#drawStaff); leave
-            // room for it before the clef instead of drawing on top of it.
-            double leadingRepeatClearance = measure.leadingRepeatStart()
-                    ? gap * 1.6 : 0.0;
-            if (options.showClef()) {
-                glyphs.add(new GlyphPlacement(cursorX + leadingRepeatClearance + gap * 0.5,
-                        clefY, clefGlyph(currentClef), 4));
-                contentStart = cursorX + leadingRepeatClearance + gap * 4;
-            }
-            if (options.showKeySignature() && currentKey.fifths() != 0) {
-                contentStart = placeKeySignature(currentKey, currentClef, contentStart);
-            }
-            boolean showTime = (idx == 0 && row.firstRow()) || partInfo.timeChangedAt(idx);
-            if (options.showTimeSignature() && currentTime != null && showTime) {
-                contentStart = placeTimeSignature(currentTime, contentStart);
-            }
+            glyphs.add(new GlyphPlacement(cursorX + start.clefOffset(), clefY, clefGlyph(currentClef), 4));
         }
-        return contentStart;
+        if (!Double.isNaN(start.keyOffset())) {
+            placeKeySignature(partInfo.keyAt(idx), currentClef, cursorX + start.keyOffset());
+        }
+        if (!Double.isNaN(start.timeOffset())) {
+            placeTimeSignature(partInfo.timeAt(idx), cursorX + start.timeOffset());
+        }
     }
 
     /**
-     * Resolve the x-anchor for a zero-duration element (direction or
-     * harmony). Chord symbols and directions anchor to the next time-
-     * consuming element's x; when the source places them after the last
-     * note we fall back to that last x, and when the whole measure carries
-     * no timed elements we fall back to {@code fallbackX}.
+     * Place the key-signature accidentals from {@code startX}.
      */
-    private static double anchorX(double[] timedX, int nextTimedIdx, double fallbackX) {
-        if (nextTimedIdx < timedX.length) {
-            return timedX[nextTimedIdx];
-        }
-        if (timedX.length > 0) {
-            return timedX[timedX.length - 1];
-        }
-        return fallbackX;
-    }
-
-    /**
-     * Place the key-signature accidentals from {@code startX} and return
-     * the x after them.
-     */
-    private double placeKeySignature(KeySignature key, Clef clef, double startX) {
-        int[] positions = KeySignatureLayout.positions(clef, key);
+    private void placeKeySignature(KeySignature key, Clef clef, double startX) {
         Glyph glyph = KeySignatureLayout.glyphFor(key);
-        double advance = options.staffLineGap() * 1.1;
+        double advance = MeasureStart.keySignatureAdvance(options);
         double gx = startX;
-        for (int step : positions) {
+        for (int step : KeySignatureLayout.positions(clef, key)) {
             double gy = staffY + step * (options.staffLineGap() / 2.0);
             glyphs.add(new GlyphPlacement(gx, gy, glyph, step));
             gx += advance;
         }
-        return gx + options.staffLineGap() * 0.5;
     }
 
     /**
-     * Place the time-signature digits from {@code startX} and return the x
-     * after them.
+     * Place the time-signature digits from {@code startX}.
      */
-    private double placeTimeSignature(TimeSignature timeSignature, double startX) {
+    private void placeTimeSignature(TimeSignature timeSignature, double startX) {
         String beats = Integer.toString(timeSignature.beats());
         String beatType = Integer.toString(timeSignature.beatType());
         int maxLen = Math.max(beats.length(), beatType.length());
-        double digitWidth = options.staffLineGap() * 1.4;
+        double digitWidth = MeasureStart.timeDigitWidth(options);
         double topY = staffY + options.staffLineGap();
         double bottomY = staffY + options.staffLineGap() * 3;
 
-        double gx = startX;
         int lenDiff = maxLen - beats.length();
         for (int i = 0; i < beats.length(); i++) {
             int digit = beats.charAt(i) - '0';
-            glyphs.add(new GlyphPlacement(gx + (i + lenDiff) * digitWidth, topY,
+            glyphs.add(new GlyphPlacement(startX + (i + lenDiff) * digitWidth, topY,
                     Glyph.timeDigit(digit), 2));
         }
         lenDiff = maxLen - beatType.length();
         for (int i = 0; i < beatType.length(); i++) {
             int digit = beatType.charAt(i) - '0';
-            glyphs.add(new GlyphPlacement(gx + (i + lenDiff) * digitWidth, bottomY,
+            glyphs.add(new GlyphPlacement(startX + (i + lenDiff) * digitWidth, bottomY,
                     Glyph.timeDigit(digit), 6));
         }
-        return startX + maxLen * digitWidth + options.staffLineGap();
     }
 
-    private void placeElement(MusicElement element, double noteX, Clef clef, Stem stem) {
+    private void placeElement(MusicElement element, double noteX, Clef clef, Stem stem, boolean polyphonic) {
         if (element instanceof Note note) {
             placeNote(note, noteX, clef, stem, false, true, true);
         } else if (element instanceof Chord chord) {
             placeChord(chord, noteX, clef, stem);
         } else if (element instanceof Rest rest) {
-            placeRest(rest, noteX);
+            placeRest(rest, noteX, polyphonic);
         }
     }
 
@@ -388,16 +343,16 @@ public final class StaffRowEngraver {
         }
     }
 
-    private void placeRest(Rest rest, double noteX) {
+    private void placeRest(Rest rest, double noteX, boolean polyphonic) {
         double gap = options.staffLineGap();
-        int restStep = restAnchorStaffStep(rest.type());
+        int restStep = restStaffStep(rest, polyphonic);
         double y = staffY + restStep * (gap / 2.0);
         glyphs.add(new GlyphPlacement(noteX, y, restGlyph(rest.type()), restStep, MarkingCategory.NOTE, rest));
         for (int i = 0; i < rest.dots(); i++) {
             double dx = noteX + gap * 1.2 + i * gap * 0.6;
             glyphs.add(new GlyphPlacement(dx, y, Glyph.AUG_DOT, restStep, MarkingCategory.NOTE, rest));
         }
-        spans.tuplets(rest.tuplets(), rest.timeModification(), noteX, y);
+        spans.tuplets(rest.voice(), rest.tuplets(), rest.timeModification(), noteX, y);
     }
 
     /**
@@ -466,7 +421,7 @@ public final class StaffRowEngraver {
                 glyphs.add(new GlyphPlacement(stemX, stem.tipY(), flag, staffStep, MarkingCategory.NOTE, note));
             }
         } else if (note.isBeamed() && stem.present() && isBeamDataResponsible) {
-            spans.beams(note.beams(), stemX, stem.tipY(), stem.up());
+            spans.beams(note.voice(), note.beams(), stemX, stem.tipY(), stem.up());
         }
 
         spans.tie(note, staffStep, noteX, y);
@@ -476,7 +431,7 @@ public final class StaffRowEngraver {
         // over a beamed run clears the beam itself, not just the noteheads -
         // the beam commonly reaches well above the highest notehead.
         double tupletTrackedY = stem.present() && stem.up() ? Math.min(stem.tipY(), y) : y;
-        spans.tuplets(note.tuplets(), note.timeModification(), noteX, tupletTrackedY);
+        spans.tuplets(note.voice(), note.tuplets(), note.timeModification(), noteX, tupletTrackedY);
     }
 
     /**
@@ -532,7 +487,7 @@ public final class StaffRowEngraver {
         double gap = options.staffLineGap();
         List<Pitch> pitches = note.graceNotes();
         int count = pitches.size();
-        double spacing = gap * HorizontalSpacing.GRACE_NOTE_SPACING_GAPS;
+        double spacing = gap * MeasureColumns.GRACE_NOTE_SPACING_GAPS;
         List<Double> xs = new ArrayList<>(count);
         List<Double> ys = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {

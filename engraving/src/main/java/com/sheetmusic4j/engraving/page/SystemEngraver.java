@@ -13,6 +13,8 @@ import com.sheetmusic4j.engraving.layout.SystemLayout;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
 import com.sheetmusic4j.engraving.placement.TextPlacement;
 import com.sheetmusic4j.engraving.spacing.HorizontalSpacing;
+import com.sheetmusic4j.engraving.spacing.MeasureColumns;
+import com.sheetmusic4j.engraving.spacing.MeasureStart;
 import com.sheetmusic4j.engraving.spacing.RowPlan;
 import com.sheetmusic4j.engraving.staff.RowContext;
 import com.sheetmusic4j.engraving.staff.StaffGeometry;
@@ -62,6 +64,7 @@ public final class SystemEngraver {
     private final PartGroupLayout partGroups;
     private final RowPlan plan;
     private final MeasureTimeline timeline;
+    private final List<MeasureColumns> columns;
     private final double contentLeft;
     private final List<TextPlacement> texts;
     private final List<NoteAnchor> anchors;
@@ -73,18 +76,21 @@ public final class SystemEngraver {
      * @param partGroups  the score's part groups
      * @param plan        row ranges and measure widths
      * @param timeline    musical onset and duration per measure index
+     * @param columns     onset columns per measure index
      * @param contentLeft x of the staff content edge / system barline
      * @param texts       page-level text collector
      * @param anchors     note-anchor collector
      */
     public SystemEngraver(LayoutOptions options, List<PartInfo> parts, PartGroupLayout partGroups,
-                          RowPlan plan, MeasureTimeline timeline, double contentLeft,
+                          RowPlan plan, MeasureTimeline timeline, List<MeasureColumns> columns,
+                          double contentLeft,
                           List<TextPlacement> texts, List<NoteAnchor> anchors) {
         this.options = options;
         this.parts = parts;
         this.partGroups = partGroups;
         this.plan = plan;
         this.timeline = timeline;
+        this.columns = columns;
         this.contentLeft = contentLeft;
         this.texts = texts;
         this.anchors = anchors;
@@ -111,7 +117,7 @@ public final class SystemEngraver {
         List<Double> rowWidths = HorizontalSpacing.stretchRowWidths(plan.baseWidths(), start, endExclusive,
                 Math.max(0, plan.staffWidth() - rowHeader), rowHeader);
         RowContext row = new RowContext(options, rowIdx == 0, start, endExclusive, rowWidths, rowHeader,
-                timeline, plan.pixelsPerQuarter());
+                timeline, plan.pixelsPerQuarter(), columns, contentOffsets(start, endExclusive, rowIdx == 0));
 
         List<StaffLayout> stavesForRow = new ArrayList<>();
         List<BracketPlacement> bracketsForRow = new ArrayList<>();
@@ -168,6 +174,29 @@ public final class SystemEngraver {
         systems.add(new SystemLayout(0, y, plan.systemWidth(),
                 stavesForRow, barlinesForRow, bracketsForRow));
         return staffTop;
+    }
+
+    /**
+     * For each measure of the row, the latest content start across every
+     * staff of every part (see {@link MeasureStart}), so all staves place
+     * their notes from the same x.
+     */
+    private double[] contentOffsets(int start, int endExclusive, boolean firstRow) {
+        double[] offsets = new double[endExclusive - start];
+        for (int idx = start; idx < endExclusive; idx++) {
+            double offset = options.staffLineGap();
+            for (PartInfo p : parts) {
+                if (idx >= p.measures().size()) {
+                    continue;
+                }
+                for (int staffIdx = 0; staffIdx < p.staveCount(); staffIdx++) {
+                    offset = Math.max(offset,
+                            MeasureStart.of(p, staffIdx, idx, idx == start, firstRow, options).contentOffset());
+                }
+            }
+            offsets[idx - start] = offset;
+        }
+        return offsets;
     }
 
     /**

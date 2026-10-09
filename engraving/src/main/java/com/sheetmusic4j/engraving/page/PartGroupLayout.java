@@ -144,7 +144,7 @@ public final class PartGroupLayout {
             } else {
                 labelText = group.abbreviation() != null ? group.abbreviation() : group.name();
             }
-            if (labelText != null && !labelText.isBlank()) {
+            if (labelText != null && !labelText.isBlank() && options.isVisible(MarkingCategory.PART_LABEL)) {
                 double labelY = (topY + bottomY) / 2.0 + fontSize / 2.0;
                 texts.add(new TextPlacement(labelText, columnX, labelY,
                         fontSize, TextPlacement.Align.RIGHT, MarkingCategory.PART_LABEL));

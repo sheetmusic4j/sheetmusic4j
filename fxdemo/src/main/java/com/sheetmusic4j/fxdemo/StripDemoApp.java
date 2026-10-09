@@ -9,17 +9,20 @@ import java.util.Locale;
 import java.util.Set;
 
 import com.sheetmusic4j.core.io.ScoreFile;
+import com.sheetmusic4j.core.io.ScoreFormat;
+import com.sheetmusic4j.fxdemo.ui.Ui;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.NoteAnchor;
-import com.sheetmusic4j.fxviewer.NoteBackgroundStyle;
+import com.sheetmusic4j.render.NoteBackgroundStyle;
 import com.sheetmusic4j.fxviewer.StripSheetView;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -296,24 +299,46 @@ public final class StripDemoApp extends Application {
     private void chooseAndOpen() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Open score");
-        chooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("Score files",
-                        "*.musicxml", "*.xml", "*.mxl", "*.mid", "*.midi", "*.abc", "*.gp"),
-                new FileChooser.ExtensionFilter("MusicXML", "*.musicxml", "*.xml", "*.mxl"),
-                new FileChooser.ExtensionFilter("MIDI", "*.mid", "*.midi"),
-                new FileChooser.ExtensionFilter("GuitarPro", "*.gp"),
-                new FileChooser.ExtensionFilter("ABC", "*.abc"),
-                new FileChooser.ExtensionFilter("All files", "*.*"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Score files",
+                ScoreFile.formats().stream().flatMap(f -> Ui.globs(f).stream()).toList()));
+        for (ScoreFormat format : ScoreFile.formats()) {
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(format.name(), Ui.globs(format)));
+        }
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("All files", "*.*"));
         var file = chooser.showOpenDialog(stage);
         if (file != null) {
             openFile(file.toPath());
         }
     }
 
+    /**
+     * Load a score on a background thread - large files take a while to
+     * parse - then show it.
+     */
     private void openFile(Path path) {
+        stopPlayback();
+        statusLabel.setText("Loading " + path.getFileName() + " ...");
+        Task<Score> task = new Task<>() {
+            @Override
+            protected Score call() {
+                return ScoreFile.load(path);
+            }
+        };
+        task.setOnSucceeded(e -> showScore(path, task.getValue()));
+        task.setOnFailed(e -> {
+            Throwable ex = task.getException();
+            logger.error("Failed to open score: {}", path, ex);
+            statusLabel.setText("Failed to open " + path.getFileName() + ": "
+                    + (ex != null ? ex.getMessage() : "unknown error"));
+            updateButtons();
+        });
+        Thread thread = new Thread(task, "sheetmusic4j-score-loader");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void showScore(Path path, Score score) {
         try {
-            stopPlayback();
-            Score score = ScoreFile.load(path);
             stripView.setScore(score);
             recomputeAnchors();
             playhead = 0;

@@ -4,6 +4,7 @@ import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.ClefSign;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Pitch;
+import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Step;
 
 /**
@@ -22,6 +23,13 @@ public final class StaffGeometry {
      * Number of horizontal lines on a standard staff.
      */
     public static final int STAFF_LINES = 5;
+
+    /**
+     * Staff steps a rest moves away from the middle when several voices
+     * share the staff: up for odd voices, down for even ones, so the voices'
+     * rests don't collide.
+     */
+    private static final int POLYPHONIC_REST_SHIFT_STEPS = 4;
 
     private StaffGeometry() {
     }
@@ -68,6 +76,18 @@ public final class StaffGeometry {
             case HALF -> 4;
             default -> 4;
         };
+    }
+
+    /**
+     * Staff-step position of a rest, shifted out of the way of the other
+     * voice when several voices share the staff.
+     */
+    public static int restStaffStep(Rest rest, boolean polyphonic) {
+        int step = restAnchorStaffStep(rest.type());
+        if (polyphonic) {
+            step += rest.voice() % 2 == 1 ? -POLYPHONIC_REST_SHIFT_STEPS : POLYPHONIC_REST_SHIFT_STEPS;
+        }
+        return step;
     }
 
     public static double noteheadHalfWidth(NoteType type, double gap) {

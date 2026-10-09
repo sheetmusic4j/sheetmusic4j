@@ -35,6 +35,10 @@
         </dependency>
         <dependency>
             <groupId>com.sheetmusic4j</groupId>
+            <artifactId>render</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sheetmusic4j</groupId>
             <artifactId>fxviewer</artifactId>
         </dependency>
         <dependency>

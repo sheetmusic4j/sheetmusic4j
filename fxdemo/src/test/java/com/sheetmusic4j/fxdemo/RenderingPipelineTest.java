@@ -11,11 +11,11 @@ import org.junit.jupiter.api.Test;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.musicxml.MusicXmlReader;
 import com.sheetmusic4j.fxdemo.image.ImageSimilarity;
-import com.sheetmusic4j.fxdemo.render.HeadlessScoreImage;
+import com.sheetmusic4j.render.awt.HeadlessScoreImage;
 
 /**
  * Non-comparative smoke test for the headless engraving pipeline. Ensures the
- * production {@link com.sheetmusic4j.fxviewer.ScorePainter} produces a non-blank
+ * production {@link com.sheetmusic4j.render.ScorePainter} produces a non-blank
  * image for the shared {@code c-major-scale.musicxml} fixture, independent of
  * whether a reference image is available.
  *

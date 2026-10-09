@@ -1,9 +1,7 @@
 package com.sheetmusic4j.engraving.analysis;
 
-import java.util.ArrayList;
 import java.util.List;
 
-import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Direction;
@@ -14,6 +12,7 @@ import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
+import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Placement;
 
@@ -24,15 +23,6 @@ import com.sheetmusic4j.core.model.Placement;
 public final class ScoreAnalysis {
 
     private ScoreAnalysis() {
-    }
-
-    /**
-     * Whether the element consumes musical time. {@link Direction}s and
-     * {@link Harmony} markers occupy zero time and are anchored to the x of
-     * a neighbouring time-consuming element instead.
-     */
-    public static boolean isTimed(MusicElement element) {
-        return !(element instanceof Direction) && !(element instanceof Harmony);
     }
 
     /**
@@ -48,6 +38,20 @@ public final class ScoreAnalysis {
         return direction.type() instanceof DirectionType.Dynamic || direction.type() instanceof DirectionType.Wedge
                 ? Placement.BELOW
                 : Placement.ABOVE;
+    }
+
+    /**
+     * The marking category a direction is drawn as, or {@code null} for a
+     * hairpin, which belongs to no hideable category.
+     */
+    public static MarkingCategory categoryOf(DirectionType type) {
+        return switch (type) {
+            case DirectionType.Words words -> MarkingCategory.DIRECTION;
+            case DirectionType.Metronome metronome -> MarkingCategory.TEMPO;
+            case DirectionType.Dynamic dynamic -> MarkingCategory.DYNAMIC;
+            case DirectionType.Rehearsal rehearsal -> MarkingCategory.REHEARSAL;
+            default -> null;
+        };
     }
 
     /**
@@ -149,40 +153,6 @@ public final class ScoreAnalysis {
     }
 
     /**
-     * For a multi-staff part, keep only elements that belong to the given
-     * staff number. For a single-staff part (or elements with a default
-     * staff assignment), all elements pass through.
-     */
-    public static List<MusicElement> filterElementsForStaff(List<MusicElement> elements, int staffNumber, int totalStaves) {
-        if (totalStaves <= 1) {
-            return elements;
-        }
-        List<MusicElement> filtered = new ArrayList<>(elements.size());
-        for (MusicElement element : elements) {
-            if (elementStaff(element) == staffNumber) {
-                filtered.add(element);
-            }
-        }
-        return filtered;
-    }
-
-    public static int elementStaff(MusicElement element) {
-        if (element instanceof Note note) {
-            return note.staff();
-        }
-        if (element instanceof Chord chord) {
-            for (Note note : chord.notes()) {
-                return note.staff();
-            }
-        }
-        if (element instanceof Rest rest) {
-            return rest.staff();
-        }
-        // Directions carry no explicit staff assignment; default to staff 1.
-        return 1;
-    }
-
-    /**
      * Extract the lyric-carrying note from a measure element. For a plain
      * {@link Note} that is the note itself; for a {@link Chord} MusicXML
      * convention puts lyrics on the primary (first) note; rests do not
@@ -222,30 +192,6 @@ public final class ScoreAnalysis {
             }
         }
         return false;
-    }
-
-    /**
-     * Whether the element's displayed accidental is a double sharp/flat -
-     * these draw almost twice as wide as the other accidentals and need
-     * more reserved space, see
-     * {@code HorizontalSpacing.DOUBLE_ACCIDENTAL_RESERVE_GAPS}.
-     */
-    public static boolean isDoubleAccidental(MusicElement e) {
-        if (e instanceof Note note) {
-            return isDouble(note.displayedAccidental().orElse(null));
-        }
-        if (e instanceof Chord chord) {
-            for (Note note : chord.notes()) {
-                if (isDouble(note.displayedAccidental().orElse(null))) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean isDouble(Accidental accidental) {
-        return accidental == Accidental.DOUBLE_SHARP || accidental == Accidental.DOUBLE_FLAT;
     }
 
     /**

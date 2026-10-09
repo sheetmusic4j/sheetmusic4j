@@ -15,7 +15,8 @@ Sheetmusic4J requires **Java 21** or higher.
 |-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
 | `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, and ABC import/export | No                |
 | `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                               | No                |
-| `fxviewer`  | JavaFX Canvas rendering of a `LayoutResult` using a SMuFL-compliant music font                                                                            | Yes               |
+| `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font, plus headless rendering to images (AWT)                                   | No                |
+| `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`) that draw a `LayoutResult` on a `Canvas`                                                                  | Yes               |
 | `fxdemo`    | Standalone JavaFX demo application for loading and inspecting scores                                                                                      | Yes               |
 
 ### Sheetmusic Terminology
@@ -37,10 +38,15 @@ renders, so you can point at something in a screenshot and know exactly which cl
 * Pure layout math (no JavaFX) that positions staves, measures, clefs, and notes from a `Score`, so it can be
   unit-tested headlessly and reused by any renderer
 
+### Render
+
+* `ScorePainter` draws a `LayoutResult` through a `RenderSurface` abstraction, so the same drawing logic serves JavaFX
+  and headless rendering
+* `HeadlessScoreImage` renders a `Score` to a `BufferedImage` without a display
+
 ### FX Viewer
 
-* `SheetView`, a JavaFX `Region` that renders a `Score` on a `Canvas`
-* Drawing logic is shared with headless test rendering through a `RenderSurface` abstraction
+* `SheetView`, a JavaFX `Region` that renders a `Score` on a `Canvas`, and `StripSheetView`, a one-line play-along view
 
 ### FX Demo
 

@@ -1,5 +1,10 @@
 package com.sheetmusic4j.fxviewer;
 
+import com.sheetmusic4j.render.RenderColor;
+import com.sheetmusic4j.render.RenderSurface;
+import com.sheetmusic4j.render.ScorePainter;
+import com.sheetmusic4j.render.SmuflGlyphs;
+
 import java.io.InputStream;
 
 import javafx.scene.canvas.GraphicsContext;
@@ -127,7 +132,7 @@ public final class FxRenderSurface implements RenderSurface {
             return bravuraTemplate == null ? null : bravuraTemplate;
         }
         bravuraAttempted = true;
-        try (InputStream in = FxRenderSurface.class.getResourceAsStream(SmuflGlyphs.BRAVURA_RESOURCE)) {
+        try (InputStream in = SmuflGlyphs.openBravura()) {
             if (in == null) {
                 return null;
             }

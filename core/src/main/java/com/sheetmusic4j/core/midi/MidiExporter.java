@@ -12,13 +12,17 @@ import javax.sound.midi.Sequence;
 import javax.sound.midi.ShortMessage;
 import javax.sound.midi.Track;
 
+import com.sheetmusic4j.core.io.ScoreWriter;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Chord;
+import com.sheetmusic4j.core.model.Fraction;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MeasureTiming;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Score;
+import com.sheetmusic4j.core.model.TimeSignature;
 
 /**
  * Exports a {@link Score} to a Standard MIDI File (format 1), one track per part.
@@ -27,7 +31,7 @@ import com.sheetmusic4j.core.model.Score;
  * score (defaulting to 480 PPQ). Note start/duration come from each element's
  * {@link com.sheetmusic4j.core.model.Duration}. A single tempo meta event is emitted.
  */
-public final class MidiExporter {
+public final class MidiExporter implements ScoreWriter {
 
     private static final int DEFAULT_DIVISIONS = 480;
     private static final int DEFAULT_VELOCITY = 80;
@@ -51,6 +55,16 @@ public final class MidiExporter {
         }
     }
 
+    @Override
+    public void write(Score score, Path path) {
+        toMidi(score, path);
+    }
+
+    @Override
+    public void write(Score score, OutputStream out) {
+        toMidi(score, out);
+    }
+
     public Sequence toSequence(Score score) {
         int divisions = resolveDivisions(score);
         try {
@@ -62,11 +76,17 @@ public final class MidiExporter {
                     track.add(tempoEvent(DEFAULT_TEMPO_BPM));
                     tempoWritten = true;
                 }
-                long tick = 0;
+                Fraction measureStart = Fraction.ZERO;
+                TimeSignature time = null;
                 for (Measure measure : part.measures()) {
-                    for (MusicElement element : measure.elements()) {
-                        tick = writeElement(track, element, tick);
+                    if (measure.attributes().isPresent() && measure.attributes().get().timeSignature().isPresent()) {
+                        time = measure.attributes().get().timeSignature().get();
                     }
+                    MeasureTiming timing = MeasureTiming.of(measure);
+                    for (MeasureTiming.Timed timed : timing.elements()) {
+                        writeElement(track, timed.element(), measureStart.plus(timed.onset()), divisions);
+                    }
+                    measureStart = measureStart.plus(measureLength(timing, time));
                 }
             }
             return sequence;
@@ -75,8 +95,27 @@ public final class MidiExporter {
         }
     }
 
-    private long writeElement(Track track, MusicElement element, long tick) throws InvalidMidiDataException {
-        long duration = element.duration().value();
+    /**
+     * Length of a measure: its notes' extent, or - for a measure without any
+     * time-consuming element - the time signature's length.
+     */
+    private static Fraction measureLength(MeasureTiming timing, TimeSignature time) {
+        if (timing.duration().isPositive() || time == null) {
+            return timing.duration();
+        }
+        return Fraction.of(time.beats() * 4L, time.beatType());
+    }
+
+    /**
+     * Add note on/off events for a note or chord starting at {@code onset}
+     * quarter notes from the start of the piece. Rests and zero-duration
+     * markings produce no events. Dynamic-to-velocity conversion is a
+     * follow-up.
+     */
+    private void writeElement(Track track, MusicElement element, Fraction onset, int ticksPerQuarter)
+            throws InvalidMidiDataException {
+        long tick = onset.times(ticksPerQuarter).round();
+        long duration = element.duration().quarters().times(ticksPerQuarter).round();
         if (element instanceof Note note) {
             addNote(track, note.pitch().toMidiNumber(), tick, duration);
         } else if (element instanceof Chord chord) {
@@ -84,9 +123,6 @@ public final class MidiExporter {
                 addNote(track, note.pitch().toMidiNumber(), tick, duration);
             }
         }
-        // Rests and Directions (zero duration) simply leave the cursor untouched.
-        // Dynamic-to-velocity conversion is a follow-up.
-        return tick + duration;
     }
 
     private void addNote(Track track, int midiKey, long startTick, long durationTicks)

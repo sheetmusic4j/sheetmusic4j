@@ -24,7 +24,9 @@ import static com.sheetmusic4j.engraving.staff.StaffGeometry.MIDDLE_LINE_STAFF_S
  * Connects placed notes across one staff row: beams, ties, slurs and tuplet
  * brackets. Each kind opens at one element and closes at a later one, so
  * the tracker keeps the open runs and emits a placement when a run closes.
- * Runs still open at the end of the row are dropped.
+ * Beams and tuplets are matched within their own voice, since MusicXML
+ * numbers them per voice. Runs still open at the end of the row are
+ * dropped.
  */
 public final class SpanTracker {
 
@@ -71,16 +73,16 @@ public final class SpanTracker {
      * Emits a {@link BeamPlacement} when a run of {@code BEGIN..CONTINUE*..END}
      * closes.
      */
-    public void beams(List<Beam> noteBeams, double stemTipX, double stemTipY, boolean stemUp) {
+    public void beams(int voice, List<Beam> noteBeams, double stemTipX, double stemTipY, boolean stemUp) {
         for (Beam beam : noteBeams) {
             int level = beam.number();
             switch (beam.state()) {
-                case BEGIN -> openBeams.put(level, new BeamRun(stemTipX, stemTipY, stemUp));
+                case BEGIN -> openBeams.put(key(voice, level), new BeamRun(stemTipX, stemTipY, stemUp));
                 case CONTINUE -> {
                     // no-op: run stays open
                 }
                 case END -> {
-                    BeamRun run = openBeams.remove(level);
+                    BeamRun run = openBeams.remove(key(voice, level));
                     if (run != null) {
                         beams.add(new BeamPlacement(run.startX, run.startY, stemTipX, stemTipY, level, run.stemUp));
                     }
@@ -167,17 +169,17 @@ public final class SpanTracker {
      * start/stop): updates the running minimum y for all currently-open
      * tuplets, then opens or closes a run per {@code elementTuplets}.
      */
-    public void tuplets(List<Tuplet> elementTuplets, Optional<TimeModification> timeModification,
-                 double x, double y) {
+    public void tuplets(int voice, List<Tuplet> elementTuplets, Optional<TimeModification> timeModification,
+                        double x, double y) {
         for (TupletRun run : tupletCandidates.values()) {
             run.minY = Math.min(run.minY, y);
         }
         for (Tuplet t : elementTuplets) {
             if (t.type() == Tuplet.Type.START) {
                 int actualNotes = timeModification.map(TimeModification::actualNotes).orElse(0);
-                tupletCandidates.put(t.number(), new TupletRun(x, y, actualNotes, t.bracket()));
+                tupletCandidates.put(key(voice, t.number()), new TupletRun(x, y, actualNotes, t.bracket()));
             } else {
-                TupletRun run = tupletCandidates.remove(t.number());
+                TupletRun run = tupletCandidates.remove(key(voice, t.number()));
                 if (run != null) {
                     int number = run.actualNotes > 0
                             ? run.actualNotes
@@ -187,6 +189,13 @@ public final class SpanTracker {
                 }
             }
         }
+    }
+
+    /**
+     * Map key for a beam level or tuplet number within one voice.
+     */
+    private static int key(int voice, int number) {
+        return voice * 1000 + number;
     }
 
     private static String pitchKey(Pitch pitch) {

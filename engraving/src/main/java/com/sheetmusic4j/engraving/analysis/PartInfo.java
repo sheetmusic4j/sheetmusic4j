@@ -10,11 +10,14 @@ import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MeasureTiming;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.TimeSignature;
+import com.sheetmusic4j.engraving.glyph.MarkingCategory;
+import com.sheetmusic4j.engraving.layout.LayoutOptions;
 
 /**
  * Per-part immutable metadata plus a per-measure trace of the clef/key/time
@@ -30,13 +33,15 @@ public final class PartInfo {
     private final boolean[] hasDirectionsAbovePerMeasure;
     private final boolean hasDirectionsBelow;
     private final boolean[] hasHarmonyPerMeasure;
+    private final MeasureTiming[] timings;
 
     private PartInfo(Part part, int staveCount,
                      Clef[][] clefs, KeySignature[] keys, TimeSignature[] times,
                      boolean hasLyrics,
                      boolean[] hasDirectionsAbovePerMeasure,
                      boolean hasDirectionsBelow,
-                     boolean[] hasHarmonyPerMeasure) {
+                     boolean[] hasHarmonyPerMeasure,
+                     MeasureTiming[] timings) {
         this.part = part;
         this.staveCount = staveCount;
         this.clefsPerMeasure = clefs;
@@ -46,6 +51,15 @@ public final class PartInfo {
         this.hasDirectionsAbovePerMeasure = hasDirectionsAbovePerMeasure;
         this.hasDirectionsBelow = hasDirectionsBelow;
         this.hasHarmonyPerMeasure = hasHarmonyPerMeasure;
+        this.timings = timings;
+    }
+
+    /**
+     * Onsets of the elements of measure {@code measureIdx}, see
+     * {@link MeasureTiming}.
+     */
+    public MeasureTiming timing(int measureIdx) {
+        return timings[measureIdx];
     }
 
     public boolean hasLyrics() {
@@ -130,7 +144,11 @@ public final class PartInfo {
         return previous.beats() != current.beats() || previous.beatType() != current.beatType();
     }
 
-    public static PartInfo of(Part part) {
+    /**
+     * Analyse a part. Directions, chord symbols and lyrics of categories
+     * {@code options} hides are ignored, so no room is reserved for them.
+     */
+    public static PartInfo of(Part part, LayoutOptions options) {
         int staveCount = determineStaveCount(part);
         List<Clef> defaults = defaultClefsFor(part, staveCount);
 
@@ -176,26 +194,32 @@ public final class PartInfo {
             keys[idx] = currentKey;
             times[idx] = currentTime;
         }
+        MeasureTiming[] timings = new MeasureTiming[n];
+        for (int idx = 0; idx < n; idx++) {
+            timings[idx] = MeasureTiming.of(part.measures().get(idx));
+        }
         boolean[] aboveMask = new boolean[n];
         boolean belowAny = false;
         boolean[] harmonyMask = new boolean[n];
         for (int idx = 0; idx < n; idx++) {
             Measure measure = part.measures().get(idx);
             for (MusicElement element : measure.elements()) {
-                if (element instanceof Direction direction) {
+                if (element instanceof Direction direction
+                        && options.isVisible(ScoreAnalysis.categoryOf(direction.type()))) {
                     Placement resolved = ScoreAnalysis.resolvedPlacement(direction);
                     if (resolved == Placement.ABOVE) {
                         aboveMask[idx] = true;
                     } else if (resolved == Placement.BELOW) {
                         belowAny = true;
                     }
-                } else if (element instanceof Harmony) {
+                } else if (element instanceof Harmony && options.isVisible(MarkingCategory.CHORD_SYMBOL)) {
                     harmonyMask[idx] = true;
                 }
             }
         }
-        return new PartInfo(part, staveCount, clefs, keys, times, scanHasLyrics(part),
-                aboveMask, belowAny, harmonyMask);
+        return new PartInfo(part, staveCount, clefs, keys, times,
+                options.isVisible(MarkingCategory.LYRIC) && scanHasLyrics(part),
+                aboveMask, belowAny, harmonyMask, timings);
     }
 
     /**

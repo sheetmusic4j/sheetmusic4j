@@ -4,23 +4,23 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.sheetmusic4j.core.model.Measure;
-import com.sheetmusic4j.engraving.layout.LayoutMode;
-import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.analysis.MeasureTimeline;
 import com.sheetmusic4j.engraving.analysis.PartInfo;
+import com.sheetmusic4j.engraving.layout.LayoutMode;
+import com.sheetmusic4j.engraving.layout.LayoutOptions;
 
 /**
  * How the score's measures are split into rows (systems) and how wide each
  * measure is before per-row stretching.
  *
  * @param rows             {@code [start, endExclusive)} measure ranges, one per row
- * @param baseWidths       nominal width per measure index
+ * @param baseWidths       natural width per measure index (STRIP: time-proportional width)
  * @param staffWidth       width available to a staff (header + measures)
  * @param systemWidth      total width of a system including margins
  * @param pixelsPerQuarter global time scale in STRIP mode, {@code 0} in PAGE mode
  */
 public record RowPlan(List<int[]> rows, List<Double> baseWidths, double staffWidth, double systemWidth,
-               double pixelsPerQuarter) {
+                      double pixelsPerQuarter) {
 
     /**
      * Plan the rows for the given layout mode.
@@ -30,20 +30,21 @@ public record RowPlan(List<int[]> rows, List<Double> baseWidths, double staffWid
      * pixels-per-quarter, so a constant-tempo playback cursor moves at
      * constant pixel speed (equal note durations occupy equal width, with no
      * notation "fill" gap before a barline), and everything sits on one row.
-     * In PAGE mode measures are sized by their content weight and packed
-     * greedily into rows of {@link LayoutOptions#systemWidth()}.
+     * In PAGE mode measures get their natural width (see
+     * {@link MeasureColumns#naturalWidth}) and are packed greedily into rows
+     * of {@link LayoutOptions#systemWidth()}, each row then being stretched
+     * to fill the system.
      */
-    public static RowPlan of(List<PartInfo> parts, MeasureTimeline timeline, int measureCount,
-                      double contentLeft, LayoutOptions options) {
+    public static RowPlan of(List<PartInfo> parts, List<MeasureColumns> columns, MeasureTimeline timeline,
+                             int measureCount, double contentLeft, LayoutOptions options) {
         double firstSystemHeader = HorizontalSpacing.maxHeaderAdvanceAtRowStart(parts, 0, options);
-        List<Double> sharedMinWidths = HorizontalSpacing.sharedMeasureMinWidths(parts, measureCount, options);
         if (options.layoutMode() == LayoutMode.STRIP) {
-            double pixelsPerQuarter = HorizontalSpacing.stripPixelsPerQuarter(parts, options);
+            double pixelsPerQuarter = HorizontalSpacing.stripPixelsPerQuarter(columns, options);
             List<Double> baseWidths = new ArrayList<>(measureCount);
             double contentSum = 0.0;
             for (int m = 0; m < measureCount; m++) {
                 double durQ = timeline.duration(m);
-                double w = durQ > 0 ? durQ * pixelsPerQuarter : sharedMinWidths.get(m);
+                double w = durQ > 0 ? durQ * pixelsPerQuarter : columns.get(m).minWidth(options);
                 baseWidths.add(w);
                 contentSum += w;
             }
@@ -53,11 +54,12 @@ public record RowPlan(List<int[]> rows, List<Double> baseWidths, double staffWid
             rows.add(new int[]{0, measureCount});
             return new RowPlan(rows, baseWidths, staffWidth, systemWidth, pixelsPerQuarter);
         }
-        List<Double> sharedWeights = HorizontalSpacing.sharedMeasureWeights(parts, measureCount);
         double systemWidth = options.systemWidth();
         double staffWidth = options.systemWidth() - contentLeft - options.rightMargin();
-        List<Double> baseWidths = HorizontalSpacing.distributeWidths(sharedWeights,
-                Math.max(1.0, staffWidth - firstSystemHeader), sharedMinWidths);
+        List<Double> baseWidths = new ArrayList<>(measureCount);
+        for (MeasureColumns measure : columns) {
+            baseWidths.add(measure.naturalWidth(options));
+        }
         List<int[]> rows = computeRowRanges(baseWidths, staffWidth, firstSystemHeader, parts, options);
         return new RowPlan(rows, baseWidths, staffWidth, systemWidth, 0.0);
     }

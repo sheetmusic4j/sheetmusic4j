@@ -18,6 +18,7 @@ public final class Note implements MusicElement {
     private final List<Beam> beams;
     private final List<Lyric> lyrics;
     private final int staff;
+    private final int voice;
     private final List<Articulation> articulations;
     private final List<Slur> slurs;
     private final List<Tuplet> tuplets;
@@ -37,6 +38,7 @@ public final class Note implements MusicElement {
         this.lyrics = List.copyOf(builder.lyrics);
         this.stemUp = builder.stemUp;
         this.staff = builder.staff;
+        this.voice = builder.voice;
         this.articulations = List.copyOf(builder.articulations);
         this.slurs = List.copyOf(builder.slurs);
         this.tuplets = List.copyOf(builder.tuplets);
@@ -110,6 +112,15 @@ public final class Note implements MusicElement {
     }
 
     /**
+     * The voice (1-based) this note belongs to within its staff. Notes of
+     * one voice follow each other in time; different voices on the same
+     * staff sound simultaneously. Defaults to {@code 1}.
+     */
+    public int voice() {
+        return voice;
+    }
+
+    /**
      * Performance articulations (staccato, accent, ...) attached to this
      * note; empty for notes carrying none.
      */
@@ -178,6 +189,7 @@ public final class Note implements MusicElement {
         private java.util.List<Beam> beams = new java.util.ArrayList<>();
         private java.util.List<Lyric> lyrics = new java.util.ArrayList<>();
         private int staff = 1;
+        private int voice = 1;
         private java.util.List<Articulation> articulations = new java.util.ArrayList<>();
         private java.util.List<Slur> slurs = new java.util.ArrayList<>();
         private java.util.List<Tuplet> tuplets = new java.util.ArrayList<>();
@@ -242,6 +254,11 @@ public final class Note implements MusicElement {
 
         public Builder staff(int staff) {
             this.staff = staff;
+            return this;
+        }
+
+        public Builder voice(int voice) {
+            this.voice = voice;
             return this;
         }
 
