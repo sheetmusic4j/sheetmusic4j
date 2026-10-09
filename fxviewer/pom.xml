@@ -14,7 +14,7 @@
     <packaging>jar</packaging>
 
     <name>Sheetmusic4J :: FX Viewer</name>
-    <description>JavaFX controls (SheetView, StripSheetView) that draw a LayoutResult on a Canvas via the render module.</description>
+    <description>JavaFX controls (SheetView, StripSheetView, FlyOverSheetView) that draw a LayoutResult on a Canvas or in 3D via the render module.</description>
 
     <dependencies>
         <dependency>

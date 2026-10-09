@@ -16,8 +16,8 @@ Sheetmusic4J requires **Java 21** or higher.
 | `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, and ABC import/export | No                |
 | `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                                     | No                |
 | `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font, plus headless rendering to images (AWT)                                          | No                |
-| `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`) that draw a `LayoutResult` on a `Canvas`                                                                        | Yes               |
-| `fxdemo`    | Standalone JavaFX demo application for loading and inspecting scores                                                                                            | Yes               |
+| `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`, `FlyOverSheetView`) that draw a `LayoutResult` on a `Canvas` or in 3D                                           | Yes               |
+| `fxdemo`    | Standalone JavaFX demo applications for loading and inspecting scores, plus strip and 3D fly-over showcases                                                     | Yes               |
 
 ### Sheetmusic Terminology
 
@@ -47,12 +47,17 @@ renders, so you can point at something in a screenshot and know exactly which cl
 ### FX Viewer
 
 * `SheetView`, a JavaFX `Region` that renders a `Score` on a `Canvas`, and `StripSheetView`, a one-line play-along view
+* `FlyOverSheetView`, a 3D variant of the strip view: the score lies on a sheet of paper, a perspective camera flies
+  along it while it plays, a glowing ball per voice hops from note to note, and sounding noteheads light up
 
 ### FX Demo
 
 * Opens MusicXML/MIDI/ABC files and displays a debug/inspection pane alongside the rendered score
 * Shows a companion PDF side-by-side (via [pdfviewfx](https://github.com/dlsc-software-consulting-gmbh/PDFViewFX)) when
   one exists next to the loaded file with the same base name
+* "Report Visual Issue..." button to capture rendering problems, see [CONTRIBUTING.md](CONTRIBUTING.md)
+* `StripDemoApp` and `FlyOverDemoApp` showcase the one-line strip view and the 3D fly-over view, with play/pause,
+  tempo, and position controls
 
 ## Requirements
 
@@ -68,8 +73,12 @@ mvn clean install
 ## Run the demo
 
 ```bash
-mvn -pl fxdemo javafx:run
+mvn -pl fxdemo javafx:run              # main demo app (SheetDemoApp)
+mvn -pl fxdemo -Pstrip javafx:run      # one-line strip view (StripDemoApp)
+mvn -pl fxdemo -Pflyover javafx:run    # 3D fly-over view (FlyOverDemoApp)
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a tour of the demo app and how to report rendering issues.
 
 ## Status
 
