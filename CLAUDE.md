@@ -26,7 +26,13 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 2. **`engraving`** — pure layout engine. `Engraver.layout(Score, LayoutOptions)` walks parts/measures and produces a
    `LayoutResult` (`SystemLayout` → `StaffLayout` → `MeasureLayout`/`GlyphPlacement`) as plain doubles + a
    renderer-agnostic `Glyph` enum. No JavaFX, no I/O — this is what makes layout unit-testable headlessly. Vertical note
-   position is computed by `Engraver.staffStep(Pitch, Clef)`.
+   position is computed by `StaffGeometry.staffStep(Pitch, Clef)`. `Engraver` only orchestrates `layout()` (keep it the
+   only class in the root package); the work lives in subpackages: `analysis` (geometry-free score queries: `PartInfo`,
+   `MeasureTimeline`, `ScoreAnalysis`), `spacing` (`HorizontalSpacing`, `RowPlan` row breaking), `page`
+   (`SystemEngraver` assembles each row; titles, part labels, part-group brackets), `staff` (`StaffRowEngraver` lays out one staff of one row, with `StemPlan`,
+   `SpanTracker` for beams/ties/slurs/tuplets, `AnnotationLayout`, `NoteAnchors`, `StaffGeometry`), and
+   `glyph.GlyphMapper`. `LayoutSnapshotTest` hashes the full layout of every sample score; any engraving change shows
+   up there — regenerate with `-Dsheetmusic4j.snapshots.update=true` only when the change is intentional.
 3. **`fxviewer`** — rendering. The drawing logic lives in `ScorePainter`, which draws a `LayoutResult` through the
    `RenderSurface` interface (stroke/fill/oval/text primitives) rather than directly against JavaFX. `FxRenderSurface`
    implements `RenderSurface` for a JavaFX `GraphicsContext`; `SheetView` is the `Region`/`Canvas` control that ties

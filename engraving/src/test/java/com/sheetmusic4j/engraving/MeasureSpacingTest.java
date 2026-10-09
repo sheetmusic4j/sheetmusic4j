@@ -26,6 +26,7 @@ import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.MeasureLayout;
 import com.sheetmusic4j.engraving.layout.StaffLayout;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
+import com.sheetmusic4j.engraving.spacing.HorizontalSpacing;
 
 /**
  * Verifies that dense measures (many short notes) receive proportionally
@@ -45,7 +46,7 @@ class MeasureSpacingTest {
         double m2Width = measures.get(1).width();
         // The first measure width includes the row-start header (clef/key/time),
         // so compare note-spacing capacity by removing that reserve.
-        double header = Engraver.headerAdvance(Clef.treble(), KeySignature.cMajor(),
+        double header = HorizontalSpacing.headerAdvance(Clef.treble(), KeySignature.cMajor(),
                 TimeSignature.fourFour(), options);
         double m1ContentWidth = m1Width - header;
         assertTrue(m2Width > m1ContentWidth * 1.5,
