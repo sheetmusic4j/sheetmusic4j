@@ -63,6 +63,14 @@ public final class ScoreRenderer {
     }
 
     /**
+     * Set the page colour of the underlying painter; {@code null} draws only
+     * the ink. See {@link ScorePainter#setPageColor(RenderColor)}.
+     */
+    public void setPageColor(RenderColor color) {
+        painter.setPageColor(color);
+    }
+
+    /**
      * @return whether brackets are currently drawn by the underlying painter.
      */
     public boolean isBracketsVisible() {

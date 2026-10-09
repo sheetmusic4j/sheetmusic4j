@@ -101,5 +101,12 @@
                 <exec.mainClass>com.sheetmusic4j.fxdemo.StripDemoApp</exec.mainClass>
             </properties>
         </profile>
+        <!-- Run the 3D fly-over showcase: mvn -pl fxdemo -Pflyover javafx:run -->
+        <profile>
+            <id>flyover</id>
+            <properties>
+                <exec.mainClass>com.sheetmusic4j.fxdemo.FlyOverDemoApp</exec.mainClass>
+            </properties>
+        </profile>
     </profiles>
 </project>

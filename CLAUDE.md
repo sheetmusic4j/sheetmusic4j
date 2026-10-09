@@ -50,11 +50,16 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 4. **`fxviewer`** — JavaFX binding. `FxRenderSurface` implements `RenderSurface` for a JavaFX `GraphicsContext`,
    `FxTextMetrics` measures text with the JavaFX font; `SheetView` (page) and `StripSheetView` (one-line, play-along)
    are the `Region`/`Canvas` controls that tie `Engraver` + `ScorePainter` + `FxRenderSurface` together, sharing their
-   per-note overlays through `NoteDecorations`.
+   per-note overlays through `NoteDecorations`. `FlyOverSheetView` is the 3D variant of the strip (JavaFX `SubScene`):
+   the strip's ink is painted once into transparent image tiles (`ScorePainter.setPageColor(null)`) over a coloured
+   paper plane with a travelling light, a perspective camera follows the cursor, and sounding noteheads float above the
+   paper as glowing copies (`ScorePainter.paintNotehead`) along `JumpCurve`, a pure function of time. All colours and
+   sizes are properties. Gradient-filled shapes don't render reliably inside the 3D `SubScene`; bake them into images.
 5. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `SheetDemoLauncher` to avoid classpath
    JavaFX-runtime errors). Lets you open a MusicXML/MIDI file, shows a debug pane (`ScoreInspector`), and shows a
    companion PDF side-by-side via `com.dlsc.pdfviewfx:pdfviewfx` when one exists next to the loaded file (same basename,
-   `.pdf`; resolved by `PdfSibling`).
+   `.pdf`; resolved by `PdfSibling`). `StripDemoApp` (`-Pstrip`) and `FlyOverDemoApp` (`-Pflyover`) showcase the strip
+   and 3D fly-over views.
 
 **Key architectural rule**: the same `ScorePainter` logic is reused for both on-screen JavaFX rendering
 (`FxRenderSurface`) and headless AWT rendering (`AwtRenderSurface` in `render`), by depending

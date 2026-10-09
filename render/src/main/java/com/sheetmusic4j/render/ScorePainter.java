@@ -39,6 +39,8 @@ public final class ScorePainter {
 
     private boolean bracketsVisible = true;
 
+    private RenderColor pageColor = RenderColor.WHITE;
+
     /**
      * Optional per-element colour override. When set, the returned colour
      * (if any) is applied to every glyph/stem whose
@@ -118,6 +120,27 @@ public final class ScorePainter {
         return surface.drawSmuflGlyph(codepoint, placement.x(), placement.y(), sizeHint);
     }
 
+    /**
+     * Draws a single notehead centred on ({@code centerX}, {@code centerY}),
+     * sized for a staff with the given line gap, exactly as {@link #paint}
+     * draws noteheads (no ledger lines). Lets viewers that animate
+     * individual noteheads, such as a 3D fly-over view, reuse the engraved
+     * look with the current fill/stroke colour of the surface.
+     *
+     * @param surface  the surface to draw on
+     * @param glyph    one of the notehead glyphs; other glyphs draw nothing
+     * @param centerX  notehead centre x
+     * @param centerY  notehead centre y
+     * @param lineGap  staff line gap the notehead is sized for
+     */
+    public static void paintNotehead(RenderSurface surface, Glyph glyph, double centerX, double centerY,
+                                     double lineGap) {
+        if (!drawSmuflCentered(surface, glyph, centerX, centerY, lineGap * 4)) {
+            drawNoteheadPrimitive(surface, glyph, new GlyphPlacement(centerX, centerY, glyph, 0),
+                    lineGap * 1.2, lineGap * 0.9);
+        }
+    }
+
     private static void drawNoteheadPrimitive(RenderSurface surface, Glyph g, GlyphPlacement glyph,
                                               double headW, double headH) {
         switch (g) {
@@ -192,6 +215,25 @@ public final class ScorePainter {
             case ACCIDENTAL_NATURAL -> "n";
             default -> "";
         };
+    }
+
+    /**
+     * The colour the page is filled with before drawing, or {@code null}
+     * when the page is left transparent.
+     */
+    public RenderColor getPageColor() {
+        return pageColor;
+    }
+
+    /**
+     * Set the colour the page is filled with before drawing; defaults to
+     * white. {@code null} leaves the surface untouched, so only the ink is
+     * drawn (e.g. to lay the music over a background of the caller's own).
+     *
+     * @param color the page colour, or {@code null} for a transparent page
+     */
+    public void setPageColor(RenderColor color) {
+        this.pageColor = color;
     }
 
     /**
@@ -370,8 +412,11 @@ public final class ScorePainter {
     }
 
     public void paint(RenderSurface surface, LayoutResult layout, double surfaceWidth, double surfaceHeight) {
-        surface.setFill(RenderColor.WHITE);
-        surface.fillRect(0, 0, Math.max(layout.width(), surfaceWidth), Math.max(layout.height(), surfaceHeight));
+        if (pageColor != null) {
+            surface.setFill(pageColor);
+            surface.fillRect(0, 0, Math.max(layout.width(), surfaceWidth),
+                    Math.max(layout.height(), surfaceHeight));
+        }
         surface.setStroke(RenderColor.BLACK);
         surface.setFill(RenderColor.BLACK);
         surface.setLineWidth(1.0);
