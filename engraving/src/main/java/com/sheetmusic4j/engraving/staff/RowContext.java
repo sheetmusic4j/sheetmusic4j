@@ -21,10 +21,14 @@ import com.sheetmusic4j.engraving.spacing.MeasureColumns;
  * @param contentOffsets   per measure in the row, the offset from the
  *                         measure's left edge at which every staff starts
  *                         placing notes - the latest across all staves
+ * @param trailingOffsets  per measure in the row, how far before the
+ *                         measure's right edge notes must stop - the most
+ *                         across all staves
  */
 public record RowContext(LayoutOptions options, boolean firstRow, int start, int endExclusive,
                          List<Double> rowWidths, double rowHeader, MeasureTimeline timeline,
-                         double pixelsPerQuarter, List<MeasureColumns> columns, double[] contentOffsets) {
+                         double pixelsPerQuarter, List<MeasureColumns> columns, double[] contentOffsets,
+                         double[] trailingOffsets) {
 
     /**
      * Onset columns of measure {@code measureIdx}.
@@ -39,6 +43,14 @@ public record RowContext(LayoutOptions options, boolean firstRow, int start, int
      */
     public double contentOffset(int measureIdx) {
         return contentOffsets[measureIdx - start];
+    }
+
+    /**
+     * Distance before the right edge of measure {@code measureIdx} (which
+     * must be in this row) at which notes must stop.
+     */
+    public double trailingOffset(int measureIdx) {
+        return trailingOffsets[measureIdx - start];
     }
 
     /**

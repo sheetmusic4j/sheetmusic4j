@@ -541,10 +541,11 @@ public final class AbcReader implements ScoreReader {
         // Barline / repeat / ending bookkeeping. A repeat-start ("|:") has
         // nothing to attach trailing dots to on the measure it follows (it
         // may be the very first measure of the part), so it is carried
-        // forward as a leading mark on the next measure instead. An ending
-        // label stays active on every subsequent measure until a new bar
-        // token introduces a different one (see applyBarToken).
-        private boolean pendingLeadingRepeatStart;
+        // forward as a leading barline on the next measure instead - as is
+        // a heavy-light "[|" opening the tune. An ending label stays active
+        // on every subsequent measure until a new bar token introduces a
+        // different one (see applyBarToken).
+        private Barline pendingLeadingBarline;
         private String currentEndingLabel;
 
         /** Grace-note pitches captured from a "{...}" run, attached to the next emitted note. */
@@ -633,9 +634,9 @@ public final class AbcReader implements ScoreReader {
             currentMeasure = new PendingMeasure(measureNumber);
             pendingElements = currentMeasure.elements;
             currentMeasure.ending = currentEndingLabel;
-            if (pendingLeadingRepeatStart) {
-                currentMeasure.leadingRepeatStart = true;
-                pendingLeadingRepeatStart = false;
+            if (pendingLeadingBarline != null) {
+                currentMeasure.leadingBarline = pendingLeadingBarline;
+                pendingLeadingBarline = null;
             }
             if (!firstMeasureFlushed && lineMeasures.isEmpty()) {
                 currentMeasure.attributes = Attributes.builder()
@@ -685,7 +686,7 @@ public final class AbcReader implements ScoreReader {
                 if (pm.barline != null) {
                     b.barline(pm.barline);
                 }
-                b.leadingRepeatStart(pm.leadingRepeatStart);
+                b.leadingBarline(pm.leadingBarline);
                 if (pm.ending != null) {
                     b.ending(pm.ending);
                 }
@@ -702,19 +703,29 @@ public final class AbcReader implements ScoreReader {
         /**
          * Classify a captured bar-line token and apply its style/repeat to
          * the measure being closed. A bare "|:" has nothing to attach
-         * trailing dots to (see {@link #pendingLeadingRepeatStart}), so it
-         * only sets a pending flag consumed by the next {@link #startMeasure()}.
+         * trailing dots to (see {@link #pendingLeadingBarline}), so it only
+         * sets a pending barline consumed by the next {@link #startMeasure()};
+         * so does a "[|" opening the tune before any note.
          */
         private void applyBarToken(String token) {
+            boolean tuneStart = currentMeasure.elements.isEmpty() && lineMeasures.isEmpty() && !firstMeasureFlushed;
             switch (token) {
+                case "[|" -> {
+                    Barline heavyLight = new Barline(Barline.Style.HEAVY_LIGHT, Barline.Repeat.NONE);
+                    if (tuneStart) {
+                        pendingLeadingBarline = heavyLight;
+                    } else {
+                        currentMeasure.barline = heavyLight;
+                    }
+                }
                 case "||" -> currentMeasure.barline = new Barline(Barline.Style.DOUBLE, Barline.Repeat.NONE);
                 case "|]" -> currentMeasure.barline = new Barline(Barline.Style.FINAL, Barline.Repeat.NONE);
                 case ":|" -> currentMeasure.barline = new Barline(Barline.Style.FINAL, Barline.Repeat.BACKWARD);
                 case "::" -> currentMeasure.barline = new Barline(Barline.Style.DOUBLE, Barline.Repeat.BOTH);
-                case "|:" -> pendingLeadingRepeatStart = true;
+                case "|:" -> pendingLeadingBarline = new Barline(Barline.Style.HEAVY_LIGHT, Barline.Repeat.FORWARD);
                 default -> {
-                    // "|", the decorative "[|", or an unrecognized run of
-                    // bar punctuation: a plain barline.
+                    // "|" or an unrecognized run of bar punctuation: a plain
+                    // barline.
                 }
             }
         }
@@ -725,7 +736,7 @@ public final class AbcReader implements ScoreReader {
             Attributes attributes;
             final List<MusicElement> elements = new ArrayList<>();
             Barline barline;
-            boolean leadingRepeatStart;
+            Barline leadingBarline;
             String ending;
             String sectionTitle;
             boolean forceSystemBreak;

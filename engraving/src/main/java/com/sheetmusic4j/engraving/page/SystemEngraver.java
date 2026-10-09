@@ -116,8 +116,9 @@ public final class SystemEngraver {
         double rowHeader = HorizontalSpacing.maxHeaderAdvanceAtRowStart(parts, start, options);
         List<Double> rowWidths = HorizontalSpacing.stretchRowWidths(plan.baseWidths(), start, endExclusive,
                 Math.max(0, plan.staffWidth() - rowHeader), rowHeader);
+        double[][] offsets = measureOffsets(start, endExclusive, rowIdx == 0);
         RowContext row = new RowContext(options, rowIdx == 0, start, endExclusive, rowWidths, rowHeader,
-                timeline, plan.pixelsPerQuarter(), columns, contentOffsets(start, endExclusive, rowIdx == 0));
+                timeline, plan.pixelsPerQuarter(), columns, offsets[0], offsets[1]);
 
         List<StaffLayout> stavesForRow = new ArrayList<>();
         List<BracketPlacement> bracketsForRow = new ArrayList<>();
@@ -177,26 +178,32 @@ public final class SystemEngraver {
     }
 
     /**
-     * For each measure of the row, the latest content start across every
-     * staff of every part (see {@link MeasureStart}), so all staves place
-     * their notes from the same x.
+     * For each measure of the row, the latest content start and the largest
+     * trailing clearance across every staff of every part (see
+     * {@link MeasureStart}), so all staves place their notes in the same
+     * span: {@code [0]} holds content offsets, {@code [1]} trailing offsets.
      */
-    private double[] contentOffsets(int start, int endExclusive, boolean firstRow) {
-        double[] offsets = new double[endExclusive - start];
+    private double[][] measureOffsets(int start, int endExclusive, boolean firstRow) {
+        double[] content = new double[endExclusive - start];
+        double[] trailing = new double[endExclusive - start];
         for (int idx = start; idx < endExclusive; idx++) {
-            double offset = options.staffLineGap();
+            double contentOffset = options.staffLineGap();
+            double trailingOffset = options.staffLineGap();
             for (PartInfo p : parts) {
                 if (idx >= p.measures().size()) {
                     continue;
                 }
                 for (int staffIdx = 0; staffIdx < p.staveCount(); staffIdx++) {
-                    offset = Math.max(offset,
-                            MeasureStart.of(p, staffIdx, idx, idx == start, firstRow, options).contentOffset());
+                    MeasureStart measureStart = MeasureStart.of(p, staffIdx, idx, idx == start,
+                            idx == endExclusive - 1, firstRow, options);
+                    contentOffset = Math.max(contentOffset, measureStart.contentOffset());
+                    trailingOffset = Math.max(trailingOffset, measureStart.trailingOffset());
                 }
             }
-            offsets[idx - start] = offset;
+            content[idx - start] = contentOffset;
+            trailing[idx - start] = trailingOffset;
         }
-        return offsets;
+        return new double[][]{content, trailing};
     }
 
     /**

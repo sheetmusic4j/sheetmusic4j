@@ -151,20 +151,25 @@ public final class StaffRowEngraver {
             double barlineX = timeZeroX + (measureStartQ + measureDurQ - trailingQ / 2.0) * row.pixelsPerQuarter();
             measureWidth = Math.max(barlineX - cursorX, gap);
         }
+        boolean lastMeasureInRow = idx == row.endExclusive() - 1;
+        MeasureStart start = MeasureStart.of(partInfo, staffIdx, idx, firstMeasureInRow, lastMeasureInRow,
+                row.firstRow(), options);
+        double leadingBarlineX = Double.isNaN(start.leadingBarlineOffset())
+                ? cursorX : cursorX + start.leadingBarlineOffset();
         measureLayouts.add(new MeasureLayout(measure.number(), cursorX, measureWidth,
                 measureStartQ, measureStartQ + measureDurQ,
-                measure.barline().orElse(null), measure.leadingRepeatStart(),
+                MeasureStart.closingBarline(partInfo, idx, lastMeasureInRow),
+                MeasureStart.openingBarline(partInfo, idx, firstMeasureInRow), leadingBarlineX,
                 measure.ending().orElse(null)));
 
-        placeMeasureStart(MeasureStart.of(partInfo, staffIdx, idx, firstMeasureInRow, row.firstRow(), options),
-                idx, cursorX, currentClef);
+        placeMeasureStart(start, idx, cursorX, currentClef);
         // Every staff places its notes from the system-wide content start,
         // at its onset's column, so simultaneous notes line up across
         // staves and voices.
         double contentStart = cursorX + row.contentOffset(idx);
         double[] columnX = row.isStrip()
                 ? columns.stripPositions(timeZeroX, measureStartQ, row.pixelsPerQuarter())
-                : columns.pagePositions(contentStart, (cursorX + measureWidth) - contentStart - gap);
+                : columns.pagePositions(contentStart, (cursorX + measureWidth) - contentStart - row.trailingOffset(idx));
 
         List<MeasureTiming.Timed> elements = elementsOnThisStaff(partInfo.timing(idx));
         List<MusicElement> placed = new ArrayList<>(elements.size());

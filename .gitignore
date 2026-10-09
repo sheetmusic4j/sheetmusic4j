@@ -3,6 +3,7 @@
 /.vscode/
 /core/target/
 /engraving/target/
+/render/target/
 /fxdemo/target/
 /fxviewer/target/
 /target/

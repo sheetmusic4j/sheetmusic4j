@@ -3,6 +3,7 @@ package com.sheetmusic4j.render;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Barline;
 import com.sheetmusic4j.core.model.MusicElement;
+import com.sheetmusic4j.engraving.glyph.BarlineGeometry;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.glyph.GlyphMapper;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
@@ -488,11 +489,21 @@ public final class ScorePainter {
             surface.strokeLine(staff.x(), y, staff.x() + staff.width(), y);
         }
 
-        for (MeasureLayout measure : staff.measures()) {
-            if (measure.leadingRepeatStart()) {
-                drawBarline(surface, staff, measure.x(), new Barline(Barline.Style.REGULAR, Barline.Repeat.FORWARD));
+        List<MeasureLayout> measures = staff.measures();
+        for (int i = 0; i < measures.size(); i++) {
+            MeasureLayout measure = measures.get(i);
+            if (measure.leadingBarline() != null) {
+                drawOpeningBarline(surface, staff, measure.leadingBarlineX(), measure.leadingBarline());
             }
-            drawBarline(surface, staff, measure.right(), measure.barline());
+            MeasureLayout next = i + 1 < measures.size() ? measures.get(i + 1) : null;
+            // A plain line on the same boundary as the next measure's opening
+            // barline ("| |:" is just "|:") would only add a stray thin line.
+            boolean replacedByNextOpening = isPlain(measure.barline()) && next != null
+                    && next.leadingBarline() != null
+                    && Math.abs(next.leadingBarlineX() - measure.right()) < 1e-6;
+            if (!replacedByNextOpening) {
+                drawClosingBarline(surface, staff, measure.right(), measure.barline());
+            }
         }
         drawEndingBrackets(surface, staff);
 
@@ -958,58 +969,110 @@ public final class ScorePainter {
      * and the conventional dotted variants when {@link Barline#repeat()} is
      * set (dots sit on the side the repeated section is on).
      */
-    private void drawBarline(RenderSurface surface, StaffLayout staff, double x, Barline barline) {
-        double gap = staff.lineGap();
-        double top = staff.lineY(0);
-        double bottom = staff.lineY(STAFF_LINES - 1);
-        double lineSpacing = gap * 0.35;
-        double dotOffset = lineSpacing + gap * 0.65;
+    private static boolean isPlain(Barline barline) {
+        return barline == null
+                || (barline.repeat() == Barline.Repeat.NONE && barline.style() == Barline.Style.REGULAR);
+    }
 
+    /**
+     * Draw a barline closing a measure whose right edge is {@code x}: every
+     * line and dot lies left of {@code x} (into the measure), except for a
+     * combined end/start repeat, which is centered on it. Dimensions come
+     * from {@link BarlineGeometry}, the same numbers the layout reserved
+     * room with.
+     */
+    private void drawClosingBarline(RenderSurface surface, StaffLayout staff, double x, Barline barline) {
+        double gap = staff.lineGap();
+        double thin = BarlineGeometry.THIN * gap;
+        double thick = BarlineGeometry.THICK * gap;
+        double sep = BarlineGeometry.SEPARATION * gap;
+        double dotsFromLine = (BarlineGeometry.DOT_SEPARATION + BarlineGeometry.DOT_DIAMETER / 2) * gap;
         Barline.Repeat repeat = barline == null ? Barline.Repeat.NONE : barline.repeat();
         Barline.Style style = barline == null ? Barline.Style.REGULAR : barline.style();
         switch (repeat) {
             case BACKWARD -> {
-                drawRepeatDots(surface, staff, x - dotOffset);
-                surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
-                drawThickLine(surface, x, top, bottom);
-            }
-            case FORWARD -> {
-                drawThickLine(surface, x, top, bottom);
-                surface.strokeLine(x + lineSpacing, top, x + lineSpacing, bottom);
-                drawRepeatDots(surface, staff, x + dotOffset);
+                verticalLine(surface, staff, x - thick / 2, thick);
+                verticalLine(surface, staff, x - thick - sep - thin / 2, thin);
+                drawRepeatDots(surface, staff, x - thick - sep - thin - dotsFromLine);
             }
             case BOTH -> {
+                double thinOffset = thick / 2 + sep + thin / 2;
+                double dotOffset = thick / 2 + sep + thin + dotsFromLine;
+                verticalLine(surface, staff, x, thick);
+                verticalLine(surface, staff, x - thinOffset, thin);
+                verticalLine(surface, staff, x + thinOffset, thin);
                 drawRepeatDots(surface, staff, x - dotOffset);
-                surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
-                surface.strokeLine(x + lineSpacing, top, x + lineSpacing, bottom);
                 drawRepeatDots(surface, staff, x + dotOffset);
             }
+            case FORWARD -> drawOpeningBarline(surface, staff, x, barline);
             case NONE -> {
                 switch (style) {
+                    case REGULAR -> verticalLine(surface, staff, x - thin / 2, thin);
                     case DOUBLE -> {
-                        surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
-                        surface.strokeLine(x, top, x, bottom);
+                        verticalLine(surface, staff, x - thin / 2, thin);
+                        verticalLine(surface, staff, x - thin - sep - thin / 2, thin);
                     }
                     case FINAL -> {
-                        surface.strokeLine(x - lineSpacing, top, x - lineSpacing, bottom);
-                        drawThickLine(surface, x, top, bottom);
+                        verticalLine(surface, staff, x - thick / 2, thick);
+                        verticalLine(surface, staff, x - thick - sep - thin / 2, thin);
                     }
-                    case REGULAR -> surface.strokeLine(x, top, x, bottom);
+                    case HEAVY_LIGHT -> {
+                        verticalLine(surface, staff, x - thin / 2, thin);
+                        verticalLine(surface, staff, x - thin - sep - thick / 2, thick);
+                    }
                 }
             }
         }
     }
 
-    private void drawThickLine(RenderSurface surface, double x, double top, double bottom) {
-        surface.setLineWidth(2.5);
-        surface.strokeLine(x, top, x, bottom);
+    /**
+     * Draw a barline opening a measure, starting at {@code x} and extending
+     * right: a repeat-start ({@code |:}) or a heavy-light {@code [|}.
+     */
+    private void drawOpeningBarline(RenderSurface surface, StaffLayout staff, double x, Barline barline) {
+        double gap = staff.lineGap();
+        double thin = BarlineGeometry.THIN * gap;
+        double thick = BarlineGeometry.THICK * gap;
+        double sep = BarlineGeometry.SEPARATION * gap;
+        double dotsFromLine = (BarlineGeometry.DOT_SEPARATION + BarlineGeometry.DOT_DIAMETER / 2) * gap;
+        switch (barline.repeat()) {
+            case FORWARD -> {
+                verticalLine(surface, staff, x + thick / 2, thick);
+                verticalLine(surface, staff, x + thick + sep + thin / 2, thin);
+                drawRepeatDots(surface, staff, x + thick + sep + thin + dotsFromLine);
+            }
+            case NONE -> {
+                switch (barline.style()) {
+                    case REGULAR -> verticalLine(surface, staff, x + thin / 2, thin);
+                    case DOUBLE -> {
+                        verticalLine(surface, staff, x + thin / 2, thin);
+                        verticalLine(surface, staff, x + thin + sep + thin / 2, thin);
+                    }
+                    case FINAL -> {
+                        verticalLine(surface, staff, x + thin / 2, thin);
+                        verticalLine(surface, staff, x + thin + sep + thick / 2, thick);
+                    }
+                    case HEAVY_LIGHT -> {
+                        verticalLine(surface, staff, x + thick / 2, thick);
+                        verticalLine(surface, staff, x + thick + sep + thin / 2, thin);
+                    }
+                }
+            }
+            default -> drawClosingBarline(surface, staff, x, barline);
+        }
+    }
+
+    /** A full-height vertical line of the given width centered on {@code x}. */
+    private void verticalLine(RenderSurface surface, StaffLayout staff, double x, double width) {
+        surface.setLineWidth(width);
+        surface.strokeLine(x, staff.lineY(0), x, staff.lineY(STAFF_LINES - 1));
         surface.setLineWidth(1.0);
     }
 
     /** Two repeat dots, vertically centered in the staff's middle two spaces. */
     private void drawRepeatDots(RenderSurface surface, StaffLayout staff, double x) {
         double gap = staff.lineGap();
-        double radius = gap * 0.16;
+        double radius = gap * BarlineGeometry.DOT_DIAMETER / 2;
         double midY = (staff.lineY(0) + staff.lineY(STAFF_LINES - 1)) / 2.0;
         surface.fillOval(x - radius, midY - gap * 0.5 - radius, radius * 2, radius * 2);
         surface.fillOval(x - radius, midY + gap * 0.5 - radius, radius * 2, radius * 2);
