@@ -16,8 +16,8 @@ Sheetmusic4J requires **Java 21** or higher.
 | `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, and ABC import/export | No                |
 | `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                                     | No                |
 | `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font, plus headless rendering to images (AWT)                                          | No                |
-| `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`, `FlyOverSheetView`) that draw a `LayoutResult` on a `Canvas` or in 3D                                           | Yes               |
-| `fxdemo`    | Standalone JavaFX demo applications for loading and inspecting scores, plus strip and 3D fly-over showcases                                                     | Yes               |
+| `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`, `FlyOverSheetView`, `NodeSheetView`) that draw a `LayoutResult` on a `Canvas`, in 3D, or as a node scene graph   | Yes               |
+| `fxdemo`    | Standalone JavaFX demo applications for loading and inspecting scores, plus strip, 3D fly-over and node-view showcases                                         | Yes               |
 
 ### Sheetmusic Terminology
 
@@ -49,6 +49,9 @@ renders, so you can point at something in a screenshot and know exactly which cl
 * `SheetView`, a JavaFX `Region` that renders a `Score` on a `Canvas`, and `StripSheetView`, a one-line play-along view
 * `FlyOverSheetView`, a 3D variant of the strip view: the score lies on a sheet of paper, a perspective camera flies
   along it while it plays, a glowing ball per voice hops from note to note, and sounding noteheads light up
+* `NodeSheetView`, a retained-mode variant that builds a JavaFX scene graph with one node group per note, rest and chord,
+  so each element can take mouse and keyboard events, effects and selection; `LayoutResult.hitTest` does the same
+  picking on the plain layout for the canvas views
 
 ### FX Demo
 
@@ -58,6 +61,8 @@ renders, so you can point at something in a screenshot and know exactly which cl
 * "Report Visual Issue..." button to capture rendering problems, see [CONTRIBUTING.md](CONTRIBUTING.md)
 * `StripDemoApp` and `FlyOverDemoApp` showcase the one-line strip view and the 3D fly-over view, with play/pause,
   tempo, and position controls
+* `NodeDemoApp` showcases the node view: hover and select elements, drag notes to snap them to staff positions
+  (Shift = sharp, Alt = flat), hide and restore them
 
 ## Requirements
 
@@ -76,6 +81,7 @@ mvn clean install
 mvn -pl fxdemo javafx:run              # main demo app (SheetDemoApp)
 mvn -pl fxdemo -Pstrip javafx:run      # one-line strip view (StripDemoApp)
 mvn -pl fxdemo -Pflyover javafx:run    # 3D fly-over view (FlyOverDemoApp)
+mvn -pl fxdemo -Pnode javafx:run       # node-based view with draggable notes (NodeDemoApp)
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for a tour of the demo app and how to report rendering issues.

@@ -41,15 +41,17 @@ Other useful menu items:
 
 ### Strip and fly-over demos
 
-Two more demo apps show the play-along views. Open a score with **File > Open...** (or pass its path as the first
-argument), then press **Play** or drag the position slider:
+Three more demo apps show the play-along views and the node-based view. Open a score with **File > Open...** (or pass
+its path as the first argument), then press **Play** or drag the position slider. In the node view there is no playback:
+click to select a note, drag it to move it (hold Shift for a sharp, Alt/Option for a flat):
 
 ```bash
 mvn -pl fxdemo -Pstrip javafx:run      # StripDemoApp: one-line strip view (StripSheetView)
 mvn -pl fxdemo -Pflyover javafx:run    # FlyOverDemoApp: 3D fly-over view (FlyOverSheetView)
+mvn -pl fxdemo -Pnode javafx:run       # NodeDemoApp: node-based view, select and drag notes (NodeSheetView)
 ```
 
-From an IDE, run `StripDemoLauncher` or `FlyOverDemoLauncher`. These apps don't have the report button; reproduce
+From an IDE, run `StripDemoLauncher`, `FlyOverDemoLauncher` or `NodeDemoLauncher`. These apps don't have the report button; reproduce
 rendering problems in `SheetDemoApp`, or describe them in an issue with a screenshot.
 
 ## Reporting a visual issue
