@@ -50,7 +50,10 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 4. **`fxviewer`** — JavaFX binding. `FxRenderSurface` implements `RenderSurface` for a JavaFX `GraphicsContext`,
    `FxTextMetrics` measures text with the JavaFX font; `SheetView` (page) and `StripSheetView` (one-line, play-along)
    are the `Region`/`Canvas` controls that tie `Engraver` + `ScorePainter` + `FxRenderSurface` together, sharing their
-   per-note overlays through `NoteDecorations`. `FlyOverSheetView` is the 3D variant of the strip (JavaFX `SubScene`):
+   per-note overlays through `NoteDecorations`. `NodeSheetView` is the retained-mode variant: `NodeRenderSurface` builds a
+   scene graph with one `Group` per note/rest/chord (via `RenderSurface.beginElement/endElement`, which `ScorePainter`
+   calls around each element's glyphs/stem), with hover/selection and click callbacks; `LayoutResult.hitTest` does
+   layout-level picking for any view. `FlyOverSheetView` is the 3D variant of the strip (JavaFX `SubScene`):
    the strip's ink is painted once into transparent image tiles (`ScorePainter.setPageColor(null)`) over a coloured
    paper plane with a travelling light, a perspective camera follows the cursor, a glowing ball per (part, staff, voice)
    hops from note to note landing at each onset, and sounding noteheads light up as glowing copies

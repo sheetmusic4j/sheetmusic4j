@@ -497,7 +497,9 @@ public final class ScorePainter {
             double rectHeight = contentHeight + padTop + padBottom;
             double rectX = anchor.x() - anchor.width() / 2.0 - padLeft;
             double rectY = anchor.y() - contentHeight / 2.0 - padTop + offsetY;
+            beginElement(surface, anchor.elementRef());
             surface.fillRoundedRect(rectX, rectY, rectWidth, rectHeight, arc, arc, bg);
+            endElement(surface, anchor.elementRef());
         }
     }
 
@@ -609,11 +611,25 @@ public final class ScorePainter {
         if (override != null) {
             surface.setStroke(override);
         }
+        beginElement(surface, stem.elementRef());
         surface.setLineWidth(1.4);
         surface.strokeLine(stem.x(), stem.y1(), stem.x(), stem.y2());
         surface.setLineWidth(1.0);
+        endElement(surface, stem.elementRef());
         if (override != null) {
             surface.setStroke(RenderColor.BLACK);
+        }
+    }
+
+    private static void beginElement(RenderSurface surface, MusicElement element) {
+        if (element != null) {
+            surface.beginElement(element);
+        }
+    }
+
+    private static void endElement(RenderSurface surface, MusicElement element) {
+        if (element != null) {
+            surface.endElement();
         }
     }
 
@@ -628,9 +644,11 @@ public final class ScorePainter {
             surface.setStroke(override);
             surface.setFill(override);
         }
+        beginElement(surface, glyph.elementRef());
         try {
             drawGlyphInner(surface, staff, glyph, gap, headW, headH, sizeHint, g);
         } finally {
+            endElement(surface, glyph.elementRef());
             if (override != null) {
                 surface.setStroke(RenderColor.BLACK);
                 surface.setFill(RenderColor.BLACK);

@@ -108,5 +108,12 @@
                 <exec.mainClass>com.sheetmusic4j.fxdemo.FlyOverDemoApp</exec.mainClass>
             </properties>
         </profile>
+        <!-- Run the retained-mode node view showcase: mvn -pl fxdemo -Pnode javafx:run -->
+        <profile>
+            <id>node</id>
+            <properties>
+                <exec.mainClass>com.sheetmusic4j.fxdemo.NodeDemoApp</exec.mainClass>
+            </properties>
+        </profile>
     </profiles>
 </project>

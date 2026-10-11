@@ -10,6 +10,22 @@ package com.sheetmusic4j.render;
  */
 public interface RenderSurface {
 
+    /**
+     * Marks the start of the drawing primitives that belong to one source
+     * element (for example all glyphs and the stem of a single note). Calls
+     * may not nest. Immediate-mode backends (canvas, AWT) ignore this; a
+     * retained-mode backend can group the primitives that follow into one
+     * object carrying {@code source}, so callers can attach events to it.
+     *
+     * @param source the source object, typically a {@code MusicElement}; never {@code null}
+     */
+    default void beginElement(Object source) {
+    }
+
+    /** Ends the group opened by {@link #beginElement(Object)}. */
+    default void endElement() {
+    }
+
     /** Sets the stroke color for subsequent outline drawing. */
     void setStroke(RenderColor color);
 

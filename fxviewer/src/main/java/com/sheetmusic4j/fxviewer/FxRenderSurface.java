@@ -127,7 +127,7 @@ public final class FxRenderSurface implements RenderSurface {
         return true;
     }
 
-    private static synchronized Font ensureBravura(double sizeHint) {
+    static synchronized Font ensureBravura(double sizeHint) {
         if (bravuraAttempted) {
             return bravuraTemplate == null ? null : bravuraTemplate;
         }

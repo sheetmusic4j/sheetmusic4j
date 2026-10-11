@@ -2,6 +2,7 @@ package com.sheetmusic4j.engraving.layout;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import com.sheetmusic4j.engraving.placement.BeamPlacement;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
@@ -45,6 +46,41 @@ public record LayoutResult(List<SystemLayout> systems, List<TextPlacement> texts
      */
     public LayoutResult(List<SystemLayout> systems, double width, double height) {
         this(systems, List.of(), List.of(), width, height);
+    }
+
+    /**
+     * Finds the note, rest or chord drawn at the given point, for mouse
+     * picking. The point is tested against each {@link NoteAnchor} bounding
+     * box grown by {@code tolerance} on every side; when several boxes match
+     * (for example a chord's neighbours), the one whose centre is nearest wins.
+     *
+     * @param x         x in layout units
+     * @param y         y in layout units
+     * @param tolerance extra pick distance in layout units, {@code 0} for an exact hit
+     * @return the matching anchor, or empty when nothing is there
+     */
+    public Optional<NoteAnchor> hitTest(double x, double y, double tolerance) {
+        NoteAnchor best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (NoteAnchor a : noteAnchors) {
+            double halfW = a.width() / 2.0 + tolerance;
+            double halfH = a.height() / 2.0 + tolerance;
+            double dx = x - a.x();
+            double dy = y - a.y();
+            if (Math.abs(dx) <= halfW && Math.abs(dy) <= halfH) {
+                double distance = dx * dx + dy * dy;
+                if (distance < bestDistance) {
+                    best = a;
+                    bestDistance = distance;
+                }
+            }
+        }
+        return Optional.ofNullable(best);
+    }
+
+    /** Same as {@link #hitTest(double, double, double)} with no tolerance. */
+    public Optional<NoteAnchor> hitTest(double x, double y) {
+        return hitTest(x, y, 0.0);
     }
 
     public List<StaffLayout> staves() {
