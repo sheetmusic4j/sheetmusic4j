@@ -70,50 +70,15 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 only on the `RenderSurface` abstraction. Never draw directly against `GraphicsContext` or `Graphics2D` outside of a
 `RenderSurface` implementation — new drawing logic belongs in `ScorePainter`.
 
-## Visual regression testing
+Visual regression testing (`CompareFxViewWithReferenceTest`) is documented in `fxdemo/CLAUDE.md`.
 
-`fxdemo`'s `CompareFxViewWithReferenceTest` renders every fixture headlessly (`HeadlessScoreImage`, using the production
-`Engraver` + `ScorePainter` + `AwtRenderSurface`) and compares it against the sibling PDF committed next to the MusicXML
-fixture:
-
-- The sibling PDF is rasterized page-by-page via `PdfRasterizer` (PDFBox, invoked reflectively so the reference stays on
-  the classpath transitively via `pdfviewfx`).
-- Pages are stitched vertically via `ImageStack.stackVertically(...)` into a single tall reference image, which
-  `DiagnosticComparator` consumes unchanged.
-- Assertions are layered: PDF page count (metadata) → ink sanity → staff count → staff bounding-box ratios → per-measure
-  similarity.
-- Fixtures without a sibling PDF are skipped via `Assumptions.assumeTrue`.
-- Rasterization DPI is tunable via `-Dsheetmusic4j.compare.pdf.dpi=<float>` (default `150`); per-measure similarity
-  threshold via `-Dsheetmusic4j.compare.measure.threshold=<0..1>` (default `0.4`).
-- On failure a self-contained HTML report is written to `fxdemo/target/sheetmusic4j-diff/<fixture>/report.html`.
-
-`fxdemo/src/test/resources/xmlsamples/` contains real-world MusicXML/MXL sample scores (with matching reference
-PDFs/PNGs for several) sourced from https://www.musicxml.com/music-in-musicxml/example-set/ — useful for exercising the
-reader/engraver against non-trivial scores beyond the minimal `c-major-scale.musicxml` fixture.
-
-## Build & test
-
-Requires Java 21, Maven 3.9+.
-
-```bash
-mvn clean install                       # build all modules
-mvn test                                # run all tests
-mvn -pl core test                       # run tests for a single module
-mvn -pl core -Dtest=MusicXmlReaderTest test   # run a single test class
-mvn -pl fxdemo javafx:run               # launch the JavaFX demo app
-```
+## Build
 
 CI (`.github/workflows/ci.yml`) runs `mvn verify` on JDK 26 (Temurin). The library still targets
 `maven.compiler.release=21`.
 
-Release is a manual `workflow_dispatch` (`.github/workflows/release.yml`) that bumps the version with `versions:set` and
-runs `mvn -Prelease clean deploy` to Maven Central.
-
 ## Conventions
 
-- Value types in `core.model` are Java records (`Pitch`, `Clef`, `KeySignature`, `TimeSignature`, `Duration`); container
-  types (`Score`, `Part`, `Measure`, `Attributes`) use builders. `MusicElement` is a sealed interface (`Note`, `Rest`,
-  `Chord`).
 - `core`, `engraving` and `render` must stay JavaFX-free — this is what keeps layout and model logic unit-testable without a
   display and reusable outside JavaFX. When adding rendering features, add the drawing primitive to `RenderSurface`
   first, then implement it in both `FxRenderSurface` and `AwtRenderSurface`, and use it from `ScorePainter`.
