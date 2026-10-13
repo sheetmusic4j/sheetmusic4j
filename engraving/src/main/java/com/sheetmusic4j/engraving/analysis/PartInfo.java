@@ -2,6 +2,7 @@ package com.sheetmusic4j.engraving.analysis;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Clef;
@@ -17,7 +18,6 @@ import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.TimeSignature;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
-import com.sheetmusic4j.engraving.layout.LayoutOptions;
 
 /**
  * Per-part immutable metadata plus a per-measure trace of the clef/key/time
@@ -145,10 +145,10 @@ public final class PartInfo {
     }
 
     /**
-     * Analyse a part. Directions, chord symbols and lyrics of categories
-     * {@code options} hides are ignored, so no room is reserved for them.
+     * Analyse a part. Directions, chord symbols and lyrics whose category is
+     * not {@code visible} are ignored, so no room is reserved for them.
      */
-    public static PartInfo of(Part part, LayoutOptions options) {
+    public static PartInfo of(Part part, Predicate<MarkingCategory> visible) {
         int staveCount = determineStaveCount(part);
         List<Clef> defaults = defaultClefsFor(part, staveCount);
 
@@ -205,20 +205,20 @@ public final class PartInfo {
             Measure measure = part.measures().get(idx);
             for (MusicElement element : measure.elements()) {
                 if (element instanceof Direction direction
-                        && options.isVisible(ScoreAnalysis.categoryOf(direction.type()))) {
+                        && visible.test(ScoreAnalysis.categoryOf(direction.type()))) {
                     Placement resolved = ScoreAnalysis.resolvedPlacement(direction);
                     if (resolved == Placement.ABOVE) {
                         aboveMask[idx] = true;
                     } else if (resolved == Placement.BELOW) {
                         belowAny = true;
                     }
-                } else if (element instanceof Harmony && options.isVisible(MarkingCategory.CHORD_SYMBOL)) {
+                } else if (element instanceof Harmony && visible.test(MarkingCategory.CHORD_SYMBOL)) {
                     harmonyMask[idx] = true;
                 }
             }
         }
         return new PartInfo(part, staveCount, clefs, keys, times,
-                options.isVisible(MarkingCategory.LYRIC) && scanHasLyrics(part),
+                visible.test(MarkingCategory.LYRIC) && scanHasLyrics(part),
                 aboveMask, belowAny, harmonyMask, timings);
     }
 

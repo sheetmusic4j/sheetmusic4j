@@ -1,10 +1,6 @@
 /.idea/
 /.theia/
 /.vscode/
-/core/target/
-/engraving/target/
-/render/target/
-/fxdemo/target/
-/fxviewer/target/
-/target/
+# Maven build output of every module, at any depth
+target/
 /reports/

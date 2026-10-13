@@ -3,6 +3,7 @@ package com.sheetmusic4j.core.io;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -89,5 +90,11 @@ class ScoreFileTest {
         ScoreFile.save(original, out);
         Score reloaded = ScoreFile.load(out);
         assertFalse(reloaded.parts().isEmpty(), "extension dispatch must ignore case");
+    }
+
+    @Test
+    void builtInFormatsAreDiscoveredInOrder() {
+        assertEquals(java.util.List.of("MusicXML", "MIDI", "ABC", "Guitar Pro"),
+                ScoreFile.formats().stream().map(ScoreFormat::name).limit(4).toList());
     }
 }

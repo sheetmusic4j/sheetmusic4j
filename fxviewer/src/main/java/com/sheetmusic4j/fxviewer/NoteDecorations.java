@@ -6,6 +6,7 @@ import java.util.Optional;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.render.RenderColor;
+import com.sheetmusic4j.render.ScorePainter;
 import javafx.collections.FXCollections;
 import javafx.collections.MapChangeListener;
 import javafx.collections.ObservableMap;
@@ -31,13 +32,13 @@ final class NoteDecorations {
             FXCollections.observableMap(new IdentityHashMap<>());
 
     /**
-     * Feed the overlays into {@code renderer} and call {@code repaint}
+     * Feed the overlays into {@code painter} and call {@code repaint}
      * whenever any of them changes.
      */
-    NoteDecorations(ScoreRenderer renderer, Runnable repaint) {
-        renderer.setNoteColorProvider(element -> toRenderColor(highlights.get(element)));
-        renderer.setNoteBackgroundProvider(element -> toRenderColor(backgrounds.get(element)));
-        renderer.setNoteAccidentalProvider(element -> Optional.ofNullable(accidentals.get(element)));
+    NoteDecorations(ScorePainter painter, Runnable repaint) {
+        painter.setNoteColorProvider(element -> toRenderColor(highlights.get(element)));
+        painter.setNoteBackgroundProvider(element -> toRenderColor(backgrounds.get(element)));
+        painter.setNoteAccidentalProvider(element -> Optional.ofNullable(accidentals.get(element)));
         highlights.addListener((MapChangeListener<MusicElement, Color>) change -> repaint.run());
         backgrounds.addListener((MapChangeListener<MusicElement, Color>) change -> repaint.run());
         accidentals.addListener((MapChangeListener<MusicElement, Accidental>) change -> repaint.run());

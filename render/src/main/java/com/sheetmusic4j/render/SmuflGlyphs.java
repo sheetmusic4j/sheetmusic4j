@@ -50,7 +50,7 @@ public final class SmuflGlyphs {
     /**
      * Nominal font-family name for the loaded Bravura font. Matches the value
      * exposed by both {@code javafx.scene.text.Font#getFamily()} and
-     * {@link java.awt.Font#getFamily()} after registration.
+     * {@code java.awt.Font#getFamily()} after registration.
      */
     public static final String BRAVURA_FAMILY = "Bravura";
 

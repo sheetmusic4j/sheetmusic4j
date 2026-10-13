@@ -78,7 +78,7 @@ public final class Engraver {
         List<PartInfo> parts = new ArrayList<>(score.parts().size());
         int measureCount = 0;
         for (Part part : score.parts()) {
-            parts.add(PartInfo.of(part, options));
+            parts.add(PartInfo.of(part, options::isVisible));
             measureCount = Math.max(measureCount, part.measures().size());
         }
         if (measureCount == 0) {

@@ -65,6 +65,7 @@
         <module>core</module>
         <module>engraving</module>
         <module>render</module>
+        <module>render-awt</module>
         <module>fxviewer</module>
         <module>fxdemo</module>
     </modules>
@@ -85,6 +86,11 @@
             <dependency>
                 <groupId>com.sheetmusic4j</groupId>
                 <artifactId>render</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sheetmusic4j</groupId>
+                <artifactId>render-awt</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

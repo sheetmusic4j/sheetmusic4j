@@ -15,8 +15,8 @@
 
     <name>Sheetmusic4J :: Render</name>
     <description>Toolkit-neutral drawing of a LayoutResult: ScorePainter draws through the RenderSurface
-        abstraction with the bundled Bravura SMuFL font. Includes an AWT surface for headless rendering
-        to images. No JavaFX dependency.
+        abstraction with the bundled Bravura SMuFL font. No JavaFX or AWT dependency; toolkit bindings
+        live in render-awt and fxviewer.
     </description>
 
     <dependencies>

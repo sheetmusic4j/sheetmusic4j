@@ -1,7 +1,6 @@
 package com.sheetmusic4j.fxdemo;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -11,12 +10,10 @@ import java.util.Set;
 import com.sheetmusic4j.core.io.ScoreFile;
 import com.sheetmusic4j.core.io.ScoreFormat;
 import com.sheetmusic4j.fxdemo.ui.Ui;
-import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.MusicElement;
-import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Score;
-import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.NoteAnchor;
+import com.sheetmusic4j.engraving.layout.PlaybackTimeline;
 import com.sheetmusic4j.render.NoteBackgroundStyle;
 import com.sheetmusic4j.fxviewer.StripSheetView;
 
@@ -102,21 +99,11 @@ public final class StripDemoApp extends Application {
 
     // Playback state.
     private final Set<MusicElement> active = Collections.newSetFromMap(new IdentityHashMap<>());
-    private List<NoteAnchor> soundingAnchors = List.of();
     private AnimationTimer timer;
     private long lastNanos = -1L;
     private boolean playing;
     /** Continuous musical playhead in quarter notes. */
     private double playhead;
-    /**
-     * Cursor position timeline: strictly increasing note onsets and the layout
-     * x of each. The cursor x is interpolated across these so it moves
-     * continuously (passing exactly through each notehead at its onset) rather
-     * than parking on a held note.
-     */
-    private double[] sampleOnset = new double[0];
-    private double[] sampleX = new double[0];
-
     private Stage stage;
 
     public static void main(String[] args) {
@@ -274,12 +261,11 @@ public final class StripDemoApp extends Application {
         return box;
     }
 
-    /** Apply a new strip spacing factor: re-engrave, rebuild the timeline, re-place the cursor. */
+    /** Apply a new strip spacing factor: re-engrave and re-place the cursor. */
     private void applySpacing() {
         stripView.setStripSpacingFactor(spacing.getValue());
-        recomputeAnchors();
         if (stripView.getScore() != null) {
-            stripView.setCursorLayoutX(cursorXForTime(playhead));
+            stripView.setCursorTime(playhead);
         }
     }
 
@@ -340,79 +326,19 @@ public final class StripDemoApp extends Application {
     private void showScore(Path path, Score score) {
         try {
             stripView.setScore(score);
-            recomputeAnchors();
             playhead = 0;
             stripView.setCursorTime(0);
             updateTimeLabel();
             stage.setTitle(TITLE + " - " + path.getFileName());
             statusLabel.setText(String.format(Locale.ROOT,
                     "Loaded %s - %.1f quarter notes, %d sounding notes. Press Play.",
-                    path.getFileName(), stripView.totalDurationQuarters(), soundingAnchors.size()));
+                    path.getFileName(), stripView.totalDurationQuarters(),
+                    stripView.getTimeline().soundingAnchors().size()));
         } catch (RuntimeException ex) {
             logger.error("Failed to open score: {}", path, ex);
             statusLabel.setText("Failed to open " + path.getFileName() + ": " + ex.getMessage());
         }
         updateButtons();
-    }
-
-    private void recomputeAnchors() {
-        List<NoteAnchor> anchors = new ArrayList<>();
-        LayoutResult layout = stripView.getLayout();
-        if (layout != null) {
-            for (NoteAnchor anchor : layout.noteAnchors()) {
-                if (anchor.durationQuarters() > 0
-                        && (anchor.elementRef() instanceof Note || anchor.elementRef() instanceof Chord)) {
-                    anchors.add(anchor);
-                }
-            }
-        }
-        soundingAnchors = anchors;
-        buildCursorTimeline(layout);
-    }
-
-    /**
-     * Build the {@link #sampleOnset}/{@link #sampleX} timeline the cursor
-     * interpolates over: every anchor's onset mapped to its layout x, sorted
-     * and deduplicated by onset, bracketed by the start and end of the layout
-     * so the cursor keeps moving before the first note and after the last.
-     */
-    private void buildCursorTimeline(LayoutResult layout) {
-        if (layout == null || layout.noteAnchors().isEmpty()) {
-            sampleOnset = new double[0];
-            sampleX = new double[0];
-            return;
-        }
-        List<NoteAnchor> sorted = new ArrayList<>(layout.noteAnchors());
-        sorted.sort(java.util.Comparator.comparingDouble(NoteAnchor::onsetQuarters));
-
-        List<Double> onsets = new ArrayList<>();
-        List<Double> xs = new ArrayList<>();
-        // Leading sample so the cursor eases in from the staff start.
-        if (sorted.get(0).onsetQuarters() > 0) {
-            onsets.add(0.0);
-            xs.add(layout.xAtTime(0));
-        }
-        for (NoteAnchor a : sorted) {
-            if (!onsets.isEmpty() && a.onsetQuarters() == onsets.get(onsets.size() - 1)) {
-                continue; // same time column (e.g. chord members) -> one sample
-            }
-            onsets.add(a.onsetQuarters());
-            xs.add(a.x());
-        }
-        // Trailing sample at the end of the piece so motion continues through
-        // the final note's duration to the closing barline.
-        double total = layout.totalDurationQuarters();
-        if (total > onsets.get(onsets.size() - 1)) {
-            onsets.add(total);
-            xs.add(layout.xAtTime(total));
-        }
-
-        sampleOnset = new double[onsets.size()];
-        sampleX = new double[xs.size()];
-        for (int i = 0; i < onsets.size(); i++) {
-            sampleOnset[i] = onsets.get(i);
-            sampleX[i] = xs.get(i);
-        }
     }
 
     // ------------------------------------------------------------------
@@ -490,41 +416,13 @@ public final class StripDemoApp extends Application {
 
     /**
      * Highlight the notes sounding at the current {@link #playhead} and move the
-     * cursor to the continuous, note-aware position for that time: interpolated
-     * across the note timeline so the marker glides the whole time it is
-     * playing, speeds up or slows with the note spacing, and still passes
-     * exactly through each notehead at its onset.
+     * cursor there; the view places it through its playback timeline, so it
+     * glides the whole time and passes exactly through each notehead.
      */
     private void syncToPlayhead() {
         updateHighlights(playhead);
-        stripView.setCursorLayoutX(cursorXForTime(playhead));
+        stripView.setCursorTime(playhead);
         updateTimeLabel();
-    }
-
-    /**
-     * Interpolate the cursor x across the {@link #sampleOnset}/{@link #sampleX}
-     * note timeline for the given musical time, clamped to its ends. Falls back
-     * to the layout's time-based x when no timeline is available.
-     */
-    private double cursorXForTime(double quarters) {
-        int n = sampleOnset.length;
-        if (n == 0) {
-            LayoutResult layout = stripView.getLayout();
-            return layout != null ? layout.xAtTime(quarters) : 0.0;
-        }
-        if (quarters <= sampleOnset[0]) {
-            return sampleX[0];
-        }
-        if (quarters >= sampleOnset[n - 1]) {
-            return sampleX[n - 1];
-        }
-        int i = 1;
-        while (i < n && sampleOnset[i] < quarters) {
-            i++;
-        }
-        double span = sampleOnset[i] - sampleOnset[i - 1];
-        double f = span <= 0 ? 0 : (quarters - sampleOnset[i - 1]) / span;
-        return sampleX[i - 1] + f * (sampleX[i] - sampleX[i - 1]);
     }
 
     /**
@@ -536,9 +434,9 @@ public final class StripDemoApp extends Application {
         Color background = backgroundColor.getValue();
 
         Set<MusicElement> current = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (NoteAnchor anchor : soundingAnchors) {
-            double onset = anchor.onsetQuarters();
-            if (onset <= t && t < onset + anchor.durationQuarters()) {
+        PlaybackTimeline timeline = stripView.getTimeline();
+        if (timeline != null) {
+            for (NoteAnchor anchor : timeline.soundingAt(t)) {
                 current.add(anchor.elementRef());
             }
         }

@@ -15,7 +15,8 @@ Sheetmusic4J requires **Java 21** or higher.
 |-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
 | `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, and ABC import/export | No                |
 | `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                                     | No                |
-| `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font, plus headless rendering to images (AWT)                                          | No                |
+| `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font                                                                                  | No                |
+| `render-awt` | Headless rendering to images through AWT (`AwtRenderSurface`, `HeadlessScoreImage`)                                                                           | No                |
 | `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`, `FlyOverSheetView`, `NodeSheetView`) that draw a `LayoutResult` on a `Canvas`, in 3D, or as a node scene graph   | Yes               |
 | `fxdemo`    | Standalone JavaFX demo applications for loading and inspecting scores, plus strip, 3D fly-over and node-view showcases                                         | Yes               |
 
@@ -42,7 +43,7 @@ renders, so you can point at something in a screenshot and know exactly which cl
 
 * `ScorePainter` draws a `LayoutResult` through a `RenderSurface` abstraction, so the same drawing logic serves JavaFX
   and headless rendering
-* `HeadlessScoreImage` renders a `Score` to a `BufferedImage` without a display
+* `HeadlessScoreImage` (in `render-awt`) renders a `Score` to a `BufferedImage` without a display
 
 ### FX Viewer
 

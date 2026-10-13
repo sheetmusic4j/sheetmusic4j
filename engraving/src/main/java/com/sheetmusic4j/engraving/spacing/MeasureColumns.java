@@ -22,7 +22,7 @@ import com.sheetmusic4j.engraving.glyph.GlyphMapper;
 import com.sheetmusic4j.engraving.glyph.GlyphMetrics;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
-import com.sheetmusic4j.engraving.staff.AnnotationLayout;
+import com.sheetmusic4j.engraving.text.LyricText;
 
 /**
  * The onset columns of one measure index across the whole system: every
@@ -574,11 +574,11 @@ public final class MeasureColumns {
         if (carrier == null || !options.isVisible(MarkingCategory.LYRIC)) {
             return 0.0;
         }
-        double fontSize = options.staffLineGap() * AnnotationLayout.LYRIC_FONT_SIZE_GAPS;
+        double fontSize = options.staffLineGap() * LyricText.FONT_SIZE_GAPS;
         double width = 0.0;
         for (Lyric lyric : carrier.lyrics()) {
             if (lyric.verse() == 1 && !lyric.text().isEmpty()) {
-                width = Math.max(width, options.textMetrics().width(AnnotationLayout.lyricText(lyric), fontSize));
+                width = Math.max(width, options.textMetrics().width(LyricText.of(lyric), fontSize));
             }
         }
         return width;

@@ -12,7 +12,6 @@ import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Placement;
-import com.sheetmusic4j.core.model.Syllabic;
 import com.sheetmusic4j.engraving.glyph.Glyph;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
@@ -21,6 +20,7 @@ import com.sheetmusic4j.engraving.placement.HairpinPlacement;
 import com.sheetmusic4j.engraving.placement.TextPlacement;
 import com.sheetmusic4j.engraving.analysis.ScoreAnalysis;
 import com.sheetmusic4j.engraving.glyph.GlyphMapper;
+import com.sheetmusic4j.engraving.text.LyricText;
 
 /**
  * Markings attached to a staff rather than drawn as part of a note:
@@ -68,11 +68,6 @@ public final class AnnotationLayout {
      * the box outline.
      */
     private static final double REHEARSAL_FONT_SIZE_GAPS = 1.8;
-
-    /**
-     * Multiplier applied to the staff-line gap to derive the lyric font size.
-     */
-    public static final double LYRIC_FONT_SIZE_GAPS = 1.4;
 
     /**
      * Distance (in staff-line gaps) from the bottom staff line to the baseline
@@ -209,7 +204,7 @@ public final class AnnotationLayout {
             return;
         }
         double gap = options.staffLineGap();
-        double fontSize = gap * LYRIC_FONT_SIZE_GAPS;
+        double fontSize = gap * LyricText.FONT_SIZE_GAPS;
         double baselineY = staffY + options.staffHeight()
                 + gap * LYRIC_BASELINE_OFFSET_GAPS + fontSize;
         for (Lyric lyric : note.lyrics()) {
@@ -220,7 +215,7 @@ public final class AnnotationLayout {
             if (text.isEmpty()) {
                 continue;
             }
-            String rendered = lyricText(lyric);
+            String rendered = LyricText.of(lyric);
             texts.add(new TextPlacement(rendered, noteX, baselineY, fontSize,
                     TextPlacement.Align.CENTER, MarkingCategory.LYRIC));
         }
@@ -242,26 +237,6 @@ public final class AnnotationLayout {
         };
         String dotSuffix = metronome.dotted() ? "." : "";
         return beatChar + dotSuffix + " = " + metronome.perMinute();
-    }
-
-    /**
-     * A syllable as drawn: its text plus a trailing hyphen when the word
-     * continues.
-     */
-    public static String lyricText(Lyric lyric) {
-        return lyric.text() + syllabicSuffix(lyric.syllabic());
-    }
-
-    /**
-     * Trailing character appended to a syllable's rendered text to signal a
-     * mid-word hyphenation. A proper centered hyphen glyph between adjacent
-     * syllables is a follow-up refinement.
-     */
-    private static String syllabicSuffix(Syllabic syllabic) {
-        return switch (syllabic) {
-            case BEGIN, MIDDLE -> "-";
-            case SINGLE, END -> "";
-        };
     }
 
     private record WedgeStart(double x, double y, boolean crescendo) {

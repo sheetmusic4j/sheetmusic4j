@@ -15,7 +15,7 @@ import javafx.scene.text.Font;
  * {@link RenderSurface} backed by a JavaFX {@link GraphicsContext}.
  *
  * <p>On first call to {@link #drawSmuflGlyph}, this surface tries to load
- * {@link SmuflGlyphs#BRAVURA_RESOURCE Bravura.otf} from the fxviewer classpath.
+ * {@link SmuflGlyphs#BRAVURA_RESOURCE Bravura.otf} through {@link SmuflGlyphs#openBravura()}.
  * If the font is available, subsequent SMuFL draws use it; if not, this method
  * returns {@code false} so {@link ScorePainter} falls back to primitives.
  */

@@ -7,11 +7,7 @@ import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
-import com.sheetmusic4j.engraving.layout.NoteAnchor;
-import com.sheetmusic4j.engraving.layout.StaffLayout;
-import com.sheetmusic4j.engraving.layout.SystemLayout;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
-import com.sheetmusic4j.engraving.placement.TextPlacement;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -23,7 +19,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import java.util.EnumSet;
-import java.util.List;
 
 /**
  * A JavaFX control that renders a {@link Score}. It engraves the score into a
@@ -74,13 +69,6 @@ public final class SheetView extends Region {
      * {@link #updateWindow(boolean)}).
      */
     private static final double MAX_CANVAS_DIMENSION = 8000.0;
-
-    /**
-     * How far (in staff-line gaps) content may extend beyond the anchor y
-     * it is filtered by - ledger lines, stems, lyrics below a staff - when
-     * deciding what to paint into the current window.
-     */
-    private static final double WINDOW_SLACK_GAPS = 12.0;
 
     private final Canvas canvas = new Canvas();
     private final Engraver engraver = new Engraver();
@@ -141,7 +129,7 @@ public final class SheetView extends Region {
     private final BooleanProperty bracketsVisible =
             new SimpleBooleanProperty(this, "bracketsVisible", true);
 
-    private final NoteDecorations decorations = new NoteDecorations(renderer, this::repaint);
+    private final NoteDecorations decorations = new NoteDecorations(renderer.painter(), this::repaint);
 
     private Score score;
     private LayoutResult layout;
@@ -449,39 +437,6 @@ public final class SheetView extends Region {
     }
 
     /**
-     * Restricts a full layout to just the systems/texts/note-anchors that
-     * overlap {@code [startY, endY)}, so the Canvas only pays the drawing
-     * cost for its own window instead of the whole score. A system counts
-     * when any part of it - from its top down to its last staff plus room
-     * for ledger lines and lyrics - reaches into the window, so a tall
-     * system that starts just above the window still draws its lower half.
-     * Texts and anchors get the same slack; whatever lands outside the
-     * canvas is simply clipped.
-     */
-    private static LayoutResult sliceForWindow(LayoutResult full, double startY, double endY) {
-        double slack = WINDOW_SLACK_GAPS * LayoutOptions.defaults().staffLineGap();
-        List<SystemLayout> systems = full.systems().stream()
-                .filter(s -> s.y() < endY && systemBottom(s) + slack >= startY)
-                .toList();
-        List<TextPlacement> texts = full.texts().stream()
-                .filter(t -> t.y() + slack >= startY && t.y() - slack < endY)
-                .toList();
-        List<NoteAnchor> anchors = full.noteAnchors().stream()
-                .filter(a -> a.y() + slack >= startY && a.y() - slack < endY)
-                .toList();
-        return new LayoutResult(systems, texts, anchors, full.width(), endY - startY);
-    }
-
-    /**
-     * Y of the bottom line of a system's last staff, or its top when it has
-     * no staves.
-     */
-    private static double systemBottom(SystemLayout system) {
-        List<StaffLayout> staves = system.staves();
-        return staves.isEmpty() ? system.y() : staves.get(staves.size() - 1).lineY(4);
-    }
-
-    /**
      * Redraw the currently materialized window from the cached layout
      * without re-engraving or repositioning it. Used whenever only per-note
      * highlights or the bracket visibility flag change.
@@ -495,15 +450,15 @@ public final class SheetView extends Region {
 
     private void paintWindow() {
         double zoomFactor = Math.max(zoom.get(), 0.01);
-        renderer.setHiddenTextCategories(hiddenTextCategories);
-        renderer.setBracketsVisible(bracketsVisible.get());
+        renderer.painter().setHiddenCategories(hiddenTextCategories);
+        renderer.painter().setBracketsVisible(bracketsVisible.get());
         GraphicsContext gc = canvas.getGraphicsContext2D();
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         gc.save();
         gc.translate(0, -windowStartLayoutY * zoomFactor);
         gc.scale(zoomFactor, zoomFactor);
         double windowEndLayoutY = windowStartLayoutY + canvas.getHeight() / zoomFactor;
-        LayoutResult slice = sliceForWindow(layout, windowStartLayoutY, windowEndLayoutY);
+        LayoutResult slice = layout.slice(windowStartLayoutY, windowEndLayoutY);
         renderer.render(gc, slice, layout.width(), canvas.getHeight() / zoomFactor);
         gc.restore();
     }

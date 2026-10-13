@@ -10,6 +10,7 @@ import com.sheetmusic4j.engraving.layout.LayoutMode;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
 import com.sheetmusic4j.engraving.layout.NoteAnchor;
+import com.sheetmusic4j.engraving.layout.PlaybackTimeline;
 import com.sheetmusic4j.engraving.layout.StaffLayout;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
 import com.sheetmusic4j.render.RenderColor;
@@ -167,6 +168,7 @@ public final class FlyOverSheetView extends Region {
 
     private Score score;
     private LayoutResult layout;
+    private PlaybackTimeline timeline;
     /** Lit notes sorted by onset, so a frame only visits the ones near the playhead. */
     private LitNote[] notes = new LitNote[0];
     /** Longest time any note keeps glowing, bounding the per-frame scan. */
@@ -176,7 +178,7 @@ public final class FlyOverSheetView extends Region {
     private double staffCenterY;
     private double staffBlockHeight = MIN_STAFF_BLOCK;
 
-    /** See {@link #setCursor}; NaN means "follow {@link LayoutResult#xAtTime}". */
+    /** See {@link #setCursor}; NaN means "follow {@link PlaybackTimeline#cursorX}". */
     private double cursorLayoutX = Double.NaN;
 
     /**
@@ -188,7 +190,7 @@ public final class FlyOverSheetView extends Region {
         camera.setFarClip(100_000);
         camera.getTransforms().setAll(cameraTarget, cameraYawRotate, cameraPitchRotate, cameraBack);
 
-        renderer.setPageColor(null);
+        renderer.painter().setPageColor(null);
         paper.fillProperty().bind(paperColor);
         cursor.fillProperty().bind(cursorColor);
         cursor.visibleProperty().bind(cursorVisible);
@@ -282,7 +284,7 @@ public final class FlyOverSheetView extends Region {
 
     /**
      * Follow an explicit x position in layout units instead of
-     * {@link LayoutResult#xAtTime} until the next {@link #setCursorTime}; the
+     * {@link PlaybackTimeline#cursorX} until the next {@link #setCursorTime}; the
      * balls still follow {@code quarters}. Same idea as
      * {@link StripSheetView#setCursorLayoutX}.
      *
@@ -471,6 +473,7 @@ public final class FlyOverSheetView extends Region {
         maxAfterglow = 0;
         if (score == null) {
             layout = null;
+            timeline = null;
             update();
             return;
         }
@@ -480,6 +483,7 @@ public final class FlyOverSheetView extends Region {
                 .stripSpacingFactor(stripSpacingFactor.get())
                 .build();
         layout = engraver.layout(score, options);
+        timeline = PlaybackTimeline.of(layout);
         measureStaffBlock(layout);
         buildPaper();
         buildInk();
@@ -572,11 +576,8 @@ public final class FlyOverSheetView extends Region {
      */
     private void buildNotes() {
         Map<MusicElement, NoteAnchor> anchorByElement = new IdentityHashMap<>();
-        for (NoteAnchor anchor : layout.noteAnchors()) {
-            if (anchor.durationQuarters() > 0
-                    && (anchor.elementRef() instanceof Note || anchor.elementRef() instanceof Chord)) {
-                anchorByElement.putIfAbsent(anchor.elementRef(), anchor);
-            }
+        for (NoteAnchor anchor : timeline.soundingAnchors()) {
+            anchorByElement.putIfAbsent(anchor.elementRef(), anchor);
         }
         List<LitNote> list = new ArrayList<>();
         Map<VoiceKey, Map<Double, Landing>> landingsByVoice = new LinkedHashMap<>();
@@ -738,8 +739,8 @@ public final class FlyOverSheetView extends Region {
     private void update() {
         double time = cursorTime.get();
         double x = 0;
-        if (layout != null) {
-            x = Double.isNaN(cursorLayoutX) ? layout.xAtTime(time) : cursorLayoutX;
+        if (timeline != null) {
+            x = Double.isNaN(cursorLayoutX) ? timeline.cursorX(time) : cursorLayoutX;
         }
         cursor.setX(x - cursor.getWidth() / 2);
 

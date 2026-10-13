@@ -1,11 +1,8 @@
 package com.sheetmusic4j.engraving.glyph;
 
-import com.sheetmusic4j.engraving.placement.TextPlacement;
-import com.sheetmusic4j.engraving.placement.GlyphPlacement;
-
 /**
- * Semantic classification for both {@link TextPlacement text} and
- * {@link GlyphPlacement glyph} placements. Viewers can hide or show categories
+ * Semantic classification for both {@link com.sheetmusic4j.engraving.placement.TextPlacement text} and
+ * {@link com.sheetmusic4j.engraving.placement.GlyphPlacement glyph} placements. Viewers can hide or show categories
  * independently (e.g. show notes but hide dynamics).
  *
  * <p>Categories are a superset of what earlier tasks used for text only. New
@@ -16,7 +13,7 @@ public enum MarkingCategory {
     /**
      * Ordinary staff content: notes, rests, stems, beams, ties, clefs, key
      * signatures, time signatures, accidentals. The default for
-     * {@link GlyphPlacement} so pre-existing call sites are unaffected by the
+     * {@link com.sheetmusic4j.engraving.placement.GlyphPlacement} so pre-existing call sites are unaffected by the
      * category-aware visibility filter.
      */
     NOTE,

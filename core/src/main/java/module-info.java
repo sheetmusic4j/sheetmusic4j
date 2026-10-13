@@ -14,4 +14,9 @@ module com.sheetmusic4j.core {
     exports com.sheetmusic4j.core.guitarpro;
 
     uses com.sheetmusic4j.core.io.ScoreFormat;
+    provides com.sheetmusic4j.core.io.ScoreFormat with
+            com.sheetmusic4j.core.musicxml.MusicXmlFormat,
+            com.sheetmusic4j.core.midi.MidiFormat,
+            com.sheetmusic4j.core.abc.AbcFormat,
+            com.sheetmusic4j.core.guitarpro.GuitarProFormat;
 }

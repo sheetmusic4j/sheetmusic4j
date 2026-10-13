@@ -1,22 +1,16 @@
 package com.sheetmusic4j.core.io;
 
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.Set;
-import java.util.function.Supplier;
 
-import com.sheetmusic4j.core.abc.AbcReader;
-import com.sheetmusic4j.core.abc.AbcWriter;
-import com.sheetmusic4j.core.guitarpro.GuitarProImporter;
-import com.sheetmusic4j.core.midi.MidiExporter;
-import com.sheetmusic4j.core.midi.MidiImporter;
 import com.sheetmusic4j.core.model.Score;
-import com.sheetmusic4j.core.musicxml.MusicXmlReader;
-import com.sheetmusic4j.core.musicxml.MusicXmlWriter;
 
 /**
  * Convenience facade that loads and saves a {@link Score} by dispatching on the
@@ -27,7 +21,9 @@ import com.sheetmusic4j.core.musicxml.MusicXmlWriter;
  *   <li>{@code .abc} &rarr; ABC notation</li>
  *   <li>{@code .gp} &rarr; Guitar Pro 8 (load only)</li>
  * </ul>
- * plus any {@link ScoreFormat} found via {@link ServiceLoader}.
+ * plus any other {@link ScoreFormat} found via {@link ServiceLoader}. The
+ * built-in formats are themselves services of this module, so this facade
+ * does not depend on the format packages.
  */
 public final class ScoreFile {
 
@@ -74,26 +70,41 @@ public final class ScoreFile {
     }
 
     private static List<ScoreFormat> discoverFormats() {
-        List<ScoreFormat> formats = new ArrayList<>(List.of(
-                new BuiltIn("MusicXML", Set.of("musicxml", "xml", "mxl"), MusicXmlReader::new, MusicXmlWriter::new),
-                new BuiltIn("MIDI", Set.of("mid", "midi"), MidiImporter::new, MidiExporter::new),
-                new BuiltIn("ABC", Set.of("abc"), AbcReader::new, AbcWriter::new),
-                new BuiltIn("Guitar Pro", Set.of("gp"), GuitarProImporter::new, null)));
-        ServiceLoader.load(ScoreFormat.class).forEach(formats::add);
-        return List.copyOf(formats);
+        Set<ClassLoader> loaders = new LinkedHashSet<>();
+        loaders.add(ScoreFile.class.getClassLoader());
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        if (context != null) {
+            loaders.add(context);
+        }
+        List<ScoreFormat> builtIn = new ArrayList<>();
+        List<ScoreFormat> contributed = new ArrayList<>();
+        Set<Class<?>> seen = new LinkedHashSet<>();
+        for (ClassLoader loader : loaders) {
+            for (ServiceLoader.Provider<ScoreFormat> provider
+                    : ServiceLoader.load(ScoreFormat.class, loader).stream().toList()) {
+                if (seen.add(provider.type())) {
+                    (isBuiltIn(provider.type()) ? builtIn : contributed).add(provider.get());
+                }
+            }
+        }
+        builtIn.addAll(contributed);
+        return List.copyOf(builtIn);
     }
 
-    private record BuiltIn(String name, Set<String> extensions, Supplier<ScoreReader> readerFactory,
-                           Supplier<ScoreWriter> writerFactory) implements ScoreFormat {
-
-        @Override
-        public ScoreReader reader() {
-            return readerFactory.get();
+    /**
+     * Whether a format ships in the same module/jar as this class, so the
+     * built-ins win an extension clash wherever a contributed format happens
+     * to sit on the class or module path.
+     */
+    private static boolean isBuiltIn(Class<?> type) {
+        if (type.getModule().isNamed()) {
+            return type.getModule() == ScoreFile.class.getModule();
         }
+        return Objects.equals(location(type), location(ScoreFile.class));
+    }
 
-        @Override
-        public Optional<ScoreWriter> writer() {
-            return Optional.ofNullable(writerFactory).map(Supplier::get);
-        }
+    private static Object location(Class<?> type) {
+        CodeSource source = type.getProtectionDomain().getCodeSource();
+        return source == null ? null : source.getLocation();
     }
 }

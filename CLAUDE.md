@@ -22,7 +22,9 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    `KeySignature`, `TimeSignature`, etc.) plus MusicXML read/write (`com.sheetmusic4j.core.musicxml`, StAX-based,
    XXE-hardened) and MIDI import/export (`com.sheetmusic4j.core.midi`, `javax.sound.midi`), plus ABC and Guitar Pro.
    `com.sheetmusic4j.core.io.ScoreFile` is the load/save facade; every format implements `ScoreReader`/`ScoreWriter`
-   and is registered as a `ScoreFormat` (built-ins plus `ServiceLoader`), and every format exception extends
+   and is registered as a `ScoreFormat` service (`MusicXmlFormat` etc. are listed in `module-info` `provides` *and*
+   `META-INF/services`, so discovery works on module path and classpath; `io` never imports a format package, and
+   formats from this jar sort before contributed ones), and every format exception extends
    `ScoreFormatException`. Notes and rests carry a `staff` and a `voice`; each (staff, voice) is its own timeline and
    readers fill a voice's gaps with invisible rests (`Rest.visible() == false`). `MeasureTiming` computes exact
    element onsets (`Fraction`, never `double`, so tuplets don't drift) and is shared by MIDI/MusicXML export and
@@ -34,20 +36,28 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    only class in the root package); the work lives in subpackages: `analysis` (geometry-free score queries: `PartInfo`,
    `MeasureTimeline`, `ScoreAnalysis`), `spacing` (`MeasureColumns` - one set of onset columns per measure across all
    staves/voices, so simultaneous notes align; Gourlay-style weights; per-staff minimum distances incl. lyric widths;
-   `MeasureStart`, `HorizontalSpacing`, `RowPlan` row breaking by natural width), `page` (`SystemEngraver` assembles
+   `MeasureStart`, `HorizontalSpacing`, `RowPlan` row breaking by natural width), `text` (`LyricText`: lyric text and
+   font size shared by spacing and staff layout), `page` (`SystemEngraver` assembles
    each row; titles, part labels, part-group brackets), `staff` (`StaffRowEngraver` lays out one staff of one row, with
    `StemPlan` - stems by voice when a staff is polyphonic - `SpanTracker` for beams/ties/slurs/tuplets per voice,
    `AnnotationLayout`, `NoteAnchors`, `StaffGeometry`), and `glyph.GlyphMapper`/`glyph.GlyphMetrics` (the single
-   source of SMuFL glyph widths). Only `engraving`, `glyph`, `layout` and `placement` are exported (JPMS module
+   source of SMuFL glyph widths). Internal package dependencies point one way (`analysis` → `spacing` → `staff` → `page`;
+   `analysis` takes a visibility predicate, not `LayoutOptions`); don't add imports - even Javadoc-only ones - that
+   point back up. `layout.PlaybackTimeline` maps musical time to geometry (sounding anchors, notehead-following
+   cursor x) and `LayoutResult.slice` cuts a y-window; views use these instead of their own copies. Only `engraving`,
+   `glyph`, `layout` and `placement` are exported (JPMS module
    `com.sheetmusic4j.engraving`). `LayoutOptions` carries `TextMetrics` (text measurement; default estimate) and
    `hiddenCategories` (hidden markings are not laid out and take no space). `LayoutSnapshotTest` hashes the full
    layout of every sample score; any engraving change shows up there — regenerate with
    `-Dsheetmusic4j.snapshots.update=true` only when the change is intentional.
 3. **`render`** — toolkit-neutral drawing. `ScorePainter` (`com.sheetmusic4j.render`) draws a `LayoutResult` through
    the `RenderSurface` interface (stroke/fill/oval/text primitives) with the bundled Bravura font (`SmuflGlyphs`,
-   `fonts/Bravura.otf`). `com.sheetmusic4j.render.awt` has `AwtRenderSurface` and `HeadlessScoreImage` for headless
-   rendering to images. **No JavaFX dependency.** JPMS module `com.sheetmusic4j.render`.
-4. **`fxviewer`** — JavaFX binding. `FxRenderSurface` implements `RenderSurface` for a JavaFX `GraphicsContext`,
+   `fonts/Bravura.otf`). **No JavaFX or AWT dependency.** JPMS module `com.sheetmusic4j.render`.
+4. **`render-awt`** — AWT binding: `AwtRenderSurface` and `HeadlessScoreImage` (`com.sheetmusic4j.render.awt`) for
+   headless rendering to images. JPMS module `com.sheetmusic4j.render.awt` (the only one that requires `java.desktop`
+   besides `core`, which needs it for `javax.sound.midi`).
+5. **`fxviewer`** — JavaFX binding, JPMS module `com.sheetmusic4j.fxviewer`. `ScoreRenderer` adapts a `GraphicsContext`
+   and exposes its `ScorePainter` via `painter()` for configuration. `FxRenderSurface` implements `RenderSurface` for a JavaFX `GraphicsContext`,
    `FxTextMetrics` measures text with the JavaFX font; `SheetView` (page) and `StripSheetView` (one-line, play-along)
    are the `Region`/`Canvas` controls that tie `Engraver` + `ScorePainter` + `FxRenderSurface` together, sharing their
    per-note overlays through `NoteDecorations`. `NodeSheetView` is the retained-mode variant: `NodeRenderSurface` builds a
@@ -59,14 +69,14 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    hops from note to note landing at each onset, and sounding noteheads light up as glowing copies
    (`ScorePainter.paintNotehead`); hops and glow are `JumpCurve`, pure functions of time. All colours and
    sizes are properties. Gradient-filled shapes don't render reliably inside the 3D `SubScene`; bake them into images.
-5. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `SheetDemoLauncher` to avoid classpath
+6. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `SheetDemoLauncher` to avoid classpath
    JavaFX-runtime errors). Lets you open a MusicXML/MIDI file, shows a debug pane (`ScoreInspector`), and shows a
    companion PDF side-by-side via `com.dlsc.pdfviewfx:pdfviewfx` when one exists next to the loaded file (same basename,
    `.pdf`; resolved by `PdfSibling`). `StripDemoApp` (`-Pstrip`) and `FlyOverDemoApp` (`-Pflyover`) showcase the strip
    and 3D fly-over views.
 
 **Key architectural rule**: the same `ScorePainter` logic is reused for both on-screen JavaFX rendering
-(`FxRenderSurface`) and headless AWT rendering (`AwtRenderSurface` in `render`), by depending
+(`FxRenderSurface`) and headless AWT rendering (`AwtRenderSurface` in `render-awt`), by depending
 only on the `RenderSurface` abstraction. Never draw directly against `GraphicsContext` or `Graphics2D` outside of a
 `RenderSurface` implementation — new drawing logic belongs in `ScorePainter`.
 

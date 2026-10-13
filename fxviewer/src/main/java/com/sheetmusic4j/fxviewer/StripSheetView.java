@@ -7,6 +7,7 @@ import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.layout.LayoutMode;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.engraving.layout.PlaybackTimeline;
 import com.sheetmusic4j.render.NoteBackgroundStyle;
 import javafx.beans.property.*;
 import javafx.collections.ObservableMap;
@@ -26,7 +27,8 @@ import javafx.scene.shape.Rectangle;
  * {@link #cursorScreenPositionProperty() cursorScreenPosition} of the
  * viewport width, and the score canvas underneath is translated so the
  * musical time given by {@link #cursorTimeProperty()} sits exactly under
- * that cursor.
+ * that cursor. Time maps to x through the layout's {@link PlaybackTimeline},
+ * so the cursor passes through each notehead at its onset.
  *
  * <p>Advancing the cursor time is therefore a cheap {@code translateX}
  * update - no re-engrave, no repaint - which is important for smooth
@@ -64,14 +66,15 @@ public final class StripSheetView extends Region {
     private final ObjectProperty<NoteBackgroundStyle> noteBackgroundStyle =
             new SimpleObjectProperty<>(this, "noteBackgroundStyle", NoteBackgroundStyle.defaults());
 
-    private final NoteDecorations decorations = new NoteDecorations(renderer, this::repaint);
+    private final NoteDecorations decorations = new NoteDecorations(renderer.painter(), this::repaint);
 
     private Score score;
     private LayoutResult layout;
+    private PlaybackTimeline timeline;
 
     /**
      * When set (not NaN), the cursor is pinned to this explicit x in layout
-     * (pre-zoom) units instead of the time-based {@link LayoutResult#xAtTime}
+     * (pre-zoom) units instead of the {@link PlaybackTimeline#cursorX}
      * placement. Cleared by {@link #setCursorTime}.
      */
     private double cursorLayoutX = Double.NaN;
@@ -86,14 +89,14 @@ public final class StripSheetView extends Region {
         cursor.setStrokeWidth(2.0);
         cursor.strokeProperty().bind(cursorColor);
         cursor.visibleProperty().bind(cursorVisible);
-        renderer.setNoteBackgroundStyle(noteBackgroundStyle.get());
+        renderer.painter().setNoteBackgroundStyle(noteBackgroundStyle.get());
 
         cursorTime.addListener((obs, o, n) -> updateCursor());
         cursorScreenPosition.addListener((obs, o, n) -> updateCursor());
         zoom.addListener((obs, o, n) -> rebuild());
         stripSpacingFactor.addListener((obs, o, n) -> rebuild());
         noteBackgroundStyle.addListener((obs, o, n) -> {
-            renderer.setNoteBackgroundStyle(n);
+            renderer.painter().setNoteBackgroundStyle(n);
             repaint();
         });
 
@@ -147,6 +150,15 @@ public final class StripSheetView extends Region {
     }
 
     /**
+     * The playback timeline of the last engraved layout (which notes sound
+     * when, and where the cursor sits), or {@code null} if no score has been
+     * set.
+     */
+    public PlaybackTimeline getTimeline() {
+        return timeline;
+    }
+
+    /**
      * Musical time (in quarter notes from the start of the score) at which
      * the fixed cursor sits. Mutations only update a canvas translation -
      * no re-engrave or repaint - so this is safe to animate at 60 fps.
@@ -167,12 +179,8 @@ public final class StripSheetView extends Region {
 
     /**
      * Pin the cursor to an explicit x position in layout (pre-zoom) units,
-     * overriding the time-based {@link LayoutResult#xAtTime} placement until
-     * the next {@link #setCursorTime} call. Use this to align the cursor
-     * exactly with a note's rendered centre (its
-     * {@link com.sheetmusic4j.engraving.layout.NoteAnchor} x) rather than the
-     * piecewise-linear time interpolation, which spaces time evenly across a
-     * measure and so does not land on individual noteheads.
+     * overriding the {@link PlaybackTimeline#cursorX} placement until the
+     * next {@link #setCursorTime} call.
      *
      * @param layoutX the x coordinate in layout units to place under the cursor
      */
@@ -336,6 +344,7 @@ public final class StripSheetView extends Region {
         double zoomFactor = Math.max(zoom.get(), 0.01);
         if (score == null) {
             layout = null;
+            timeline = null;
             canvas.setWidth(400);
             canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
@@ -348,6 +357,7 @@ public final class StripSheetView extends Region {
                 .stripSpacingFactor(stripSpacingFactor.get())
                 .build();
         layout = engraver.layout(score, options);
+        timeline = PlaybackTimeline.of(layout);
         canvas.setWidth(Math.max(layout.width() * zoomFactor, 1.0));
         canvas.setHeight(Math.max(layout.height() * zoomFactor, 1.0));
         setPrefHeight(canvas.getHeight());
@@ -384,7 +394,7 @@ public final class StripSheetView extends Region {
             return;
         }
         double zoomFactor = Math.max(zoom.get(), 0.01);
-        double layoutX = Double.isNaN(cursorLayoutX) ? layout.xAtTime(cursorTime.get()) : cursorLayoutX;
+        double layoutX = Double.isNaN(cursorLayoutX) ? timeline.cursorX(cursorTime.get()) : cursorLayoutX;
         canvas.setLayoutX(cursorScreenX - layoutX * zoomFactor);
     }
 

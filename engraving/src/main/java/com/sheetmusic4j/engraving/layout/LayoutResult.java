@@ -25,6 +25,12 @@ public record LayoutResult(List<SystemLayout> systems, List<TextPlacement> texts
                            List<NoteAnchor> noteAnchors,
                            double width, double height) {
 
+    /**
+     * Room (in staff-line gaps) {@link #slice} allows below a system's last
+     * staff line and around texts and anchors, for ledger lines and lyrics.
+     */
+    private static final double SLICE_SLACK_GAPS = 12.0;
+
     public LayoutResult {
         systems = List.copyOf(systems);
         texts = List.copyOf(texts);
@@ -213,6 +219,49 @@ public record LayoutResult(List<SystemLayout> systems, List<TextPlacement> texts
             any = true;
         }
         return any ? top : 0.0;
+    }
+
+    /**
+     * Restricts this layout to just the systems, texts and note anchors that
+     * overlap {@code [startY, endY)}, so a renderer drawing one window of a
+     * long page only pays for that window. A system counts when any part of
+     * it - from its top down to its last staff plus room for ledger lines and
+     * lyrics - reaches into the window, so a tall system that starts just
+     * above the window still draws its lower half. Texts and anchors get the
+     * same slack; whatever lands outside the window is left for the renderer
+     * to clip. Coordinates are unchanged; the slice keeps this layout's width
+     * and is {@code endY - startY} high.
+     */
+    public LayoutResult slice(double startY, double endY) {
+        double slack = SLICE_SLACK_GAPS * maxLineGap();
+        List<SystemLayout> slicedSystems = systems.stream()
+                .filter(s -> s.y() < endY && systemBottom(s) + slack >= startY)
+                .toList();
+        List<TextPlacement> slicedTexts = texts.stream()
+                .filter(t -> t.y() + slack >= startY && t.y() - slack < endY)
+                .toList();
+        List<NoteAnchor> slicedAnchors = noteAnchors.stream()
+                .filter(a -> a.y() + slack >= startY && a.y() - slack < endY)
+                .toList();
+        return new LayoutResult(slicedSystems, slicedTexts, slicedAnchors, width, endY - startY);
+    }
+
+    /**
+     * Y of the bottom line of a system's last staff, or its top when it has
+     * no staves.
+     */
+    private static double systemBottom(SystemLayout system) {
+        List<StaffLayout> staves = system.staves();
+        return staves.isEmpty() ? system.y() : staves.get(staves.size() - 1).lineY(4);
+    }
+
+    /**
+     * The largest staff-line gap in the layout, or the default gap when it
+     * has no staves.
+     */
+    private double maxLineGap() {
+        return staves().stream().mapToDouble(StaffLayout::lineGap).max()
+                .orElse(LayoutOptions.defaults().staffLineGap());
     }
 
     /**
