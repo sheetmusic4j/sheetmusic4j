@@ -12,6 +12,7 @@ import com.sheetmusic4j.render.NoteBackgroundStyle;
 import javafx.beans.property.*;
 import javafx.collections.ObservableMap;
 import javafx.geometry.Insets;
+import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
@@ -25,14 +26,17 @@ import javafx.scene.shape.Rectangle;
  * engraved in {@link LayoutMode#STRIP} mode into one endless system; a
  * fixed vertical cursor line sits at
  * {@link #cursorScreenPositionProperty() cursorScreenPosition} of the
- * viewport width, and the score canvas underneath is translated so the
+ * viewport width, and the score underneath is translated so the
  * musical time given by {@link #cursorTimeProperty()} sits exactly under
  * that cursor. Time maps to x through the layout's {@link PlaybackTimeline},
  * so the cursor passes through each notehead at its onset.
  *
- * <p>Advancing the cursor time is therefore a cheap {@code translateX}
- * update - no re-engrave, no repaint - which is important for smooth
- * playback. Highlight changes go through the same
+ * <p>The score is drawn in {@link LayoutTiles tiles} of at most
+ * {@value #TILE_PIXELS} pixels wide, and only the tiles around the visible
+ * part exist, so a strip of any length stays within GPU texture limits and
+ * a few megabytes. Advancing the cursor time is a cheap translation plus,
+ * every tile width, painting one new tile - no re-engrave - which is
+ * important for smooth playback. Highlight changes go through the same
  * {@link #noteHighlights()} map as {@link SheetView}.
  */
 public final class StripSheetView extends Region {
@@ -40,7 +44,13 @@ public final class StripSheetView extends Region {
     private static final double FALLBACK_HEIGHT = LayoutOptions.defaults().staffHeight()
             + LayoutOptions.defaults().topMargin() * 2;
 
-    private final Canvas canvas = new Canvas();
+    /** Width of one tile in pixels, well below every GPU's texture limit. */
+    private static final double TILE_PIXELS = 2048;
+
+    /** Tallest tile in pixels; a strip taller than this (a huge score, zoomed in) is cut off at the bottom. */
+    private static final double MAX_TILE_HEIGHT = 16384;
+
+    private final LayoutTiles tiles = new LayoutTiles(this::paintTile);
     private final Line cursor = new Line();
     private final Rectangle clip = new Rectangle();
     private final Engraver engraver = new Engraver();
@@ -84,7 +94,7 @@ public final class StripSheetView extends Region {
      */
     public StripSheetView() {
         setPadding(new Insets(4));
-        getChildren().addAll(canvas, cursor);
+        getChildren().addAll(tiles.group(), cursor);
         setClip(clip);
         cursor.setStrokeWidth(2.0);
         cursor.strokeProperty().bind(cursorColor);
@@ -108,8 +118,6 @@ public final class StripSheetView extends Region {
             clip.setHeight(n.doubleValue());
             cursor.setEndY(n.doubleValue());
         });
-        canvas.setWidth(400);
-        canvas.setHeight(FALLBACK_HEIGHT);
         setMinSize(200, 60);
         setPrefSize(400, FALLBACK_HEIGHT);
     }
@@ -160,8 +168,9 @@ public final class StripSheetView extends Region {
 
     /**
      * Musical time (in quarter notes from the start of the score) at which
-     * the fixed cursor sits. Mutations only update a canvas translation -
-     * no re-engrave or repaint - so this is safe to animate at 60 fps.
+     * the fixed cursor sits. Mutations only update a translation (and paint
+     * one new tile each time a tile width scrolls into view) - no re-engrave
+     * - so this is safe to animate at 60 fps.
      */
     public DoubleProperty cursorTimeProperty() {
         return cursorTime;
@@ -345,9 +354,8 @@ public final class StripSheetView extends Region {
         if (score == null) {
             layout = null;
             timeline = null;
-            canvas.setWidth(400);
-            canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
-            canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            tiles.reset(0, 1);
+            setPrefHeight(FALLBACK_HEIGHT * zoomFactor);
             updateCursor();
             return;
         }
@@ -358,10 +366,8 @@ public final class StripSheetView extends Region {
                 .build();
         layout = engraver.layout(score, options);
         timeline = PlaybackTimeline.of(layout);
-        canvas.setWidth(Math.max(layout.width() * zoomFactor, 1.0));
-        canvas.setHeight(Math.max(layout.height() * zoomFactor, 1.0));
-        setPrefHeight(canvas.getHeight());
-        paintCurrent();
+        tiles.reset(layout.width(), TILE_PIXELS / zoomFactor);
+        setPrefHeight(Math.max(layout.height() * zoomFactor, 1.0));
         updateCursor();
     }
 
@@ -369,17 +375,20 @@ public final class StripSheetView extends Region {
         if (layout == null) {
             return;
         }
-        paintCurrent();
+        tiles.repaint();
     }
 
-    private void paintCurrent() {
+    /** One tile: a canvas covering {@code [x0, x0 + width)} of the layout, placed at its zoomed x. */
+    private Node paintTile(double x0, double width) {
         double zoomFactor = Math.max(zoom.get(), 0.01);
+        Canvas canvas = new Canvas(Math.ceil(width * zoomFactor),
+                Math.min(Math.ceil(layout.height() * zoomFactor), MAX_TILE_HEIGHT));
+        canvas.setLayoutX(x0 * zoomFactor);
         GraphicsContext gc = canvas.getGraphicsContext2D();
-        gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        gc.save();
         gc.scale(zoomFactor, zoomFactor);
-        renderer.render(gc, layout, layout.width(), layout.height());
-        gc.restore();
+        gc.translate(-x0, 0);
+        renderer.renderRegion(gc, layout, x0, 0, x0 + width, layout.height());
+        return canvas;
     }
 
     private void updateCursor() {
@@ -390,17 +399,19 @@ public final class StripSheetView extends Region {
         cursor.setStartY(0);
         cursor.setEndY(getHeight());
         if (layout == null) {
-            canvas.setLayoutX(0);
+            tiles.group().setLayoutX(0);
             return;
         }
         double zoomFactor = Math.max(zoom.get(), 0.01);
         double layoutX = Double.isNaN(cursorLayoutX) ? timeline.cursorX(cursorTime.get()) : cursorLayoutX;
-        canvas.setLayoutX(cursorScreenX - layoutX * zoomFactor);
+        double offset = cursorScreenX - layoutX * zoomFactor;
+        tiles.group().setLayoutX(offset);
+        tiles.show(-offset / zoomFactor, (viewportWidth - offset) / zoomFactor);
     }
 
     @Override
     protected void layoutChildren() {
-        // Cursor is positioned via its own start/end coords, and canvas via
-        // its layoutX property. Nothing to lay out here.
+        // Cursor is positioned via its own start/end coords, and the tiles via
+        // the group's layoutX. Nothing to lay out here.
     }
 }

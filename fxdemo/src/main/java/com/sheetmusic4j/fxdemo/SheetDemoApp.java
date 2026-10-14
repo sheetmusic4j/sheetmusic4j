@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 import com.sheetmusic4j.core.io.ScoreFile;
+import com.sheetmusic4j.fxdemo.ui.ScoreLoader;
 import com.sheetmusic4j.core.io.ScoreFormat;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
@@ -23,7 +24,6 @@ import com.sheetmusic4j.fxdemo.ui.VisualIssueReporter;
 import com.sheetmusic4j.fxviewer.SheetView;
 import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -58,6 +58,8 @@ import javafx.stage.Stage;
  * class wires them together and owns the currently loaded score.
  */
 public final class SheetDemoApp extends Application {
+
+    private final ScoreLoader loader = new ScoreLoader();
 
     private static final double TREE_DIVIDER = 0.18;
 
@@ -348,21 +350,10 @@ public final class SheetDemoApp extends Application {
     private void openFile(Path path) {
         playback.stop();
         statusLabel.setText("Loading: " + path.toAbsolutePath() + " ...");
-        Task<Score> task = new Task<>() {
-            @Override
-            protected Score call() {
-                return ScoreFile.load(path);
-            }
-        };
-        task.setOnSucceeded(e -> showScore(path, task.getValue()));
-        task.setOnFailed(e -> {
-            Throwable ex = task.getException();
+        loader.load(path, score -> showScore(path, score), ex -> {
             showError("Failed to open file", path + "\n\n" + (ex != null ? ex.getMessage() : "unknown error"));
             statusLabel.setText("Error loading: " + path);
         });
-        Thread thread = new Thread(task, "sheetmusic4j-score-loader");
-        thread.setDaemon(true);
-        thread.start();
     }
 
     private void showScore(Path path, Score score) {

@@ -34,6 +34,17 @@ public final class ScorePainter {
     private static final int STAFF_LINES = 5;
     private static final double STEM_LENGTH_GAPS = 3.5;
 
+    /**
+     * How far (in staff-line gaps) a glyph's ink may reach beyond its anchor
+     * x - clefs, time signatures, overlay accidentals, ledger lines - when
+     * {@link #paintRegion} decides whether it touches the region.
+     */
+    private static final double CULL_MARGIN_GAPS = 8.0;
+
+    /** Horizontal range being painted; everything outside it is skipped. Unbounded for {@link #paint}. */
+    private double regionX0 = Double.NEGATIVE_INFINITY;
+    private double regionX1 = Double.POSITIVE_INFINITY;
+
     private final EnumSet<MarkingCategory> hiddenCategories =
             EnumSet.noneOf(MarkingCategory.class);
 
@@ -417,6 +428,39 @@ public final class ScorePainter {
             surface.fillRect(0, 0, Math.max(layout.width(), surfaceWidth),
                     Math.max(layout.height(), surfaceHeight));
         }
+        paintContent(surface, layout);
+    }
+
+    /**
+     * Paint only the part of the layout between {@code x0} and {@code x1}
+     * (layout units), for renderers that rasterise a long layout in tiles:
+     * everything that cannot reach into the region is skipped, so the cost
+     * of a tile depends on its own content, not on the whole score. The
+     * page colour fills just the region, from {@code y0} to {@code y1}.
+     * Content outside the region may still be drawn partly; the caller
+     * clips.
+     */
+    public void paintRegion(RenderSurface surface, LayoutResult layout, double x0, double y0, double x1, double y1) {
+        if (pageColor != null) {
+            surface.setFill(pageColor);
+            surface.fillRect(x0, y0, x1 - x0, y1 - y0);
+        }
+        regionX0 = x0;
+        regionX1 = x1;
+        try {
+            paintContent(surface, layout);
+        } finally {
+            regionX0 = Double.NEGATIVE_INFINITY;
+            regionX1 = Double.POSITIVE_INFINITY;
+        }
+    }
+
+    /** Whether ink spanning {@code [a, b]} (either order), grown by {@code margin}, reaches the region. */
+    private boolean inRegion(double a, double b, double margin) {
+        return Math.max(a, b) + margin >= regionX0 && Math.min(a, b) - margin <= regionX1;
+    }
+
+    private void paintContent(RenderSurface surface, LayoutResult layout) {
         surface.setStroke(RenderColor.BLACK);
         surface.setFill(RenderColor.BLACK);
         surface.setLineWidth(1.0);
@@ -432,20 +476,29 @@ public final class ScorePainter {
             if (hiddenCategories.contains(text.category())) {
                 continue;
             }
+            double width = textMetrics.width(text.text().isEmpty() ? " " : text.text(), text.fontSize());
+            if (!inRegion(text.x() - width, text.x() + width, text.fontSize())) {
+                continue;
+            }
             drawText(surface, text);
         }
         for (SystemLayout system : layout.systems()) {
             for (StaffLayout staff : system.staves()) {
                 drawStaff(surface, staff);
             }
+            double systemGap = system.staves().isEmpty() ? referenceLineGap(layout)
+                    : system.staves().get(0).lineGap();
+            double margin = systemGap * CULL_MARGIN_GAPS;
             for (SystemBarline barline : system.barlines()) {
-                drawSystemBarline(surface, barline);
+                if (inRegion(barline.x(), barline.x(), margin)) {
+                    drawSystemBarline(surface, barline);
+                }
             }
             if (bracketsVisible) {
-                double systemGap = system.staves().isEmpty() ? referenceLineGap(layout)
-                        : system.staves().get(0).lineGap();
                 for (BracketPlacement bracket : system.brackets()) {
-                    drawBracket(surface, bracket, systemGap);
+                    if (inRegion(bracket.x(), bracket.x(), margin)) {
+                        drawBracket(surface, bracket, systemGap);
+                    }
                 }
             }
         }
@@ -486,6 +539,9 @@ public final class ScorePainter {
         // box also includes its long stem doesn't produce a hugely tall rect.
         double maxContentHeight = gap * backgroundStyle.maxHeightGaps();
         for (NoteAnchor anchor : layout.noteAnchors()) {
+            if (!inRegion(anchor.x(), anchor.x(), anchor.width() + gap * CULL_MARGIN_GAPS)) {
+                continue;
+            }
             RenderColor bg = backgroundFor(anchor.elementRef());
             if (bg == null) {
                 continue;
@@ -531,14 +587,22 @@ public final class ScorePainter {
     }
 
     private void drawStaff(RenderSurface surface, StaffLayout staff) {
-        for (int line = 0; line < STAFF_LINES; line++) {
-            double y = staff.lineY(line);
-            surface.strokeLine(staff.x(), y, staff.x() + staff.width(), y);
+        double margin = staff.lineGap() * CULL_MARGIN_GAPS;
+        double lineX0 = Math.max(staff.x(), regionX0 - margin);
+        double lineX1 = Math.min(staff.x() + staff.width(), regionX1 + margin);
+        if (lineX0 <= lineX1) {
+            for (int line = 0; line < STAFF_LINES; line++) {
+                double y = staff.lineY(line);
+                surface.strokeLine(lineX0, y, lineX1, y);
+            }
         }
 
         List<MeasureLayout> measures = staff.measures();
         for (int i = 0; i < measures.size(); i++) {
             MeasureLayout measure = measures.get(i);
+            if (!inRegion(measure.x(), measure.right(), margin)) {
+                continue;
+            }
             if (measure.leadingBarline() != null) {
                 drawOpeningBarline(surface, staff, measure.leadingBarlineX(), measure.leadingBarline());
             }
@@ -555,7 +619,7 @@ public final class ScorePainter {
         drawEndingBrackets(surface, staff);
 
         for (GlyphPlacement glyph : staff.glyphs()) {
-            if (hiddenCategories.contains(glyph.category())) {
+            if (hiddenCategories.contains(glyph.category()) || !inRegion(glyph.x(), glyph.x(), margin)) {
                 continue;
             }
             MusicElement element = glyph.elementRef();
@@ -575,25 +639,39 @@ public final class ScorePainter {
         }
 
         for (BeamPlacement beam : staff.beams()) {
-            drawBeam(surface, staff, beam);
+            if (inRegion(beam.x1(), beam.x2(), margin)) {
+                drawBeam(surface, staff, beam);
+            }
         }
         for (TiePlacement tie : staff.ties()) {
-            drawTie(surface, staff, tie);
+            if (inRegion(tie.x1(), tie.x2(), margin)) {
+                drawTie(surface, staff, tie);
+            }
         }
         for (SlurPlacement slur : staff.slurs()) {
-            drawSlur(surface, staff, slur);
+            if (inRegion(slur.x1(), slur.x2(), margin)) {
+                drawSlur(surface, staff, slur);
+            }
         }
         for (TupletPlacement tuplet : staff.tuplets()) {
-            drawTuplet(surface, staff, tuplet);
+            if (inRegion(tuplet.x1(), tuplet.x2(), margin)) {
+                drawTuplet(surface, staff, tuplet);
+            }
         }
         for (HairpinPlacement hairpin : staff.hairpins()) {
-            drawHairpin(surface, hairpin);
+            if (inRegion(hairpin.x1(), hairpin.x2(), margin)) {
+                drawHairpin(surface, hairpin);
+            }
         }
         for (GraceNotePlacement grace : staff.graceNotes()) {
-            drawGraceNotes(surface, staff, grace);
+            if (inRegion(grace.noteX().get(0), grace.mainNoteX(), margin)) {
+                drawGraceNotes(surface, staff, grace);
+            }
         }
         for (StemPlacement stem : staff.stems()) {
-            drawStem(surface, stem);
+            if (inRegion(stem.x(), stem.x(), margin)) {
+                drawStem(surface, stem);
+            }
         }
     }
 

@@ -22,6 +22,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.PerspectiveCamera;
 import javafx.scene.SceneAntialiasing;
 import javafx.scene.SnapshotParameters;
@@ -62,10 +63,14 @@ import java.util.TreeMap;
  * starts; every played notehead lights up in its staff's colour while it
  * sounds.
  *
- * <p>The ink is the regular {@link ScorePainter} output, rendered once into
- * transparent image tiles (GPUs limit texture size, so a long strip is split
- * into {@value #TILE_WIDTH}-unit wide tiles) laid over a coloured paper plane
- * with a moving pool of light. The lit noteheads are glowing copies drawn
+ * <p>The ink is the regular {@link ScorePainter} output, rendered into
+ * transparent image {@link LayoutTiles tiles} of {@value #TILE_WIDTH} units
+ * wide, laid over a coloured paper plane. Only the tiles within sight of the
+ * camera exist (GPUs limit texture size and a whole long score in pixels
+ * costs gigabytes); new ones are painted as the cursor moves. The texture
+ * resolution is lowered when the tiles in sight would exceed
+ * {@value #INK_PIXEL_BUDGET} pixels, which only happens for very tall scores.
+ * A pool of light moves along the paper. The lit noteheads are glowing copies drawn
  * with {@link ScorePainter#paintNotehead} over the engraved ones. The hops and
  * the glow are pure functions of time ({@link JumpCurve}), so the cursor can
  * be scrubbed.
@@ -76,8 +81,9 @@ import java.util.TreeMap;
  * line of the first staff to bottom line of the last, at least
  * {@value #MIN_STAFF_BLOCK} units), note sizes in staff line gaps.
  *
- * <p>Like {@link StripSheetView}, advancing the cursor never re-engraves or
- * repaints: it only moves the camera, the light and the balls.
+ * <p>Like {@link StripSheetView}, advancing the cursor never re-engraves: it
+ * moves the camera, the light and the balls, and paints an ink tile when one
+ * comes into sight.
  * Requires {@link ConditionalFeature#SCENE3D}; see {@link #is3DSupported()}.
  *
  * <p>The scene uses layout units: the paper lies in the x/y plane at
@@ -88,6 +94,12 @@ public final class FlyOverSheetView extends Region {
 
     /** Width of one ink tile, in layout units. */
     private static final double TILE_WIDTH = 1024;
+
+    /** Most ink pixels kept alive at once (4 bytes each, in the heap and on the GPU). */
+    private static final double INK_PIXEL_BUDGET = 32_000_000;
+
+    /** Tallest ink texture, in pixels, well below every GPU's texture limit. */
+    private static final double MAX_INK_TEXTURE = 8192;
 
     /** Size of a lit-notehead sprite, in staff line gaps (room for its glow). */
     private static final double SPRITE_GAPS = 4.0;
@@ -107,7 +119,11 @@ public final class FlyOverSheetView extends Region {
     private final Group world = new Group();
     private final Rectangle paper = new Rectangle();
     private final ImageView light = new ImageView();
-    private final Group ink = new Group();
+    private final LayoutTiles ink = new LayoutTiles(this::paintInkTile);
+    private final Canvas inkCanvas = new Canvas();
+    private double inkTop;
+    private double inkHeight;
+    private double inkScale = 1;
     private final Rectangle cursor = new Rectangle();
     private final Group poolLayer = new Group();
     private final Group noteLayer = new Group();
@@ -199,7 +215,7 @@ public final class FlyOverSheetView extends Region {
         // No depth buffer: everything is drawn in scene-graph order (paper,
         // light, ink, cursor, light pools, lit noteheads, balls), which is
         // exactly right for things above a flat sheet and avoids z-fighting.
-        world.getChildren().addAll(paper, light, ink, cursor, poolLayer, noteLayer, ballLayer, camera);
+        world.getChildren().addAll(paper, light, ink.group(), cursor, poolLayer, noteLayer, ballLayer, camera);
         subScene = new SubScene(world, 800, 450, false, SceneAntialiasing.BALANCED);
         subScene.setCamera(camera);
         subScene.fillProperty().bind(backgroundColor);
@@ -441,7 +457,8 @@ public final class FlyOverSheetView extends Region {
 
     /**
      * Pixels per layout unit of the ink texture. Higher is sharper close to
-     * the camera but costs memory; changing it re-renders the ink.
+     * the camera but costs memory; changing it re-renders the ink. Lowered
+     * automatically for very tall scores (see the class description).
      */
     public DoubleProperty textureScaleProperty() {
         return textureScale;
@@ -460,7 +477,7 @@ public final class FlyOverSheetView extends Region {
     // ------------------------------------------------------------------
 
     private void rebuild() {
-        ink.getChildren().clear();
+        ink.reset(0, TILE_WIDTH);
         poolLayer.getChildren().clear();
         noteLayer.getChildren().clear();
         ballLayer.getChildren().clear();
@@ -517,56 +534,64 @@ public final class FlyOverSheetView extends Region {
     }
 
     /**
-     * Render the strip once into transparent image tiles laid side by side on
-     * the paper. Each tile repaints the whole layout through a translated,
-     * clipped canvas, which keeps {@link ScorePainter} the only drawing code.
+     * Prepare the ink tiles for the current layout; they are painted on
+     * demand by {@link #update()} as the camera moves.
      */
     private void rebuildInk() {
         if (layout != null) {
-            ink.getChildren().clear();
             buildInk();
+            update();
         }
     }
 
     private void buildInk() {
-        double scale = Math.max(textureScale.get(), 0.25);
-        double top = Math.min(0, layout.contentTop());
-        double height = Math.max(layout.height(), layout.contentBottom()) - top;
-        double width = layout.width();
+        inkTop = Math.min(0, layout.contentTop());
+        inkHeight = Math.max(layout.height(), layout.contentBottom()) - inkTop;
+        double inSight = Math.min(2 * inkReach() + 3 * TILE_WIDTH, layout.width() + TILE_WIDTH);
+        inkScale = Math.min(Math.max(textureScale.get(), 0.25),
+                Math.min(MAX_INK_TEXTURE / inkHeight, Math.sqrt(INK_PIXEL_BUDGET / (inSight * inkHeight))));
+        ink.reset(layout.width(), TILE_WIDTH);
 
-        Canvas canvas = new Canvas();
+        cursor.setY(inkTop);
+        cursor.setHeight(inkHeight);
+        cursor.setWidth(1.5);
+    }
+
+    /** How far from the cursor (in layout units) the camera can see ink; matches the paper's margin. */
+    private double inkReach() {
+        return staffBlockHeight * PAPER_MARGIN_BLOCKS;
+    }
+
+    /**
+     * One ink tile: the painter's output for {@code [x0, x0 + width)}, its
+     * ink recoloured, baked into an image (canvases don't render reliably in
+     * the 3D sub-scene) and laid on the paper.
+     */
+    private Node paintInkTile(double x0, double width) {
+        inkCanvas.setWidth(Math.ceil(width * inkScale));
+        inkCanvas.setHeight(Math.ceil(inkHeight * inkScale));
+        GraphicsContext gc = inkCanvas.getGraphicsContext2D();
+        gc.clearRect(0, 0, inkCanvas.getWidth(), inkCanvas.getHeight());
+        gc.save();
+        gc.scale(inkScale, inkScale);
+        gc.translate(-x0, -inkTop);
+        renderer.renderRegion(gc, layout, x0, inkTop, x0 + width, inkTop + inkHeight);
+        gc.restore();
+        // Recolour every inked pixel, keeping its coverage.
+        gc.setGlobalBlendMode(BlendMode.SRC_ATOP);
+        gc.setFill(inkColor.get());
+        gc.fillRect(0, 0, inkCanvas.getWidth(), inkCanvas.getHeight());
+        gc.setGlobalBlendMode(BlendMode.SRC_OVER);
+
         SnapshotParameters params = new SnapshotParameters();
         params.setFill(Color.TRANSPARENT);
-        for (double x0 = 0; x0 < width; x0 += TILE_WIDTH) {
-            // One unit of overlap hides the seam linear filtering leaves at tile edges.
-            double tileWidth = Math.min(TILE_WIDTH + 1, width - x0);
-            canvas.setWidth(Math.ceil(tileWidth * scale));
-            canvas.setHeight(Math.ceil(height * scale));
-            GraphicsContext gc = canvas.getGraphicsContext2D();
-            gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-            gc.save();
-            gc.scale(scale, scale);
-            gc.translate(-x0, -top);
-            renderer.render(gc, layout, layout.width(), layout.height());
-            gc.restore();
-            // Recolour every inked pixel, keeping its coverage.
-            gc.setGlobalBlendMode(BlendMode.SRC_ATOP);
-            gc.setFill(inkColor.get());
-            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-            gc.setGlobalBlendMode(BlendMode.SRC_OVER);
-
-            ImageView tile = new ImageView(canvas.snapshot(params, null));
-            tile.setSmooth(true);
-            tile.setFitWidth(tileWidth);
-            tile.setFitHeight(height);
-            tile.setTranslateX(x0);
-            tile.setTranslateY(top);
-            ink.getChildren().add(tile);
-        }
-
-        cursor.setY(top);
-        cursor.setHeight(height);
-        cursor.setWidth(1.5);
+        ImageView tile = new ImageView(inkCanvas.snapshot(params, null));
+        tile.setSmooth(true);
+        tile.setFitWidth(width);
+        tile.setFitHeight(inkHeight);
+        tile.setTranslateX(x0);
+        tile.setTranslateY(inkTop);
+        return tile;
     }
 
     /**
@@ -743,6 +768,9 @@ public final class FlyOverSheetView extends Region {
             x = Double.isNaN(cursorLayoutX) ? timeline.cursorX(time) : cursorLayoutX;
         }
         cursor.setX(x - cursor.getWidth() / 2);
+        if (layout != null) {
+            ink.show(x - inkReach(), x + inkReach());
+        }
 
         cameraTarget.setX(x + lookAhead.get() * staffBlockHeight);
         cameraTarget.setY(staffCenterY);

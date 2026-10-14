@@ -172,7 +172,7 @@ public final class NodeRenderSurface implements RenderSurface {
     @Override
     public void drawText(String text, double x, double y, double fontSize) {
         Text node = new Text(x, y, text);
-        node.setFont(Font.font(Font.getDefault().getFamily(), fontSize));
+        node.setFont(FontCache.font(Font.getDefault().getFamily(), fontSize));
         node.setFill(fill);
         node.setPickOnBounds(true);
         add(node);
@@ -185,7 +185,7 @@ public final class NodeRenderSurface implements RenderSurface {
             return false;
         }
         Text node = new Text(x, y, glyphChars);
-        node.setFont(Font.font(font.getFamily(), sizeHint));
+        node.setFont(FontCache.font(font.getFamily(), sizeHint));
         node.setFill(fill);
         node.setPickOnBounds(true);
         add(node);

@@ -20,7 +20,7 @@ public final class FxTextMetrics implements TextMetrics {
         if (text == null || text.isEmpty()) {
             return 0.0;
         }
-        probe.setFont(Font.font(family, fontSize));
+        probe.setFont(FontCache.font(family, fontSize));
         probe.setText(text);
         return probe.getLayoutBounds().getWidth();
     }

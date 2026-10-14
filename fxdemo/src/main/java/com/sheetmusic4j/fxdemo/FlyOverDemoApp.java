@@ -1,6 +1,7 @@
 package com.sheetmusic4j.fxdemo;
 
 import com.sheetmusic4j.core.io.ScoreFile;
+import com.sheetmusic4j.fxdemo.ui.ScoreLoader;
 import com.sheetmusic4j.core.io.ScoreFormat;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.fxdemo.ui.Ui;
@@ -9,7 +10,6 @@ import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
-import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -40,6 +40,8 @@ import java.util.Locale;
  * position slider to scrub. The camera sliders change the fly-over angle live.
  */
 public final class FlyOverDemoApp extends Application {
+
+    private final ScoreLoader loader = new ScoreLoader();
 
     private static final Logger logger = LoggerFactory.getLogger(FlyOverDemoApp.class);
 
@@ -248,23 +250,12 @@ public final class FlyOverDemoApp extends Application {
     private void openFile(Path path) {
         stopPlayback();
         statusLabel.setText("Loading " + path.getFileName() + " ...");
-        Task<Score> task = new Task<>() {
-            @Override
-            protected Score call() {
-                return ScoreFile.load(path);
-            }
-        };
-        task.setOnSucceeded(e -> showScore(path, task.getValue()));
-        task.setOnFailed(e -> {
-            Throwable ex = task.getException();
+        loader.load(path, score -> showScore(path, score), ex -> {
             logger.error("Failed to open score: {}", path, ex);
             statusLabel.setText("Failed to open " + path.getFileName() + ": "
                     + (ex != null ? ex.getMessage() : "unknown error"));
             updateButtons();
         });
-        Thread thread = new Thread(task, "sheetmusic4j-score-loader");
-        thread.setDaemon(true);
-        thread.start();
     }
 
     private void showScore(Path path, Score score) {

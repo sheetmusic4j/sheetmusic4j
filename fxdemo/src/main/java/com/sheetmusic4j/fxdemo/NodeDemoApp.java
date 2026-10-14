@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.sheetmusic4j.core.io.ScoreFile;
+import com.sheetmusic4j.fxdemo.ui.ScoreLoader;
 import com.sheetmusic4j.core.io.ScoreFormat;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
@@ -16,7 +17,6 @@ import com.sheetmusic4j.fxdemo.ui.Ui;
 import com.sheetmusic4j.fxviewer.NodeSheetView;
 
 import javafx.application.Application;
-import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
@@ -60,6 +60,8 @@ import org.slf4j.LoggerFactory;
  * <p>Run with {@code mvn -pl fxdemo -Pnode javafx:run}.
  */
 public final class NodeDemoApp extends Application {
+
+    private final ScoreLoader loader = new ScoreLoader();
 
     private static final Logger logger = LoggerFactory.getLogger(NodeDemoApp.class);
 
@@ -316,30 +318,19 @@ public final class NodeDemoApp extends Application {
     /** Loads a score on a background thread, then shows it. */
     private void openFile(Path path) {
         statusLabel.setText("Loading " + path.getFileName() + " ...");
-        Task<Score> task = new Task<>() {
-            @Override
-            protected Score call() {
-                return ScoreFile.load(path);
-            }
-        };
-        task.setOnSucceeded(e -> {
+        loader.load(path, score -> {
             hidden.clear();
             moved.clear();
             overlays.clear();
             restoreButton.setDisable(true);
             view.selectedElementProperty().set(null);
-            view.setScore(task.getValue());
+            view.setScore(score);
             stage.setTitle(TITLE + " - " + path.getFileName());
             statusLabel.setText("Loaded " + path.getFileName() + ". Click to select, drag to move; Shift = sharp, Alt = flat.");
-        });
-        task.setOnFailed(e -> {
-            Throwable ex = task.getException();
+        }, ex -> {
             logger.error("Failed to open score: {}", path, ex);
             statusLabel.setText("Failed to open " + path.getFileName() + ": "
                     + (ex != null ? ex.getMessage() : "unknown error"));
         });
-        Thread thread = new Thread(task, "sheetmusic4j-score-loader");
-        thread.setDaemon(true);
-        thread.start();
     }
 }

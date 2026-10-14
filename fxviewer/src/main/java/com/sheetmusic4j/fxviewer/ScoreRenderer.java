@@ -45,4 +45,13 @@ public final class ScoreRenderer {
         RenderSurface surface = new FxRenderSurface(gc);
         painter.paint(surface, layout, width, height);
     }
+
+    /**
+     * Renders only the part of the layout between {@code x0} and {@code x1}
+     * (layout units); see {@link ScorePainter#paintRegion}. The graphics
+     * context must already map layout units onto the target.
+     */
+    public void renderRegion(GraphicsContext gc, LayoutResult layout, double x0, double y0, double x1, double y1) {
+        painter.paintRegion(new FxRenderSurface(gc), layout, x0, y0, x1, y1);
+    }
 }

@@ -60,11 +60,16 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    and exposes its `ScorePainter` via `painter()` for configuration. `FxRenderSurface` implements `RenderSurface` for a JavaFX `GraphicsContext`,
    `FxTextMetrics` measures text with the JavaFX font; `SheetView` (page) and `StripSheetView` (one-line, play-along)
    are the `Region`/`Canvas` controls that tie `Engraver` + `ScorePainter` + `FxRenderSurface` together, sharing their
-   per-note overlays through `NoteDecorations`. `NodeSheetView` is the retained-mode variant: `NodeRenderSurface` builds a
+   per-note overlays through `NoteDecorations` (changes are coalesced into one repaint per FX event). Never rasterise a
+   whole long layout into one canvas or image: GPUs draw nothing beyond ~16k px and the memory grows with the score.
+   `StripSheetView` and `FlyOverSheetView` keep only the tiles near the visible range through `LayoutTiles`, and each
+   tile paints just its slice via `ScorePainter.paintRegion`; `SheetView` paints a capped window. Fonts come from
+   `FontCache`, not `Font.font` per draw call. `NodeSheetView` is the retained-mode variant: `NodeRenderSurface` builds a
    scene graph with one `Group` per note/rest/chord (via `RenderSurface.beginElement/endElement`, which `ScorePainter`
    calls around each element's glyphs/stem), with hover/selection and click callbacks; `LayoutResult.hitTest` does
    layout-level picking for any view. `FlyOverSheetView` is the 3D variant of the strip (JavaFX `SubScene`):
-   the strip's ink is painted once into transparent image tiles (`ScorePainter.setPageColor(null)`) over a coloured
+   the strip's ink is painted into transparent image tiles near the camera (`ScorePainter.setPageColor(null)`; texture
+   scale lowered to fit a pixel budget for very tall scores) over a coloured
    paper plane with a travelling light, a perspective camera follows the cursor, a glowing ball per (part, staff, voice)
    hops from note to note landing at each onset, and sounding noteheads light up as glowing copies
    (`ScorePainter.paintNotehead`); hops and glow are `JumpCurve`, pure functions of time. All colours and
@@ -72,7 +77,7 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 6. **`fxdemo`** — standalone JavaFX demo app (`SheetDemoApp`, launched via `SheetDemoLauncher` to avoid classpath
    JavaFX-runtime errors). Lets you open a MusicXML/MIDI file, shows a debug pane (`ScoreInspector`), and shows a
    companion PDF side-by-side via `com.dlsc.pdfviewfx:pdfviewfx` when one exists next to the loaded file (same basename,
-   `.pdf`; resolved by `PdfSibling`). `StripDemoApp` (`-Pstrip`) and `FlyOverDemoApp` (`-Pflyover`) showcase the strip
+   `.pdf`; resolved by `PdfSibling`). The apps load files through `ui.ScoreLoader`, which keeps only the latest request. `StripDemoApp` (`-Pstrip`) and `FlyOverDemoApp` (`-Pflyover`) showcase the strip
    and 3D fly-over views.
 
 **Key architectural rule**: the same `ScorePainter` logic is reused for both on-screen JavaFX rendering
@@ -81,6 +86,9 @@ only on the `RenderSurface` abstraction. Never draw directly against `GraphicsCo
 `RenderSurface` implementation — new drawing logic belongs in `ScorePainter`.
 
 Visual regression testing (`CompareFxViewWithReferenceTest`) is documented in `fxdemo/CLAUDE.md`.
+
+Repeatable review procedures live in `.claude/tasks`: `architecture-review.md` (layering, JPMS, package cycles) and
+`memory-and-threading-check.md` (JFR + GC-log run of `fxdemo`'s `StressHarness` over all views).
 
 ## Build
 

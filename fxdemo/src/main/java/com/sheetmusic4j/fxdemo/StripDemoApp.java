@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Set;
 
 import com.sheetmusic4j.core.io.ScoreFile;
+import com.sheetmusic4j.fxdemo.ui.ScoreLoader;
 import com.sheetmusic4j.core.io.ScoreFormat;
 import com.sheetmusic4j.fxdemo.ui.Ui;
 import com.sheetmusic4j.core.model.MusicElement;
@@ -19,7 +20,6 @@ import com.sheetmusic4j.fxviewer.StripSheetView;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
-import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -66,6 +66,8 @@ import org.slf4j.LoggerFactory;
  * path as the first program argument), then press <em>Play</em>.
  */
 public final class StripDemoApp extends Application {
+
+    private final ScoreLoader loader = new ScoreLoader();
 
     private static final Logger logger = LoggerFactory.getLogger(StripDemoApp.class);
 
@@ -304,23 +306,12 @@ public final class StripDemoApp extends Application {
     private void openFile(Path path) {
         stopPlayback();
         statusLabel.setText("Loading " + path.getFileName() + " ...");
-        Task<Score> task = new Task<>() {
-            @Override
-            protected Score call() {
-                return ScoreFile.load(path);
-            }
-        };
-        task.setOnSucceeded(e -> showScore(path, task.getValue()));
-        task.setOnFailed(e -> {
-            Throwable ex = task.getException();
+        loader.load(path, score -> showScore(path, score), ex -> {
             logger.error("Failed to open score: {}", path, ex);
             statusLabel.setText("Failed to open " + path.getFileName() + ": "
                     + (ex != null ? ex.getMessage() : "unknown error"));
             updateButtons();
         });
-        Thread thread = new Thread(task, "sheetmusic4j-score-loader");
-        thread.setDaemon(true);
-        thread.start();
     }
 
     private void showScore(Path path, Score score) {

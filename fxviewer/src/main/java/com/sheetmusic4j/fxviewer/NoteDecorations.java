@@ -7,6 +7,7 @@ import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.render.RenderColor;
 import com.sheetmusic4j.render.ScorePainter;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.MapChangeListener;
 import javafx.collections.ObservableMap;
@@ -31,17 +32,34 @@ final class NoteDecorations {
     private final ObservableMap<MusicElement, Accidental> accidentals =
             FXCollections.observableMap(new IdentityHashMap<>());
 
+    private final Runnable repaint;
+    private boolean repaintPending;
+
     /**
-     * Feed the overlays into {@code painter} and call {@code repaint}
-     * whenever any of them changes.
+     * Feed the overlays into {@code painter} and call {@code repaint} after
+     * they change - once per batch of changes made in the same FX event,
+     * not once per entry, since a playback frame typically swaps several
+     * highlights and each repaint redraws everything visible.
      */
     NoteDecorations(ScorePainter painter, Runnable repaint) {
+        this.repaint = repaint;
         painter.setNoteColorProvider(element -> toRenderColor(highlights.get(element)));
         painter.setNoteBackgroundProvider(element -> toRenderColor(backgrounds.get(element)));
         painter.setNoteAccidentalProvider(element -> Optional.ofNullable(accidentals.get(element)));
-        highlights.addListener((MapChangeListener<MusicElement, Color>) change -> repaint.run());
-        backgrounds.addListener((MapChangeListener<MusicElement, Color>) change -> repaint.run());
-        accidentals.addListener((MapChangeListener<MusicElement, Accidental>) change -> repaint.run());
+        highlights.addListener((MapChangeListener<MusicElement, Color>) change -> scheduleRepaint());
+        backgrounds.addListener((MapChangeListener<MusicElement, Color>) change -> scheduleRepaint());
+        accidentals.addListener((MapChangeListener<MusicElement, Accidental>) change -> scheduleRepaint());
+    }
+
+    private void scheduleRepaint() {
+        if (repaintPending) {
+            return;
+        }
+        repaintPending = true;
+        Platform.runLater(() -> {
+            repaintPending = false;
+            repaint.run();
+        });
     }
 
     ObservableMap<MusicElement, Color> highlights() {

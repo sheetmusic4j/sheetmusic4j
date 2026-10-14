@@ -109,7 +109,7 @@ public final class FxRenderSurface implements RenderSurface {
     @Override
     public void drawText(String text, double x, double y, double fontSize) {
         Font previous = gc.getFont();
-        gc.setFont(Font.font(previous != null ? previous.getFamily() : "System", fontSize));
+        gc.setFont(FontCache.font(previous != null ? previous.getFamily() : "System", fontSize));
         gc.fillText(text, x, y);
         gc.setFont(previous);
     }
@@ -121,7 +121,7 @@ public final class FxRenderSurface implements RenderSurface {
             return false;
         }
         Font previous = gc.getFont();
-        gc.setFont(Font.font(font.getFamily(), sizeHint));
+        gc.setFont(FontCache.font(font.getFamily(), sizeHint));
         gc.fillText(glyphChars, x, y);
         gc.setFont(previous);
         return true;
