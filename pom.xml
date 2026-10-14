@@ -42,21 +42,21 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- Dependencies -->
-        <javafx.version>21.0.4</javafx.version>
-        <pdfviewfx.version>3.4.2</pdfviewfx.version>
-        <slf4j.version>2.0.17</slf4j.version>
-        <log4j.version>2.24.3</log4j.version>
+        <javafx.version>21.0.12</javafx.version>
+        <pdfviewfx.version>3.6.0</pdfviewfx.version>
+        <slf4j.version>2.0.20</slf4j.version>
+        <log4j.version>2.26.1</log4j.version>
 
         <!-- Test dependencies -->
-        <junit.version>5.11.0</junit.version>
+        <junit.version>6.1.3</junit.version>
 
         <!-- Plugin versions -->
-        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
-        <maven.surefire.plugin.version>3.3.1</maven.surefire.plugin.version>
-        <maven.deploy.plugin.version>3.1.1</maven.deploy.plugin.version>
-        <maven.javadoc.plugin.version>3.6.3</maven.javadoc.plugin.version>
-        <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
-        <maven.gpg.plugin.version>3.2.5</maven.gpg.plugin.version>
+        <maven.compiler.plugin.version>3.16.0</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.6.0</maven.surefire.plugin.version>
+        <maven.deploy.plugin.version>3.2.0</maven.deploy.plugin.version>
+        <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
+        <maven.source.plugin.version>3.4.0</maven.source.plugin.version>
+        <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
         <central.publishing.plugin.version>0.12.0</central.publishing.plugin.version>
         <javafx.maven.plugin.version>0.0.8</javafx.maven.plugin.version>
     </properties>
