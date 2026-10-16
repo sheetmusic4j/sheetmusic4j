@@ -6,7 +6,7 @@
 
     <groupId>com.sheetmusic4j</groupId>
     <artifactId>parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.4-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Sheetmusic4J</name>
