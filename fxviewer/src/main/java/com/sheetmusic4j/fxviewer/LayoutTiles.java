@@ -97,6 +97,22 @@ final class LayoutTiles {
         }
     }
 
+    /**
+     * Repaint only the live tiles overlapping {@code [x0, x1]} (layout
+     * units), e.g. after a few notes in that range changed.
+     */
+    void repaint(double x0, double x1) {
+        int[] dirty = range(x0, x1, tileWidth, totalWidth, 0);
+        for (int i = dirty[0]; i <= dirty[1]; i++) {
+            Node old = live.get(i);
+            if (old != null) {
+                Node node = paintTile(i);
+                live.put(i, node);
+                group.getChildren().set(group.getChildren().indexOf(old), node);
+            }
+        }
+    }
+
     /** Number of tiles currently painted. */
     int liveCount() {
         return live.size();

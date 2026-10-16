@@ -11,7 +11,9 @@ import com.sheetmusic4j.engraving.layout.*;
 import com.sheetmusic4j.engraving.placement.*;
 
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -52,6 +54,8 @@ public final class ScorePainter {
 
     private RenderColor pageColor = RenderColor.WHITE;
 
+    private RenderColor inkColor = RenderColor.BLACK;
+
     /**
      * Optional per-element colour override. When set, the returned colour
      * (if any) is applied to every glyph/stem whose
@@ -87,6 +91,21 @@ public final class ScorePainter {
     private Function<MusicElement, Optional<Accidental>> noteAccidentalProvider;
 
     private TextMetrics textMetrics = TextMetrics.estimate();
+
+    /** Only elements starting at or before this time (quarters) are painted; see {@link #setRevealTime}. */
+    private double revealTime = Double.POSITIVE_INFINITY;
+
+    /** The layout {@link #onsetByElement} was built for. */
+    private LayoutResult onsetLayout;
+
+    /** Earliest onset of every anchored element of {@link #onsetLayout}, by identity. */
+    private Map<MusicElement, Double> onsetByElement = Map.of();
+
+    /**
+     * Staff content at or right of this x is not revealed yet, for the staff
+     * being painted; positive infinity when everything is revealed.
+     */
+    private double revealX = Double.POSITIVE_INFINITY;
 
     /**
      * Creates a painter for rendering a layout onto any {@link RenderSurface}.
@@ -245,6 +264,23 @@ public final class ScorePainter {
      */
     public void setPageColor(RenderColor color) {
         this.pageColor = color;
+    }
+
+    /**
+     * The colour of the engraved ink: staff lines, barlines, notes, text.
+     */
+    public RenderColor getInkColor() {
+        return inkColor;
+    }
+
+    /**
+     * Set the colour of the engraved ink; defaults to black. Highlighted
+     * notes (see {@link #setNoteColorProvider}) keep their own colour.
+     *
+     * @param color the ink colour, {@code null} for black
+     */
+    public void setInkColor(RenderColor color) {
+        this.inkColor = color != null ? color : RenderColor.BLACK;
     }
 
     /**
@@ -422,6 +458,127 @@ public final class ScorePainter {
         this.textMetrics = metrics != null ? metrics : TextMetrics.estimate();
     }
 
+    /**
+     * The musical time up to which the music is painted; positive infinity
+     * (the default) paints everything.
+     */
+    public double getRevealTime() {
+        return revealTime;
+    }
+
+    /**
+     * Paint only the music that has started by the given time (in quarter
+     * notes), so a score can appear note by note while it plays. Notes,
+     * chords and rests (with their stems, accidentals, dots and ledger lines)
+     * are shown once their onset is at or before {@code quarters}; beams,
+     * ties, slurs, tuplets, wedges, grace notes, mid-staff clef/key/time
+     * changes and lyrics, chord symbols and directions appear once every
+     * note before their right end has. Staff lines, barlines, brackets and
+     * titles are always painted, so the empty staves are visible from the
+     * start.
+     *
+     * @param quarters the reveal time; {@code NaN} or positive infinity
+     *                 paints everything
+     */
+    public void setRevealTime(double quarters) {
+        this.revealTime = Double.isNaN(quarters) ? Double.POSITIVE_INFINITY : quarters;
+    }
+
+    private boolean revealing() {
+        return revealTime != Double.POSITIVE_INFINITY;
+    }
+
+    /** Make {@link #onsetByElement} describe {@code layout}. */
+    private void prepareReveal(LayoutResult layout) {
+        if (!revealing() || onsetLayout == layout) {
+            return;
+        }
+        Map<MusicElement, Double> onsets = new IdentityHashMap<>();
+        for (NoteAnchor anchor : layout.noteAnchors()) {
+            onsets.merge(anchor.elementRef(), anchor.onsetQuarters(), Math::min);
+        }
+        onsetByElement = onsets;
+        onsetLayout = layout;
+    }
+
+    /** The onset of an anchored element, or {@code null} for an element (or no element) without anchor. */
+    private Double onsetOf(MusicElement element) {
+        return element == null ? null : onsetByElement.get(element);
+    }
+
+    /** Whether a glyph or stem of {@code element} at {@code x} is painted under the current reveal time. */
+    private boolean revealed(MusicElement element, double x) {
+        if (!revealing()) {
+            return true;
+        }
+        Double onset = onsetOf(element);
+        return onset != null ? onset <= revealTime : x < revealX;
+    }
+
+    /** Whether staff content spanning {@code [a, b]} without an element of its own is painted. */
+    private boolean revealedSpan(double a, double b) {
+        return Math.max(a, b) < revealX;
+    }
+
+    /** The left-most x of the not yet revealed elements of a staff, or positive infinity. */
+    private double revealXOf(StaffLayout staff) {
+        if (!revealing()) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double x = Double.POSITIVE_INFINITY;
+        for (GlyphPlacement glyph : staff.glyphs()) {
+            Double onset = onsetOf(glyph.elementRef());
+            if (onset != null && onset > revealTime && glyph.x() < x) {
+                x = glyph.x();
+            }
+        }
+        return x;
+    }
+
+    /** Whether page text is painted under the current reveal time: titles always, the rest by position. */
+    private boolean revealedText(LayoutResult layout, TextPlacement text) {
+        if (!revealing()) {
+            return true;
+        }
+        switch (text.category()) {
+            case TITLE, SUBTITLE, CREATOR, PART_LABEL -> {
+                return true;
+            }
+            default -> {
+                SystemLayout system = nearestSystem(layout, text.y());
+                if (system == null) {
+                    return true;
+                }
+                double x = Double.POSITIVE_INFINITY;
+                for (StaffLayout staff : system.staves()) {
+                    x = Math.min(x, revealXOf(staff));
+                }
+                return text.x() < x;
+            }
+        }
+    }
+
+    /** The system whose staves are vertically closest to {@code y}, or {@code null} without systems. */
+    private static SystemLayout nearestSystem(LayoutResult layout, double y) {
+        SystemLayout best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (SystemLayout system : layout.systems()) {
+            if (system.staves().isEmpty()) {
+                continue;
+            }
+            StaffLayout first = system.staves().get(0);
+            StaffLayout last = system.staves().get(system.staves().size() - 1);
+            double top = first.y();
+            double bottom = last.y() + last.lineGap() * 4;
+            double distance = y < top ? top - y : Math.max(y - bottom, 0);
+            if (distance < bestDistance) {
+                best = system;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
     public void paint(RenderSurface surface, LayoutResult layout, double surfaceWidth, double surfaceHeight) {
         if (pageColor != null) {
             surface.setFill(pageColor);
@@ -461,9 +618,10 @@ public final class ScorePainter {
     }
 
     private void paintContent(RenderSurface surface, LayoutResult layout) {
-        surface.setStroke(RenderColor.BLACK);
-        surface.setFill(RenderColor.BLACK);
+        surface.setStroke(inkColor);
+        surface.setFill(inkColor);
         surface.setLineWidth(1.0);
+        prepareReveal(layout);
 
         // Note-background highlights are drawn first so staff lines and
         // noteheads sit on top of them (they read as a highlight behind
@@ -477,7 +635,7 @@ public final class ScorePainter {
                 continue;
             }
             double width = textMetrics.width(text.text().isEmpty() ? " " : text.text(), text.fontSize());
-            if (!inRegion(text.x() - width, text.x() + width, text.fontSize())) {
+            if (!inRegion(text.x() - width, text.x() + width, text.fontSize()) || !revealedText(layout, text)) {
                 continue;
             }
             drawText(surface, text);
@@ -543,7 +701,7 @@ public final class ScorePainter {
                 continue;
             }
             RenderColor bg = backgroundFor(anchor.elementRef());
-            if (bg == null) {
+            if (bg == null || (revealing() && anchor.onsetQuarters() > revealTime)) {
                 continue;
             }
             // The box is anchored to the note's rendered size and position and
@@ -587,6 +745,15 @@ public final class ScorePainter {
     }
 
     private void drawStaff(RenderSurface surface, StaffLayout staff) {
+        revealX = revealXOf(staff);
+        try {
+            drawStaffContent(surface, staff);
+        } finally {
+            revealX = Double.POSITIVE_INFINITY;
+        }
+    }
+
+    private void drawStaffContent(RenderSurface surface, StaffLayout staff) {
         double margin = staff.lineGap() * CULL_MARGIN_GAPS;
         double lineX0 = Math.max(staff.x(), regionX0 - margin);
         double lineX1 = Math.min(staff.x() + staff.width(), regionX1 + margin);
@@ -619,7 +786,8 @@ public final class ScorePainter {
         drawEndingBrackets(surface, staff);
 
         for (GlyphPlacement glyph : staff.glyphs()) {
-            if (hiddenCategories.contains(glyph.category()) || !inRegion(glyph.x(), glyph.x(), margin)) {
+            if (hiddenCategories.contains(glyph.category()) || !inRegion(glyph.x(), glyph.x(), margin)
+                    || !revealed(glyph.elementRef(), glyph.x())) {
                 continue;
             }
             MusicElement element = glyph.elementRef();
@@ -639,37 +807,38 @@ public final class ScorePainter {
         }
 
         for (BeamPlacement beam : staff.beams()) {
-            if (inRegion(beam.x1(), beam.x2(), margin)) {
+            if (inRegion(beam.x1(), beam.x2(), margin) && revealedSpan(beam.x1(), beam.x2())) {
                 drawBeam(surface, staff, beam);
             }
         }
         for (TiePlacement tie : staff.ties()) {
-            if (inRegion(tie.x1(), tie.x2(), margin)) {
+            if (inRegion(tie.x1(), tie.x2(), margin) && revealedSpan(tie.x1(), tie.x2())) {
                 drawTie(surface, staff, tie);
             }
         }
         for (SlurPlacement slur : staff.slurs()) {
-            if (inRegion(slur.x1(), slur.x2(), margin)) {
+            if (inRegion(slur.x1(), slur.x2(), margin) && revealedSpan(slur.x1(), slur.x2())) {
                 drawSlur(surface, staff, slur);
             }
         }
         for (TupletPlacement tuplet : staff.tuplets()) {
-            if (inRegion(tuplet.x1(), tuplet.x2(), margin)) {
+            if (inRegion(tuplet.x1(), tuplet.x2(), margin) && revealedSpan(tuplet.x1(), tuplet.x2())) {
                 drawTuplet(surface, staff, tuplet);
             }
         }
         for (HairpinPlacement hairpin : staff.hairpins()) {
-            if (inRegion(hairpin.x1(), hairpin.x2(), margin)) {
+            if (inRegion(hairpin.x1(), hairpin.x2(), margin) && revealedSpan(hairpin.x1(), hairpin.x2())) {
                 drawHairpin(surface, hairpin);
             }
         }
         for (GraceNotePlacement grace : staff.graceNotes()) {
-            if (inRegion(grace.noteX().get(0), grace.mainNoteX(), margin)) {
+            if (inRegion(grace.noteX().get(0), grace.mainNoteX(), margin)
+                    && revealedSpan(grace.noteX().get(0), grace.mainNoteX())) {
                 drawGraceNotes(surface, staff, grace);
             }
         }
         for (StemPlacement stem : staff.stems()) {
-            if (inRegion(stem.x(), stem.x(), margin)) {
+            if (inRegion(stem.x(), stem.x(), margin) && revealed(stem.elementRef(), stem.x())) {
                 drawStem(surface, stem);
             }
         }
@@ -695,7 +864,7 @@ public final class ScorePainter {
         surface.setLineWidth(1.0);
         endElement(surface, stem.elementRef());
         if (override != null) {
-            surface.setStroke(RenderColor.BLACK);
+            surface.setStroke(inkColor);
         }
     }
 
@@ -728,8 +897,8 @@ public final class ScorePainter {
         } finally {
             endElement(surface, glyph.elementRef());
             if (override != null) {
-                surface.setStroke(RenderColor.BLACK);
-                surface.setFill(RenderColor.BLACK);
+                surface.setStroke(inkColor);
+                surface.setFill(inkColor);
             }
         }
     }

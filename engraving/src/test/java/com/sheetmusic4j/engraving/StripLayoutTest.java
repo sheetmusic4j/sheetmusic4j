@@ -12,6 +12,7 @@ import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.Note;
+import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
 import com.sheetmusic4j.core.model.Pitch;
 import com.sheetmusic4j.core.model.Score;
@@ -180,5 +181,58 @@ class StripLayoutTest {
         }
         assertTrue(hasNoteheadWithRef,
                 "notehead placements must carry the source Note as elementRef");
+    }
+
+    /**
+     * Grand staff whose staves end each measure with notes of different
+     * lengths (halves on one staff, quarters on the other): the strip
+     * barline sits in the whitespace after the system's last onset, not
+     * each staff's own, so both staves share every barline.
+     */
+    @Test
+    void stripBarlinesAlignAcrossStavesWithDifferentLastNotes() {
+        Part.Builder part = Part.builder("P1").name("Piano");
+        for (int m = 1; m <= 4; m++) {
+            Measure.Builder mb = Measure.builder(m);
+            if (m == 1) {
+                mb.attributes(Attributes.builder()
+                        .divisions(1)
+                        .keySignature(KeySignature.cMajor())
+                        .timeSignature(TimeSignature.fourFour())
+                        .staves(2)
+                        .addClef(Clef.treble())
+                        .addClef(Clef.bass())
+                        .build());
+            }
+            int trebleNotes = m % 2 == 1 ? 2 : 4;
+            for (int i = 0; i < trebleNotes; i++) {
+                mb.addElement(staffNote(1, new Pitch(Step.G, 4), 4 / trebleNotes));
+            }
+            for (int i = 0; i < 6 - trebleNotes; i++) {
+                mb.addElement(staffNote(2, new Pitch(Step.C, 3), 4 / (6 - trebleNotes)));
+            }
+            part.addMeasure(mb.build());
+        }
+        Score score = Score.builder().addPart(part.build()).build();
+        LayoutOptions options = LayoutOptions.builder().layoutMode(LayoutMode.STRIP).build();
+        LayoutResult layout = new Engraver().layout(score, options);
+
+        StaffLayout treble = layout.staves().get(0);
+        StaffLayout bass = layout.staves().get(1);
+        assertEquals(treble.measures().size(), bass.measures().size());
+        for (int i = 0; i < treble.measures().size(); i++) {
+            assertEquals(treble.measures().get(i).right(), bass.measures().get(i).right(), 1e-6,
+                    "barline after measure " + (i + 1) + " must be shared by both staves");
+        }
+    }
+
+    private static Note staffNote(int staff, Pitch pitch, int quarters) {
+        return Note.builder()
+                .pitch(pitch)
+                .duration(new Duration(quarters, 1))
+                .type(quarters == 2 ? NoteType.HALF : NoteType.QUARTER)
+                .staff(staff)
+                .voice(staff == 1 ? 1 : 5)
+                .build();
     }
 }

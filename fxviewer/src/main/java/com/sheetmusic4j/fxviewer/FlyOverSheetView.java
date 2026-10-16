@@ -83,7 +83,9 @@ import java.util.TreeMap;
  *
  * <p>Like {@link StripSheetView}, advancing the cursor never re-engraves: it
  * moves the camera, the light and the balls, and paints an ink tile when one
- * comes into sight.
+ * comes into sight. With {@link #revealTimeProperty() revealTime} set, only
+ * the music that has started is printed, so the paper fills in note by note;
+ * just the ink tile under a newly revealed note is repainted.
  * Requires {@link ConditionalFeature#SCENE3D}; see {@link #is3DSupported()}.
  *
  * <p>The scene uses layout units: the paper lies in the x/y plane at
@@ -176,6 +178,9 @@ public final class FlyOverSheetView extends Region {
     private final DoubleProperty stripSpacingFactor =
             new SimpleDoubleProperty(this, "stripSpacingFactor", LayoutOptions.DEFAULT_STRIP_SPACING_FACTOR);
     private final DoubleProperty textureScale = new SimpleDoubleProperty(this, "textureScale", 2.0);
+    private final DoubleProperty revealTime =
+            new SimpleDoubleProperty(this, "revealTime", Double.POSITIVE_INFINITY);
+    private final RevealTracker reveal = new RevealTracker(renderer.painter());
 
     private final Map<SpriteKey, Image> sprites = new HashMap<>();
     private final Map<Color, Image> pools = new HashMap<>();
@@ -234,6 +239,7 @@ public final class FlyOverSheetView extends Region {
         stripSpacingFactor.addListener((obs, o, n) -> rebuild());
         textureScale.addListener((obs, o, n) -> rebuild());
         inkColor.addListener((obs, o, n) -> rebuildInk());
+        revealTime.addListener((obs, o, n) -> updateReveal());
 
         setMinSize(200, 150);
         setPrefSize(800, 450);
@@ -464,6 +470,26 @@ public final class FlyOverSheetView extends Region {
         return textureScale;
     }
 
+    /**
+     * Musical time (quarter notes) up to which the music is printed on the
+     * paper, see {@code ScorePainter#setRevealTime}; positive infinity (the
+     * default) prints everything. Bind it to {@link #cursorTimeProperty()}
+     * to let the score appear note by note as the balls reach it. Only the
+     * ink tiles around elements that appear or disappear are repainted.
+     */
+    public DoubleProperty revealTimeProperty() {
+        return revealTime;
+    }
+
+    private void updateReveal() {
+        double[] dirty = reveal.apply(timeline, revealTime.get());
+        if (dirty == RevealTracker.ALL) {
+            rebuildInk();
+        } else if (dirty != null && layout != null) {
+            ink.repaint(dirty[0], dirty[1]);
+        }
+    }
+
     @Override
     protected void layoutChildren() {
         subScene.setWidth(getWidth());
@@ -501,6 +527,7 @@ public final class FlyOverSheetView extends Region {
                 .build();
         layout = engraver.layout(score, options);
         timeline = PlaybackTimeline.of(layout);
+        reveal.apply(timeline, revealTime.get());
         measureStaffBlock(layout);
         buildPaper();
         buildInk();

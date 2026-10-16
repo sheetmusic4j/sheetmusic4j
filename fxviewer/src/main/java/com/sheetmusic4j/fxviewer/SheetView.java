@@ -6,17 +6,22 @@ import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
+import com.sheetmusic4j.engraving.layout.CursorPlacement;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.engraving.layout.PlaybackTimeline;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.*;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Line;
 
 import java.util.EnumSet;
 
@@ -55,6 +60,12 @@ import java.util.EnumSet;
  * {@link #noteHighlights()} map: adding {@code (element, color)} pairs
  * repaints the view without re-engraving, so highlights are cheap enough to
  * drive from real-time MIDI events.
+ *
+ * <p>For play-along use, {@link #cursorTimeProperty() cursorTime} places a
+ * cursor line on the system that is playing (shown when
+ * {@link #cursorVisibleProperty() cursorVisible}), and
+ * {@link #revealTimeProperty() revealTime} shows only the music that has
+ * started, so the page fills in note by note.
  */
 public final class SheetView extends Region {
 
@@ -131,14 +142,49 @@ public final class SheetView extends Region {
 
     private final NoteDecorations decorations = new NoteDecorations(renderer.painter(), this::repaint);
 
+    private final DoubleProperty cursorTime = new SimpleDoubleProperty(this, "cursorTime", 0.0);
+
+    private final BooleanProperty cursorVisible = new SimpleBooleanProperty(this, "cursorVisible", false);
+
+    private final ObjectProperty<Color> cursorColor =
+            new SimpleObjectProperty<>(this, "cursorColor", Color.CRIMSON);
+
+    private final DoubleProperty revealTime =
+            new SimpleDoubleProperty(this, "revealTime", Double.POSITIVE_INFINITY);
+
+    private final ObjectProperty<Color> pageColor =
+            new SimpleObjectProperty<>(this, "pageColor", Color.WHITE);
+
+    private final ObjectProperty<Color> inkColor =
+            new SimpleObjectProperty<>(this, "inkColor", Color.BLACK);
+
+    private final RevealTracker reveal = new RevealTracker(renderer.painter());
+
+    private final Line cursor = new Line();
+
     private Score score;
     private LayoutResult layout;
+    private PlaybackTimeline timeline;
 
     /**
      * Creates an empty score view at the default engraving width.
      */
     public SheetView() {
-        getChildren().add(canvas);
+        getChildren().addAll(canvas, cursor);
+        cursor.setManaged(false);
+        cursor.setStrokeWidth(2.0);
+        cursor.strokeProperty().bind(cursorColor);
+        cursor.setVisible(false);
+        cursorTime.addListener((obs, oldV, newV) -> updateCursor());
+        cursorVisible.addListener((obs, oldV, newV) -> updateCursor());
+        revealTime.addListener((obs, oldV, newV) -> {
+            if (reveal.apply(timeline, newV.doubleValue()) != null) {
+                repaint();
+            }
+        });
+        pageColor.addListener((obs, oldV, newV) -> applyColors());
+        inkColor.addListener((obs, oldV, newV) -> applyColors());
+        applyColors();
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
         zoom.addListener((obs, oldV, newV) -> rebuild());
         viewportTop.addListener((obs, oldV, newV) -> updateWindow(false));
@@ -356,6 +402,85 @@ public final class SheetView extends Region {
     }
 
     /**
+     * The playback timeline of the last engraved layout, or {@code null}
+     * when no score has been set.
+     */
+    public PlaybackTimeline getTimeline() {
+        return timeline;
+    }
+
+    /**
+     * Musical time (quarter notes from the start of the score) of the
+     * cursor line; see {@link PlaybackTimeline#cursorAt}. Moving it never
+     * repaints the score.
+     */
+    public DoubleProperty cursorTimeProperty() {
+        return cursorTime;
+    }
+
+    /**
+     * Whether the cursor line is drawn; off by default.
+     */
+    public BooleanProperty cursorVisibleProperty() {
+        return cursorVisible;
+    }
+
+    /**
+     * Colour of the cursor line.
+     */
+    public ObjectProperty<Color> cursorColorProperty() {
+        return cursorColor;
+    }
+
+    /**
+     * Musical time (quarter notes) up to which the music is shown, see
+     * {@code ScorePainter#setRevealTime}; positive infinity (the default)
+     * shows everything. The page is only repainted when an element appears
+     * or disappears, not every time this changes.
+     */
+    public DoubleProperty revealTimeProperty() {
+        return revealTime;
+    }
+
+    /**
+     * Colour of the paper behind the music; {@code null} leaves it
+     * transparent. Defaults to white.
+     */
+    public ObjectProperty<Color> pageColorProperty() {
+        return pageColor;
+    }
+
+    /**
+     * Colour of the engraved ink (staff lines, notes, text). Highlighted
+     * notes keep their own colour. Defaults to black.
+     */
+    public ObjectProperty<Color> inkColorProperty() {
+        return inkColor;
+    }
+
+    private void applyColors() {
+        renderer.painter().setPageColor(NoteDecorations.toRenderColor(pageColor.get()).orElse(null));
+        renderer.painter().setInkColor(NoteDecorations.toRenderColor(inkColor.get()).orElse(null));
+        repaint();
+    }
+
+    private void updateCursor() {
+        if (timeline == null || !cursorVisible.get()) {
+            cursor.setVisible(false);
+            return;
+        }
+        double zoomFactor = Math.max(zoom.get(), 0.01);
+        CursorPlacement placement = timeline.cursorAt(cursorTime.get());
+        double overhang = (placement.bottom() - placement.top()) * 0.15 + 8;
+        double x = placement.x() * zoomFactor;
+        cursor.setStartX(x);
+        cursor.setEndX(x);
+        cursor.setStartY((placement.top() - overhang) * zoomFactor);
+        cursor.setEndY((placement.bottom() + overhang) * zoomFactor);
+        cursor.setVisible(true);
+    }
+
+    /**
      * Re-engrave the current score (produces a fresh {@link LayoutResult}),
      * update this view's reported content size accordingly, and repaint.
      * Called only when a score/layout knob changes; per-note highlight
@@ -366,6 +491,7 @@ public final class SheetView extends Region {
         windowStartLayoutY = 0;
         if (score == null) {
             layout = null;
+            timeline = null;
             double zoomFactor = Math.max(zoom.get(), 0.01);
             canvas.setWidth(systemWidth.get() * zoomFactor);
             canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
@@ -373,6 +499,8 @@ public final class SheetView extends Region {
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         } else {
             layout = engraver.layout(score, layoutOptions());
+            timeline = PlaybackTimeline.of(layout);
+            reveal.apply(timeline, revealTime.get());
             updateWindow(true);
         }
 
@@ -381,6 +509,7 @@ public final class SheetView extends Region {
         setPrefSize(totalWidth, totalHeight);
         setMinSize(Math.min(200, totalWidth), Math.min(120, totalHeight));
         setMaxSize(totalWidth, totalHeight);
+        updateCursor();
         requestLayout();
         if (getParent() != null) {
             getParent().requestLayout();

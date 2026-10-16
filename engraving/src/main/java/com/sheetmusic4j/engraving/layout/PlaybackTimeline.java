@@ -1,6 +1,7 @@
 package com.sheetmusic4j.engraving.layout;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
@@ -23,6 +24,12 @@ public final class PlaybackTimeline {
     /** Strictly increasing onsets and the layout x of each. */
     private final double[] sampleOnset;
     private final double[] sampleX;
+    /** System index of each sample. */
+    private final int[] sampleSystem;
+    /** Every anchor (rests included), sorted by onset. */
+    private final List<NoteAnchor> allAnchors;
+    /** Strictly increasing distinct onsets of {@link #allAnchors}. */
+    private final double[] revealOnsets;
     /** Fallback when there are no anchors to interpolate between. */
     private final LayoutResult layout;
 
@@ -33,14 +40,17 @@ public final class PlaybackTimeline {
         List<NoteAnchor> sorted = new ArrayList<>(layout.noteAnchors());
         sorted.sort(Comparator.comparingDouble(NoteAnchor::onsetQuarters));
         this.soundingAnchors = sorted.stream().filter(PlaybackTimeline::isSounding).toList();
+        this.allAnchors = List.copyOf(sorted);
 
         List<Double> onsets = new ArrayList<>();
         List<Double> xs = new ArrayList<>();
+        List<Integer> systems = new ArrayList<>();
         if (!sorted.isEmpty()) {
             // Leading sample so the cursor eases in from the staff start.
             if (sorted.get(0).onsetQuarters() > 0) {
                 onsets.add(0.0);
                 xs.add(layout.xAtTime(0));
+                systems.add(0);
             }
             for (NoteAnchor a : sorted) {
                 if (!onsets.isEmpty() && a.onsetQuarters() == onsets.get(onsets.size() - 1)) {
@@ -48,16 +58,55 @@ public final class PlaybackTimeline {
                 }
                 onsets.add(a.onsetQuarters());
                 xs.add(a.x());
+                systems.add(systemOf(layout, a.y()));
             }
             // Trailing sample at the end of the piece so motion continues through
             // the final note's duration to the closing barline.
             if (totalDurationQuarters > onsets.get(onsets.size() - 1)) {
                 onsets.add(totalDurationQuarters);
                 xs.add(layout.xAtTime(totalDurationQuarters));
+                systems.add(Math.max(layout.systems().size() - 1, 0));
             }
         }
         this.sampleOnset = onsets.stream().mapToDouble(Double::doubleValue).toArray();
         this.sampleX = xs.stream().mapToDouble(Double::doubleValue).toArray();
+        this.sampleSystem = systems.stream().mapToInt(Integer::intValue).toArray();
+        this.revealOnsets = sorted.stream().mapToDouble(NoteAnchor::onsetQuarters).distinct().toArray();
+    }
+
+    /** The system whose staves are vertically closest to {@code y}. */
+    private static int systemOf(LayoutResult layout, double y) {
+        int best = 0;
+        double bestDistance = Double.MAX_VALUE;
+        List<SystemLayout> systems = layout.systems();
+        for (int i = 0; i < systems.size(); i++) {
+            double[] band = staffBand(systems.get(i));
+            double distance = y < band[0] ? band[0] - y : Math.max(y - band[1], 0);
+            if (distance < bestDistance) {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    /** Top staff line of the first staff and bottom staff line of the last one. */
+    private static double[] staffBand(SystemLayout system) {
+        if (system.staves().isEmpty()) {
+            return new double[] {system.y(), system.y()};
+        }
+        StaffLayout first = system.staves().get(0);
+        StaffLayout last = system.staves().get(system.staves().size() - 1);
+        return new double[] {first.y(), last.y() + last.lineGap() * 4};
+    }
+
+    /** Right end of the music on a system. */
+    private static double systemEnd(SystemLayout system) {
+        if (system.staves().isEmpty()) {
+            return system.x() + system.width();
+        }
+        StaffLayout staff = system.staves().get(0);
+        return staff.x() + staff.width();
     }
 
     /**
@@ -132,5 +181,80 @@ public final class PlaybackTimeline {
         double span = sampleOnset[i] - sampleOnset[i - 1];
         double f = span <= 0 ? 0 : (quarters - sampleOnset[i - 1]) / span;
         return sampleX[i - 1] + f * (sampleX[i] - sampleX[i - 1]);
+    }
+
+    /**
+     * The playback cursor at the given musical time on a layout of any
+     * number of systems: like {@link #cursorX}, but when the next note is on
+     * the next system the cursor glides to the end of the current one
+     * instead of back across it, and the result tells which system to draw
+     * the line on. Empty layouts give a zero-height cursor at x 0.
+     */
+    public CursorPlacement cursorAt(double quarters) {
+        List<SystemLayout> systems = layout.systems();
+        if (systems.isEmpty()) {
+            return new CursorPlacement(0, 0, 0, 0);
+        }
+        int n = sampleOnset.length;
+        double x;
+        int system;
+        if (n == 0) {
+            x = layout.xAtTime(quarters);
+            system = 0;
+        } else if (quarters <= sampleOnset[0]) {
+            x = sampleX[0];
+            system = sampleSystem[0];
+        } else if (quarters >= sampleOnset[n - 1]) {
+            x = sampleX[n - 1];
+            system = sampleSystem[n - 1];
+        } else {
+            int i = Arrays.binarySearch(sampleOnset, quarters);
+            i = i >= 0 ? Math.max(i, 1) : -i - 1;
+            double span = sampleOnset[i] - sampleOnset[i - 1];
+            double f = span <= 0 ? 0 : (quarters - sampleOnset[i - 1]) / span;
+            system = sampleSystem[i - 1];
+            double target = sampleSystem[i] == system ? sampleX[i] : systemEnd(systems.get(system));
+            x = sampleX[i - 1] + f * (target - sampleX[i - 1]);
+        }
+        system = Math.clamp(system, 0, systems.size() - 1);
+        double[] band = staffBand(systems.get(system));
+        return new CursorPlacement(x, band[0], band[1], system);
+    }
+
+    /**
+     * How many distinct onsets of the layout's elements (notes, chords and
+     * rests) lie at or before the given time. Views that only paint the
+     * elements that have started (see {@code ScorePainter#setRevealTime})
+     * need to repaint only when this changes.
+     */
+    public int revealStep(double quarters) {
+        int i = Arrays.binarySearch(revealOnsets, quarters);
+        if (i >= 0) {
+            while (i + 1 < revealOnsets.length && revealOnsets[i + 1] <= quarters) {
+                i++;
+            }
+            return i + 1;
+        }
+        return -i - 1;
+    }
+
+    /**
+     * Every anchor (rests included) starting after {@code fromExclusive} and
+     * at or before {@code toInclusive}, sorted by onset: the elements a
+     * reveal from one time to the other uncovers.
+     */
+    public List<NoteAnchor> anchorsBetween(double fromExclusive, double toInclusive) {
+        double lo = Math.min(fromExclusive, toInclusive);
+        double hi = Math.max(fromExclusive, toInclusive);
+        List<NoteAnchor> out = new ArrayList<>();
+        for (NoteAnchor anchor : allAnchors) {
+            if (anchor.onsetQuarters() > hi) {
+                break;
+            }
+            if (anchor.onsetQuarters() > lo) {
+                out.add(anchor);
+            }
+        }
+        return out;
     }
 }

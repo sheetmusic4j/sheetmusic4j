@@ -15,6 +15,7 @@ import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.layout.Background;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
@@ -38,6 +39,10 @@ import javafx.scene.shape.Rectangle;
  * every tile width, painting one new tile - no re-engrave - which is
  * important for smooth playback. Highlight changes go through the same
  * {@link #noteHighlights()} map as {@link SheetView}.
+ *
+ * <p>Setting {@link #revealTimeProperty() revealTime} shows only the music
+ * that has started by then, so the strip fills in note by note while it
+ * plays; only the tiles around a newly revealed note are repainted.
  */
 public final class StripSheetView extends Region {
 
@@ -76,7 +81,18 @@ public final class StripSheetView extends Region {
     private final ObjectProperty<NoteBackgroundStyle> noteBackgroundStyle =
             new SimpleObjectProperty<>(this, "noteBackgroundStyle", NoteBackgroundStyle.defaults());
 
+    private final DoubleProperty revealTime =
+            new SimpleDoubleProperty(this, "revealTime", Double.POSITIVE_INFINITY);
+
+    private final ObjectProperty<Color> pageColor =
+            new SimpleObjectProperty<>(this, "pageColor", Color.WHITE);
+
+    private final ObjectProperty<Color> inkColor =
+            new SimpleObjectProperty<>(this, "inkColor", Color.BLACK);
+
     private final NoteDecorations decorations = new NoteDecorations(renderer.painter(), this::repaint);
+
+    private final RevealTracker reveal = new RevealTracker(renderer.painter());
 
     private Score score;
     private LayoutResult layout;
@@ -109,6 +125,10 @@ public final class StripSheetView extends Region {
             renderer.painter().setNoteBackgroundStyle(n);
             repaint();
         });
+        revealTime.addListener((obs, o, n) -> updateReveal());
+        pageColor.addListener((obs, o, n) -> applyColors());
+        inkColor.addListener((obs, o, n) -> applyColors());
+        applyColors();
 
         widthProperty().addListener((obs, o, n) -> {
             clip.setWidth(n.doubleValue());
@@ -349,6 +369,60 @@ public final class StripSheetView extends Region {
         }
     }
 
+    /**
+     * Musical time (quarter notes) up to which the music is shown: notes,
+     * chords and rests starting later are left out, so the strip can be
+     * filled in note by note during playback (see
+     * {@code ScorePainter#setRevealTime}). Positive infinity, the default,
+     * shows everything. Usually bound to, or set together with,
+     * {@link #cursorTimeProperty()}; changing it only repaints the tiles
+     * around elements that appear or disappear.
+     */
+    public DoubleProperty revealTimeProperty() {
+        return revealTime;
+    }
+
+    public double getRevealTime() {
+        return revealTime.get();
+    }
+
+    public void setRevealTime(double quarters) {
+        revealTime.set(quarters);
+    }
+
+    /**
+     * Colour of the paper behind the music; also fills the parts of the view
+     * the strip does not reach. Defaults to white.
+     */
+    public ObjectProperty<Color> pageColorProperty() {
+        return pageColor;
+    }
+
+    /**
+     * Colour of the engraved ink (staff lines, notes, text). Highlighted
+     * notes keep their own colour. Defaults to black.
+     */
+    public ObjectProperty<Color> inkColorProperty() {
+        return inkColor;
+    }
+
+    private void applyColors() {
+        Color page = pageColor.get();
+        renderer.painter().setPageColor(NoteDecorations.toRenderColor(page).orElse(null));
+        renderer.painter().setInkColor(NoteDecorations.toRenderColor(inkColor.get()).orElse(null));
+        setBackground(page == null ? Background.EMPTY : Background.fill(page));
+        repaint();
+    }
+
+    private void updateReveal() {
+        double[] dirty = reveal.apply(timeline, revealTime.get());
+        if (dirty == RevealTracker.ALL) {
+            repaint();
+        } else if (dirty != null && layout != null) {
+            tiles.repaint(dirty[0], dirty[1]);
+        }
+    }
+
     private void rebuild() {
         double zoomFactor = Math.max(zoom.get(), 0.01);
         if (score == null) {
@@ -366,6 +440,7 @@ public final class StripSheetView extends Region {
                 .build();
         layout = engraver.layout(score, options);
         timeline = PlaybackTimeline.of(layout);
+        reveal.apply(timeline, revealTime.get());
         tiles.reset(layout.width(), TILE_PIXELS / zoomFactor);
         setPrefHeight(Math.max(layout.height() * zoomFactor, 1.0));
         updateCursor();

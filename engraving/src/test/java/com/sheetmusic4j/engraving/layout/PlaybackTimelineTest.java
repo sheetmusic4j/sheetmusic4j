@@ -98,4 +98,78 @@ class PlaybackTimelineTest {
         assertEquals(layout.width(), far.width());
         assertEquals(10_000, far.height(), 1e-9);
     }
+    /** {@code measures} 4/4 measures of quarter notes, engraved on a narrow page so they wrap. */
+    private static LayoutResult page(int measures) {
+        Part.Builder part = Part.builder("P1");
+        for (int m = 1; m <= measures; m++) {
+            Measure.Builder measure = Measure.builder(m);
+            if (m == 1) {
+                measure.attributes(Attributes.builder().divisions(1).keySignature(KeySignature.cMajor())
+                        .timeSignature(TimeSignature.fourFour()).clef(Clef.treble()).build());
+            }
+            for (int i = 0; i < 4; i++) {
+                measure.addElement(note(Step.values()[i], 1));
+            }
+            part.addMeasure(measure.build());
+        }
+        Score score = Score.builder().addPart(part.build()).build();
+        return new Engraver().layout(score, LayoutOptions.defaults().toBuilder().systemWidth(500).build());
+    }
+
+    @Test
+    void cursorAtFollowsTheSystemThatPlays() {
+        LayoutResult layout = page(12);
+        assertTrue(layout.systems().size() > 1, "the page wraps");
+        PlaybackTimeline timeline = PlaybackTimeline.of(layout);
+        CursorPlacement start = timeline.cursorAt(0);
+        assertEquals(0, start.systemIndex());
+        assertEquals(layout.systems().get(0).staves().get(0).y(), start.top(), 1e-9);
+        assertTrue(start.bottom() > start.top());
+
+        CursorPlacement end = timeline.cursorAt(48);
+        assertEquals(layout.systems().size() - 1, end.systemIndex());
+
+        // Within one system the cursor only moves right; it never sweeps back before a line break.
+        double previousX = -1;
+        int previousSystem = 0;
+        for (double t = 0; t <= 48; t += 0.25) {
+            CursorPlacement at = timeline.cursorAt(t);
+            assertTrue(at.systemIndex() >= previousSystem, "systems advance");
+            if (at.systemIndex() == previousSystem) {
+                assertTrue(at.x() >= previousX - 1e-9, "x grows within a system at " + t);
+            }
+            previousX = at.x();
+            previousSystem = at.systemIndex();
+        }
+    }
+
+    @Test
+    void cursorAtMatchesCursorXOnOneSystem() {
+        LayoutResult layout = layout();
+        PlaybackTimeline timeline = PlaybackTimeline.of(layout);
+        for (double t = 0; t <= 4; t += 0.5) {
+            assertEquals(timeline.cursorX(t), timeline.cursorAt(t).x(), 1e-9);
+        }
+    }
+
+    @Test
+    void revealStepCountsStartedOnsets() {
+        PlaybackTimeline timeline = PlaybackTimeline.of(layout());
+        // Onsets: rest at 0, C at 1, E at 2.
+        assertEquals(0, timeline.revealStep(-0.5));
+        assertEquals(1, timeline.revealStep(0));
+        assertEquals(1, timeline.revealStep(0.99));
+        assertEquals(2, timeline.revealStep(1));
+        assertEquals(3, timeline.revealStep(2));
+        assertEquals(3, timeline.revealStep(100));
+    }
+
+    @Test
+    void anchorsBetweenIsHalfOpen() {
+        PlaybackTimeline timeline = PlaybackTimeline.of(layout());
+        List<NoteAnchor> between = timeline.anchorsBetween(0, 1);
+        assertEquals(1, between.size());
+        assertSame(first, between.get(0).elementRef());
+        assertEquals(2, timeline.anchorsBetween(2, 0).size(), "order of the bounds does not matter");
+    }
 }
