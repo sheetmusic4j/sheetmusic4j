@@ -166,26 +166,41 @@ public final class SpanTracker {
 
     /**
      * Track an open tuplet run across every element it spans (not just its
-     * start/stop): updates the running minimum y for all currently-open
-     * tuplets, then opens or closes a run per {@code elementTuplets}.
+     * start/stop): updates the running extremes for all currently-open
+     * tuplets, then opens or closes a run per {@code elementTuplets}. The
+     * indicator goes where the tuplet's placement says, or else on the stem
+     * side, as beams do: above for a run whose stems mostly point up (or
+     * that has none), below otherwise.
+     *
+     * @param topY    the element's highest point (stem tip for an up stem)
+     * @param bottomY the element's lowest point (stem tip for a down stem)
+     * @param stemUp  the element's stem direction, or null without a stem
      */
     public void tuplets(int voice, List<Tuplet> elementTuplets, Optional<TimeModification> timeModification,
-                        double x, double y) {
+                        double x, double topY, double bottomY, Boolean stemUp) {
         for (TupletRun run : tupletCandidates.values()) {
-            run.minY = Math.min(run.minY, y);
+            run.include(topY, bottomY, stemUp);
         }
         for (Tuplet t : elementTuplets) {
             if (t.type() == Tuplet.Type.START) {
-                int actualNotes = timeModification.map(TimeModification::actualNotes).orElse(0);
-                tupletCandidates.put(key(voice, t.number()), new TupletRun(x, y, actualNotes, t.bracket()));
+                int actualNotes = t.actualNotes() > 0 ? t.actualNotes()
+                        : timeModification.map(TimeModification::actualNotes).orElse(0);
+                TupletRun run = new TupletRun(x, topY, actualNotes, t.bracket(), t.placement());
+                run.include(topY, bottomY, stemUp);
+                tupletCandidates.put(key(voice, t.number()), run);
             } else {
                 TupletRun run = tupletCandidates.remove(key(voice, t.number()));
                 if (run != null) {
                     int number = run.actualNotes > 0
                             ? run.actualNotes
                             : timeModification.map(TimeModification::actualNotes).orElse(3);
-                    tuplets.add(new TupletPlacement(run.startX, x,
-                            run.minY - gap * TUPLET_ABOVE_GAP, number, run.bracket));
+                    boolean above = switch (run.placement) {
+                        case ABOVE -> true;
+                        case BELOW -> false;
+                        case DEFAULT -> run.stemsDown <= run.stemsUp;
+                    };
+                    double y = above ? run.minY - gap * TUPLET_ABOVE_GAP : run.maxY + gap * TUPLET_ABOVE_GAP;
+                    tuplets.add(new TupletPlacement(run.startX, x, y, number, run.bracket, above));
                 }
             }
         }
@@ -234,21 +249,40 @@ public final class SpanTracker {
      * Mutable state for an open tuplet run: the x of its first element, the
      * displayed count captured at the start (falls back to the stop
      * element's own {@link TimeModification} if the start didn't carry
-     * one), whether a bracket line should be drawn, and the running minimum
-     * y seen across every element in the run so the number/bracket clears
-     * the highest notehead.
+     * one), whether a bracket line should be drawn, the running vertical
+     * extremes across every element in the run so the number/bracket clears
+     * the noteheads and beams, the stem directions seen, and an explicit
+     * placement, which wins over the stem side.
      */
     private static final class TupletRun {
         final double startX;
         final int actualNotes;
         final boolean bracket;
+        final Placement placement;
         double minY;
+        double maxY;
+        int stemsUp;
+        int stemsDown;
 
-        TupletRun(double startX, double minY, int actualNotes, boolean bracket) {
+        TupletRun(double startX, double y, int actualNotes, boolean bracket, Placement placement) {
             this.startX = startX;
-            this.minY = minY;
+            this.placement = placement;
+            this.minY = y;
+            this.maxY = y;
             this.actualNotes = actualNotes;
             this.bracket = bracket;
+        }
+
+        void include(double topY, double bottomY, Boolean stemUp) {
+            minY = Math.min(minY, topY);
+            maxY = Math.max(maxY, bottomY);
+            if (stemUp != null) {
+                if (stemUp) {
+                    stemsUp++;
+                } else {
+                    stemsDown++;
+                }
+            }
         }
     }
 }

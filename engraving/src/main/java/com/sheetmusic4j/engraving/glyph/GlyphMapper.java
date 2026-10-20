@@ -18,9 +18,11 @@ public final class GlyphMapper {
 
     public static Glyph clefGlyph(Clef clef) {
         return switch (clef.sign()) {
-            case F -> Glyph.CLEF_F;
-            case C -> Glyph.CLEF_C;
-            default -> Glyph.CLEF_G;
+            case F -> clef.octaveChange() < 0 ? Glyph.CLEF_F_8VB : Glyph.CLEF_F;
+            case C -> clef.octaveChange() < 0 ? Glyph.CLEF_C_8VB : Glyph.CLEF_C;
+            case PERCUSSION -> Glyph.CLEF_PERCUSSION;
+            default -> clef.octaveChange() < 0 ? Glyph.CLEF_G_8VB
+                    : clef.octaveChange() > 0 ? Glyph.CLEF_G_8VA : Glyph.CLEF_G;
         };
     }
 

@@ -416,10 +416,19 @@ public final class MusicXmlWriter implements ScoreWriter {
             }
         }
         for (Tuplet tuplet : tuplets) {
-            w.emptyElementWithAttrs("tuplet",
-                    "number", Integer.toString(tuplet.number()),
-                    "type", tuplet.type() == Tuplet.Type.START ? "start" : "stop",
-                    "bracket", tuplet.bracket() ? "yes" : "no");
+            String placementAttr = tuplet.type() == Tuplet.Type.START ? tuplet.placement().xmlValue() : null;
+            if (placementAttr != null) {
+                w.emptyElementWithAttrs("tuplet",
+                        "number", Integer.toString(tuplet.number()),
+                        "type", "start",
+                        "bracket", tuplet.bracket() ? "yes" : "no",
+                        "placement", placementAttr);
+            } else {
+                w.emptyElementWithAttrs("tuplet",
+                        "number", Integer.toString(tuplet.number()),
+                        "type", tuplet.type() == Tuplet.Type.START ? "start" : "stop",
+                        "bracket", tuplet.bracket() ? "yes" : "no");
+            }
         }
         List<Articulation> ornaments = articulations.stream()
                 .filter(a -> a == Articulation.ROLL)

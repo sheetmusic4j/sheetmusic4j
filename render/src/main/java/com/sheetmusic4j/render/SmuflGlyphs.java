@@ -83,6 +83,11 @@ public final class SmuflGlyphs {
             case CLEF_G -> "\uE050";
             case CLEF_F -> "\uE062";
             case CLEF_C -> "\uE05C";
+            case CLEF_G_8VB -> "\uE052";
+            case CLEF_G_8VA -> "\uE053";
+            case CLEF_F_8VB -> "\uE064";
+            case CLEF_C_8VB -> "\uE05D";
+            case CLEF_PERCUSSION -> "\uE069";
             case NOTEHEAD_WHOLE -> "\uE0A2";
             case NOTEHEAD_HALF -> "\uE0A3";
             case NOTEHEAD_BLACK -> "\uE0A4";

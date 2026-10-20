@@ -11,6 +11,14 @@ package com.sheetmusic4j.engraving.placement;
  * @param bracket whether a bracket line should be drawn above/below the run
  *                in addition to the number (commonly {@code false} for
  *                already-beamed groups)
+ * @param above   whether the indicator sits above the run (stems up) or
+ *                below it (stems down); the bracket's end ticks point
+ *                towards the notes
  */
-public record TupletPlacement(double x1, double x2, double y, int number, boolean bracket) {
+public record TupletPlacement(double x1, double x2, double y, int number, boolean bracket, boolean above) {
+
+    /** A tuplet indicator above its run. */
+    public TupletPlacement(double x1, double x2, double y, int number, boolean bracket) {
+        this(x1, x2, y, number, bracket, true);
+    }
 }

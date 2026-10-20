@@ -357,7 +357,7 @@ public final class StaffRowEngraver {
             double dx = noteX + gap * 1.2 + i * gap * 0.6;
             glyphs.add(new GlyphPlacement(dx, y, Glyph.AUG_DOT, restStep, MarkingCategory.NOTE, rest));
         }
-        spans.tuplets(rest.voice(), rest.tuplets(), rest.timeModification(), noteX, y);
+        spans.tuplets(rest.voice(), rest.tuplets(), rest.timeModification(), noteX, y, y, null);
     }
 
     /**
@@ -433,10 +433,12 @@ public final class StaffRowEngraver {
         spans.slurs(note, staffStep, noteX, y);
 
         // Track the stem/beam tip (not just the notehead) so a tuplet number
-        // over a beamed run clears the beam itself, not just the noteheads -
-        // the beam commonly reaches well above the highest notehead.
-        double tupletTrackedY = stem.present() && stem.up() ? Math.min(stem.tipY(), y) : y;
-        spans.tuplets(note.voice(), note.tuplets(), note.timeModification(), noteX, tupletTrackedY);
+        // on the stem side clears the beam itself, not just the noteheads -
+        // the beam commonly reaches well beyond the outermost notehead.
+        double topY = stem.present() && stem.up() ? Math.min(stem.tipY(), y) : y;
+        double bottomY = stem.present() && !stem.up() ? Math.max(stem.tipY(), y) : y;
+        spans.tuplets(note.voice(), note.tuplets(), note.timeModification(), noteX, topY, bottomY,
+                stem.present() ? stem.up() : null);
     }
 
     /**

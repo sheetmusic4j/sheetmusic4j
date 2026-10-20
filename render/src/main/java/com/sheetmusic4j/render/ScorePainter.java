@@ -196,8 +196,9 @@ public final class ScorePainter {
 
     private static String clefLetter(Glyph glyph) {
         return switch (glyph) {
-            case CLEF_F -> "F";
-            case CLEF_C -> "C";
+            case CLEF_F, CLEF_F_8VB -> "F";
+            case CLEF_C, CLEF_C_8VB -> "C";
+            case CLEF_PERCUSSION -> "||";
             default -> "G";
         };
     }
@@ -968,7 +969,7 @@ public final class ScorePainter {
                     surface.strokeText(dynamicFallback(g), glyph.x(), glyph.y() + gap * 0.4);
                 }
             }
-            case CLEF_G, CLEF_F, CLEF_C -> {
+            case CLEF_G, CLEF_F, CLEF_C, CLEF_G_8VB, CLEF_G_8VA, CLEF_F_8VB, CLEF_C_8VB, CLEF_PERCUSSION -> {
                 if (!drawSmuflIfAvailable(surface, g, glyph, sizeHint)) {
                     drawClefFallback(surface, staff, glyph, clefLetter(g));
                 }
@@ -1125,7 +1126,8 @@ public final class ScorePainter {
         double textWidth = digits.length() * digitWidth;
         double startX = midX - textWidth / 2.0;
         if (tuplet.bracket()) {
-            double tick = gap * 0.5;
+            // End ticks point towards the notes: down from a bracket above, up from one below.
+            double tick = tuplet.above() ? gap * 0.5 : -gap * 0.5;
             surface.strokeLine(tuplet.x1(), tuplet.y() + tick, tuplet.x1(), tuplet.y());
             surface.strokeLine(tuplet.x1(), tuplet.y(), startX - gap * 0.3, tuplet.y());
             surface.strokeLine(startX + textWidth + gap * 0.3, tuplet.y(), tuplet.x2(), tuplet.y());

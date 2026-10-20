@@ -21,7 +21,10 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
 1. **`core`** — domain model (`Score`, `Part`, `Measure`, `Attributes`, `Note`, `Chord`, `Rest`, `Pitch`, `Clef`,
    `KeySignature`, `TimeSignature`, etc.) plus MusicXML read/write (`com.sheetmusic4j.core.musicxml`, StAX-based,
    XXE-hardened) and MIDI import/export (`com.sheetmusic4j.core.midi`, `javax.sound.midi`), plus ABC,
-   LilyPond and Guitar Pro.
+   LilyPond and Guitar Pro. The LilyPond reader works like LilyPond itself: `LilyPondParser` builds a `LyMusic`
+   tree (language, default durations, variables resolved), `LilyPondInterpreter` runs it through time into
+   contexts (staff groups, staves, voices, lyrics, chord names), and `LilyPondScoreAssembler` lays the bar grid and
+   derives what LilyPond leaves implicit (ties at bar lines, accidentals, beams, gap rests).
    `com.sheetmusic4j.core.io.ScoreFile` is the load/save facade; every format implements `ScoreReader`/`ScoreWriter`
    and is registered as a `ScoreFormat` service (`MusicXmlFormat` etc. are listed in `module-info` `provides` *and*
    `META-INF/services`, so discovery works on module path and classpath; `io` never imports a format package, and

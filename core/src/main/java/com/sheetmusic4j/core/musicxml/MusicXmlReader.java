@@ -1071,7 +1071,8 @@ public final class MusicXmlReader implements ScoreReader {
                         String tupletType = reader.getAttributeValue(null, "type");
                         boolean bracket = !"no".equals(reader.getAttributeValue(null, "bracket"));
                         if ("start".equals(tupletType)) {
-                            tuplets.add(new Tuplet(number, Tuplet.Type.START, bracket));
+                            Placement tupletPlacement = Placement.fromXml(reader.getAttributeValue(null, "placement"));
+                            tuplets.add(new Tuplet(number, Tuplet.Type.START, bracket, 0, 0, tupletPlacement));
                         } else if ("stop".equals(tupletType)) {
                             tuplets.add(new Tuplet(number, Tuplet.Type.STOP, bracket));
                         }

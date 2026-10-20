@@ -87,6 +87,16 @@ public enum Glyph {
     CLEF_G,
     CLEF_F,
     CLEF_C,
+    /** Treble clef with an 8 below (sounds an octave lower). */
+    CLEF_G_8VB,
+    /** Treble clef with an 8 above. */
+    CLEF_G_8VA,
+    /** Bass clef with an 8 below. */
+    CLEF_F_8VB,
+    /** Alto/tenor clef with an 8 below. */
+    CLEF_C_8VB,
+    /** Unpitched percussion clef. */
+    CLEF_PERCUSSION,
     /**
      * @deprecated use {@link #TIME_DIGIT_0}..{@link #TIME_DIGIT_9}. Kept for source compatibility.
      */

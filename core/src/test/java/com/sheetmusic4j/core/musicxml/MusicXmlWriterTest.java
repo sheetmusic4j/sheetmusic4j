@@ -30,6 +30,8 @@ import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Step;
 import com.sheetmusic4j.core.model.Syllabic;
+import com.sheetmusic4j.core.model.TimeModification;
+import com.sheetmusic4j.core.model.Tuplet;
 
 class MusicXmlWriterTest {
 
@@ -66,6 +68,30 @@ class MusicXmlWriterTest {
                 assertSameElement(origElems.get(i), reElems.get(i));
             }
         }
+    }
+
+    @Test
+    void roundTripPreservesTupletPlacement() {
+        Measure.Builder m = Measure.builder(1).attributes(Attributes.builder().divisions(3).build());
+        for (int i = 0; i < 3; i++) {
+            Note.Builder nb = Note.builder().pitch(new Pitch(Step.C, 5)).duration(new Duration(1, 3))
+                    .type(NoteType.EIGHTH).timeModification(new TimeModification(3, 2));
+            if (i == 0) {
+                nb.addTuplet(new Tuplet(1, Tuplet.Type.START, true, 0, 0, Placement.ABOVE));
+            }
+            if (i == 2) {
+                nb.addTuplet(new Tuplet(1, Tuplet.Type.STOP, true));
+            }
+            m.addElement(nb.build());
+        }
+        Score original = Score.builder().addPart(Part.builder("P1").addMeasure(m.build()).build()).build();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new MusicXmlWriter().write(original, out);
+        Score reparsed = new MusicXmlReader().read(new ByteArrayInputStream(out.toByteArray()));
+
+        Note first = (Note) reparsed.parts().get(0).measures().get(0).elements().get(0);
+        assertEquals(Placement.ABOVE, first.tuplets().get(0).placement());
     }
 
     @Test

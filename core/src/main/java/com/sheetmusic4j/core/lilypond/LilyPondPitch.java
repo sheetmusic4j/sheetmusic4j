@@ -1,6 +1,6 @@
 package com.sheetmusic4j.core.lilypond;
 
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -8,30 +8,20 @@ import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Step;
 
 /**
- * Dutch LilyPond pitch-name lookup used by {@link LilyPondReader} and
- * {@link LilyPondWriter}. Recognises the standard Dutch note names ({@code c
- * d e f g a b}) with the usual {@code -is}/{@code -es} accidental suffixes
- * (including the double variants {@code -isis}/{@code -eses}) and the short
- * flat forms {@code as}/{@code es} preferred by many editors.
+ * LilyPond note names used by {@link LilyPondReader} and {@link LilyPondWriter}.
  *
- * <p>Order of sharps / flats mirrors {@code AbcKey}: {@link #alterFor} lets
- * the reader resolve unaccidental note letters against a key signature
- * exactly the same way ABC does.
+ * <p>LilyPond spells every pitch out in full: {@code b} is always B natural and
+ * {@code bes} always B flat, whatever the key signature says. The reader looks
+ * whole words up in the table of the active input language (Dutch by default,
+ * switched with {@code \language "..."} or {@code \include "deutsch.ly"}); the
+ * writer always emits Dutch names.
  */
 final class LilyPondPitch {
 
-    /** Order of sharps in a key signature: F, C, G, D, A, E, B. */
-    private static final Step[] SHARP_ORDER = {Step.F, Step.C, Step.G, Step.D, Step.A, Step.E, Step.B};
-    /** Order of flats in a key signature: B, E, A, D, G, C, F. */
-    private static final Step[] FLAT_ORDER = {Step.B, Step.E, Step.A, Step.D, Step.G, Step.C, Step.F};
+    /** The default input language. */
+    static final String DEFAULT_LANGUAGE = "nederlands";
 
-    /**
-     * Longest-first list of pitch-name tokens ↔ {@code (Step, alter)} so that
-     * the reader can match the accidental suffix greedily (e.g. {@code cis}
-     * must win over {@code c}, {@code cisis} over {@code cis}). Insertion
-     * order matters — never re-sort this map.
-     */
-    private static final Map<String, StepAlter> NAME_TO_STEP = buildNameTable();
+    private static final Map<String, Map<String, StepAlter>> LANGUAGES = buildLanguages();
 
     private LilyPondPitch() {
     }
@@ -40,52 +30,48 @@ final class LilyPondPitch {
     record StepAlter(Step step, int alter) {
     }
 
-    /** Result of matching a pitch name against the front of an input. */
-    record Parsed(Step step, int alter, int consumed) {
+    /**
+     * The pitch a whole word names in the given language, or {@code null}
+     * when the word is not a note name there.
+     */
+    static StepAlter lookup(String word, String language) {
+        Map<String, StepAlter> table = LANGUAGES.get(language);
+        if (table == null) {
+            table = LANGUAGES.get(DEFAULT_LANGUAGE);
+        }
+        return table.get(word);
     }
 
     /**
-     * Attempt to match a pitch-name token at the start of {@code input} from
-     * position {@code pos}. Returns {@code null} when no known pitch name
-     * begins there. Matching is greedy: longer names win over shorter
-     * prefixes.
+     * Normalise a language name, as given to {@code \language} or as the base
+     * name of an included language file ({@code "deutsch.ly"}), or return
+     * {@code null} when it is not a known language.
      */
-    static Parsed parse(String input, int pos) {
-        String best = null;
-        StepAlter bestSa = null;
-        int len = input.length();
-        // Names are all lowercase ASCII letters — bail early on anything else.
-        if (pos >= len || input.charAt(pos) < 'a' || input.charAt(pos) > 'g') {
+    static String language(String name) {
+        if (name == null) {
             return null;
         }
-        for (Map.Entry<String, StepAlter> entry : NAME_TO_STEP.entrySet()) {
-            String name = entry.getKey();
-            int end = pos + name.length();
-            if (end > len) {
-                continue;
-            }
-            // Match against the character run [pos, end) only when the
-            // following character isn't itself another lowercase letter that
-            // could form a longer name we'd otherwise miss.
-            if (input.regionMatches(pos, name, 0, name.length())) {
-                if (best == null || name.length() > best.length()) {
-                    best = name;
-                    bestSa = entry.getValue();
-                }
-            }
+        String key = name.trim().toLowerCase(Locale.ROOT);
+        if (key.endsWith(".ly")) {
+            key = key.substring(0, key.length() - 3);
         }
-        if (best == null) {
-            return null;
+        int slash = key.lastIndexOf('/');
+        if (slash >= 0) {
+            key = key.substring(slash + 1);
         }
-        return new Parsed(bestSa.step(), bestSa.alter(), best.length());
+        key = switch (key) {
+            case "dutch" -> "nederlands";
+            case "german" -> "deutsch";
+            case "italian" -> "italiano";
+            case "french", "français" -> "francais";
+            case "spanish", "español" -> "espanol";
+            case "português" -> "portugues";
+            case "català" -> "catalan";
+            default -> key;
+        };
+        return LANGUAGES.containsKey(key) ? key : null;
     }
 
-    /**
-     * The Dutch pitch-name for the given step and alteration, e.g.
-     * {@code (D, 1) -> "dis"}, {@code (B, -2) -> "beses"}. Only the twelve
-     * chromatic pitches ± double accidentals are covered; unknown
-     * combinations fall back to the natural letter.
-     */
     static String nameOf(Step step, int alter) {
         String letter = step.name().toLowerCase(Locale.ROOT);
         return switch (alter) {
@@ -99,35 +85,8 @@ final class LilyPondPitch {
     }
 
     /**
-     * The chromatic alteration ({@code +1}, {@code 0}, {@code -1}) implied by
-     * the given key signature for the given diatonic step.
-     */
-    static int alterFor(Step step, KeySignature key) {
-        if (key == null || key.fifths() == 0) {
-            return 0;
-        }
-        if (key.fifths() > 0) {
-            for (int i = 0; i < key.fifths() && i < SHARP_ORDER.length; i++) {
-                if (SHARP_ORDER[i] == step) {
-                    return 1;
-                }
-            }
-            return 0;
-        }
-        for (int i = 0; i < -key.fifths() && i < FLAT_ORDER.length; i++) {
-            if (FLAT_ORDER[i] == step) {
-                return -1;
-            }
-        }
-        return 0;
-    }
-
-    /**
-     * Render a key signature as the argument to a LilyPond {@code \key}
-     * directive, in the form {@code "<tonic> \major"}. The model doesn't
-     * carry mode information for MVP, so this always picks the major
-     * representative — matching how {@link com.sheetmusic4j.core.abc.AbcWriter}
-     * picks a canonical major key name.
+     * Render a key signature as a {@code \key} argument (tonic + mode). Only
+     * major tonics are emitted — the reader does not care about the mode.
      */
     static String keyString(KeySignature key) {
         int fifths = key == null ? 0 : key.fifths();
@@ -152,35 +111,81 @@ final class LilyPondPitch {
         return tonic + " \\major";
     }
 
-    private static Map<String, StepAlter> buildNameTable() {
-        // Insertion order matters: longest names first so a naïve linear
-        // scan through the entries can just track the longest match seen.
-        Map<String, StepAlter> map = new LinkedHashMap<>();
-        // Double sharps / flats
-        for (Step step : Step.values()) {
-            String letter = step.name().toLowerCase(Locale.ROOT);
-            map.put(letter + "isis", new StepAlter(step, 2));
-            map.put(letter + "eses", new StepAlter(step, -2));
+    private static Map<String, Map<String, StepAlter>> buildLanguages() {
+        Map<String, Map<String, StepAlter>> languages = new HashMap<>();
+        String[] letters = {"c", "d", "e", "f", "g", "a", "b"};
+        String[] solfege = {"do", "re", "mi", "fa", "sol", "la", "si"};
+
+        Map<String, StepAlter> nl = suffixed(letters, new String[]{"isis", "is", "", "es", "eses"});
+        nl.put("as", new StepAlter(Step.A, -1));
+        nl.put("ases", new StepAlter(Step.A, -2));
+        nl.put("es", new StepAlter(Step.E, -1));
+        nl.put("eses", new StepAlter(Step.E, -2));
+        languages.put("nederlands", nl);
+
+        Map<String, StepAlter> de = new HashMap<>(nl);
+        de.keySet().removeIf(name -> name.startsWith("b"));
+        de.putAll(suffixed(new String[]{"c", "d", "e", "f", "g", "a", "h"}, new String[]{"isis", "is", ""}));
+        de.put("b", new StepAlter(Step.B, -1));
+        de.put("heses", new StepAlter(Step.B, -2));
+        languages.put("deutsch", de);
+        languages.put("suomi", de);
+
+        Map<String, StepAlter> no = new HashMap<>(de);
+        no.putAll(suffixed(new String[]{"c", "d", "e", "f", "g", "a", "h"}, new String[]{"ississ", "iss", "", "ess", "essess"}));
+        no.put("ess", new StepAlter(Step.E, -1));
+        no.put("essess", new StepAlter(Step.E, -2));
+        no.put("ass", new StepAlter(Step.A, -1));
+        no.put("assess", new StepAlter(Step.A, -2));
+        no.put("bes", new StepAlter(Step.B, -2));
+        languages.put("norsk", no);
+        languages.put("svenska", no);
+
+        Map<String, StepAlter> en = suffixed(letters, new String[]{"ss", "s", "", "f", "ff"});
+        en.putAll(suffixed(letters, new String[]{"x", "-sharpsharp", "-sharp", "", "-flat", "-flatflat"}));
+        languages.put("english", en);
+
+        Map<String, StepAlter> it = suffixed(solfege, new String[]{"dd", "d", "", "b", "bb"});
+        languages.put("italiano", it);
+        languages.put("catalan", it);
+
+        Map<String, StepAlter> fr = new HashMap<>(it);
+        fr.putAll(suffixed(new String[]{"do", "ré", "mi", "fa", "sol", "la", "si"},
+                new String[]{"x", "dd", "d", "", "b", "bb"}));
+        fr.putAll(suffixed(solfege, new String[]{"x"}));
+        languages.put("francais", fr);
+
+        Map<String, StepAlter> es = suffixed(solfege, new String[]{"ss", "x", "s", "", "b", "bb"});
+        languages.put("espanol", es);
+        languages.put("portugues", es);
+
+        Map<String, StepAlter> vl = suffixed(solfege, new String[]{"kk", "k", "", "b", "bb"});
+        languages.put("vlaams", vl);
+        return Map.copyOf(languages);
+    }
+
+    /**
+     * Every {@code name + suffix} combination, where a suffix's alteration
+     * follows from its position around the empty (natural) suffix: each step
+     * before it adds a sharp, each step after it a flat.
+     */
+    private static Map<String, StepAlter> suffixed(String[] names, String[] suffixes) {
+        int natural = java.util.Arrays.asList(suffixes).indexOf("");
+        Map<String, StepAlter> out = new HashMap<>();
+        for (int s = 0; s < names.length; s++) {
+            Step step = Step.values()[s];
+            for (int k = 0; k < suffixes.length; k++) {
+                int alter;
+                if (natural < 0) {
+                    alter = 2;
+                } else if (k < natural) {
+                    alter = Math.min(2, natural - k);
+                } else {
+                    alter = -(k - natural);
+                }
+                out.put(names[s] + suffixes[k], new StepAlter(step, alter));
+            }
         }
-        // Common short forms for double flats: "ases", "eses" (already added),
-        // "eeses" for E double flat is standard.
-        map.put("eeses", new StepAlter(Step.E, -2));
-        map.put("aeses", new StepAlter(Step.A, -2));
-        // Sharps / flats
-        for (Step step : Step.values()) {
-            String letter = step.name().toLowerCase(Locale.ROOT);
-            map.put(letter + "is", new StepAlter(step, 1));
-            map.put(letter + "es", new StepAlter(step, -1));
-        }
-        // Common short forms for flats: "as" == a-flat, "es" == e-flat.
-        map.put("as", new StepAlter(Step.A, -1));
-        map.put("aes", new StepAlter(Step.A, -1));
-        map.put("ees", new StepAlter(Step.E, -1));
-        // Naturals
-        for (Step step : Step.values()) {
-            String letter = step.name().toLowerCase(Locale.ROOT);
-            map.putIfAbsent(letter, new StepAlter(step, 0));
-        }
-        return map;
+        return out;
     }
 }

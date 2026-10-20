@@ -40,7 +40,7 @@ public final class StaffGeometry {
      */
     public static int staffStep(Pitch pitch, Clef clef) {
         int refStaffStep = 2 * (5 - clef.line());
-        int refStepNumber = clefReferenceStepNumber(clef.sign());
+        int refStepNumber = clefReferenceStepNumber(clef.sign()) + 7 * clef.octaveChange();
         return refStaffStep + (refStepNumber - pitch.diatonicStepNumber());
     }
 
