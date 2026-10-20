@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.sheetmusic4j</groupId>
+        <artifactId>parent</artifactId>
+        <version>0.0.4-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>render</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Sheetmusic4J :: Render</name>
+    <description>Toolkit-neutral drawing of a LayoutResult: ScorePainter draws through the RenderSurface
+        abstraction with the bundled Bravura SMuFL font. No JavaFX or AWT dependency; toolkit bindings
+        live in render-awt and fxviewer.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.sheetmusic4j</groupId>
+            <artifactId>engraving</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Opt in to Maven Central publishing (parent defaults to skip=true). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>false</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

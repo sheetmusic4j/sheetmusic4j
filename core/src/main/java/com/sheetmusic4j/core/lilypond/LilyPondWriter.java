@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import com.sheetmusic4j.core.io.ScoreWriter;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Clef;
@@ -39,11 +40,12 @@ import com.sheetmusic4j.core.model.Tuplet;
  * happily consumes either absolute or relative; absolute is simpler for a
  * machine producer).
  */
-public final class LilyPondWriter {
+public final class LilyPondWriter implements ScoreWriter {
 
     /** LilyPond version declared at the top of emitted files. */
     private static final String LILY_VERSION = "2.24.0";
 
+    @Override
     public void write(Score score, Path path) {
         try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(path))) {
             write(score, out);
@@ -52,6 +54,7 @@ public final class LilyPondWriter {
         }
     }
 
+    @Override
     public void write(Score score, OutputStream out) {
         try (Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
             writeScore(w, score);

@@ -1,12 +1,11 @@
 package com.sheetmusic4j.engraving.placement;
 
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
-import com.sheetmusic4j.engraving.layout.StaffLayout;
 
 /**
  * A piece of free-form text (title, subtitle, composer credit, direction word,
  * ...) positioned somewhere on the engraved page. Used for score-level
- * decorations that do not belong to a specific {@link StaffLayout}.
+ * decorations that do not belong to a specific {@link com.sheetmusic4j.engraving.layout.StaffLayout}.
  *
  * @param text     the string to render
  * @param x        horizontal anchor (interpreted with {@code align})

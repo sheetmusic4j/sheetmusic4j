@@ -1,9 +1,5 @@
 package com.sheetmusic4j.engraving.glyph;
 
-import com.sheetmusic4j.engraving.placement.BeamPlacement;
-import com.sheetmusic4j.engraving.placement.BracketPlacement;
-import com.sheetmusic4j.engraving.placement.GlyphPlacement;
-
 /**
  * A minimal, renderer-agnostic set of musical glyphs. Values loosely correspond
  * to SMuFL semantics but carry no font/rendering details themselves.
@@ -75,8 +71,8 @@ public enum Glyph {
     FLAG_128TH_DOWN,
     /**
      * A beam segment connecting the stem tips of two or more beamed notes.
-     * Positioning is carried by {@link BeamPlacement} rather than a
-     * {@link GlyphPlacement}, so this value is a marker only.
+     * Positioning is carried by {@link com.sheetmusic4j.engraving.placement.BeamPlacement} rather than a
+     * {@link com.sheetmusic4j.engraving.placement.GlyphPlacement}, so this value is a marker only.
      */
     BEAM,
     ACCIDENTAL_SHARP,
@@ -137,12 +133,12 @@ public enum Glyph {
     BRACE,
     /**
      * SMuFL {@code bracketTop} glyph (U+E003). Ornamental tip drawn at the
-     * top of a {@link BracketPlacement.BracketShape#BRACKET} bracket.
+     * top of a {@link com.sheetmusic4j.engraving.placement.BracketPlacement.BracketShape#BRACKET} bracket.
      */
     BRACKET_TOP,
     /**
      * SMuFL {@code bracketBottom} glyph (U+E004). Ornamental tip drawn at
-     * the bottom of a {@link BracketPlacement.BracketShape#BRACKET}
+     * the bottom of a {@link com.sheetmusic4j.engraving.placement.BracketPlacement.BracketShape#BRACKET}
      * bracket.
      */
     BRACKET_BOTTOM,

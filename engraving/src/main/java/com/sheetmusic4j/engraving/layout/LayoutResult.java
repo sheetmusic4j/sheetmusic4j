@@ -2,6 +2,7 @@ package com.sheetmusic4j.engraving.layout;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import com.sheetmusic4j.engraving.placement.BeamPlacement;
 import com.sheetmusic4j.engraving.placement.GlyphPlacement;
@@ -24,6 +25,12 @@ public record LayoutResult(List<SystemLayout> systems, List<TextPlacement> texts
                            List<NoteAnchor> noteAnchors,
                            double width, double height) {
 
+    /**
+     * Room (in staff-line gaps) {@link #slice} allows below a system's last
+     * staff line and around texts and anchors, for ledger lines and lyrics.
+     */
+    private static final double SLICE_SLACK_GAPS = 12.0;
+
     public LayoutResult {
         systems = List.copyOf(systems);
         texts = List.copyOf(texts);
@@ -45,6 +52,41 @@ public record LayoutResult(List<SystemLayout> systems, List<TextPlacement> texts
      */
     public LayoutResult(List<SystemLayout> systems, double width, double height) {
         this(systems, List.of(), List.of(), width, height);
+    }
+
+    /**
+     * Finds the note, rest or chord drawn at the given point, for mouse
+     * picking. The point is tested against each {@link NoteAnchor} bounding
+     * box grown by {@code tolerance} on every side; when several boxes match
+     * (for example a chord's neighbours), the one whose centre is nearest wins.
+     *
+     * @param x         x in layout units
+     * @param y         y in layout units
+     * @param tolerance extra pick distance in layout units, {@code 0} for an exact hit
+     * @return the matching anchor, or empty when nothing is there
+     */
+    public Optional<NoteAnchor> hitTest(double x, double y, double tolerance) {
+        NoteAnchor best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (NoteAnchor a : noteAnchors) {
+            double halfW = a.width() / 2.0 + tolerance;
+            double halfH = a.height() / 2.0 + tolerance;
+            double dx = x - a.x();
+            double dy = y - a.y();
+            if (Math.abs(dx) <= halfW && Math.abs(dy) <= halfH) {
+                double distance = dx * dx + dy * dy;
+                if (distance < bestDistance) {
+                    best = a;
+                    bestDistance = distance;
+                }
+            }
+        }
+        return Optional.ofNullable(best);
+    }
+
+    /** Same as {@link #hitTest(double, double, double)} with no tolerance. */
+    public Optional<NoteAnchor> hitTest(double x, double y) {
+        return hitTest(x, y, 0.0);
     }
 
     public List<StaffLayout> staves() {
@@ -177,6 +219,49 @@ public record LayoutResult(List<SystemLayout> systems, List<TextPlacement> texts
             any = true;
         }
         return any ? top : 0.0;
+    }
+
+    /**
+     * Restricts this layout to just the systems, texts and note anchors that
+     * overlap {@code [startY, endY)}, so a renderer drawing one window of a
+     * long page only pays for that window. A system counts when any part of
+     * it - from its top down to its last staff plus room for ledger lines and
+     * lyrics - reaches into the window, so a tall system that starts just
+     * above the window still draws its lower half. Texts and anchors get the
+     * same slack; whatever lands outside the window is left for the renderer
+     * to clip. Coordinates are unchanged; the slice keeps this layout's width
+     * and is {@code endY - startY} high.
+     */
+    public LayoutResult slice(double startY, double endY) {
+        double slack = SLICE_SLACK_GAPS * maxLineGap();
+        List<SystemLayout> slicedSystems = systems.stream()
+                .filter(s -> s.y() < endY && systemBottom(s) + slack >= startY)
+                .toList();
+        List<TextPlacement> slicedTexts = texts.stream()
+                .filter(t -> t.y() + slack >= startY && t.y() - slack < endY)
+                .toList();
+        List<NoteAnchor> slicedAnchors = noteAnchors.stream()
+                .filter(a -> a.y() + slack >= startY && a.y() - slack < endY)
+                .toList();
+        return new LayoutResult(slicedSystems, slicedTexts, slicedAnchors, width, endY - startY);
+    }
+
+    /**
+     * Y of the bottom line of a system's last staff, or its top when it has
+     * no staves.
+     */
+    private static double systemBottom(SystemLayout system) {
+        List<StaffLayout> staves = system.staves();
+        return staves.isEmpty() ? system.y() : staves.get(staves.size() - 1).lineY(4);
+    }
+
+    /**
+     * The largest staff-line gap in the layout, or the default gap when it
+     * has no staves.
+     */
+    private double maxLineGap() {
+        return staves().stream().mapToDouble(StaffLayout::lineGap).max()
+                .orElse(LayoutOptions.defaults().staffLineGap());
     }
 
     /**

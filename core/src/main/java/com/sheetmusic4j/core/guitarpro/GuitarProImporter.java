@@ -26,6 +26,8 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import com.sheetmusic4j.core.internal.BoundedRead;
+import com.sheetmusic4j.core.io.ScoreReader;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Beam;
 import com.sheetmusic4j.core.model.Chord;
@@ -70,9 +72,10 @@ import com.sheetmusic4j.core.model.TimeSignature;
  *       is not preserved.</li>
  * </ul>
  *
- * <p>GuitarPro bars can carry several concurrent voices per staff. The model
- * has no voice concept, so only the primary (first present) voice of each staff
- * is imported; secondary voices are dropped.
+ * <p>GuitarPro bars can carry several concurrent voices per staff (up to four).
+ * Each present voice is imported with its 1-based slot number as the
+ * element's {@link Note#voice() voice}, one after the other within the
+ * measure; voices that are present always span the whole bar.
  *
  * <p>GPIF stores no explicit beam grouping (Guitar Pro beams automatically by
  * beat), so beams are reconstructed here: consecutive beamable beats (eighth or
@@ -82,7 +85,7 @@ import com.sheetmusic4j.core.model.TimeSignature;
  *
  * <p>Loading is one-directional: there is no GuitarPro export.
  */
-public final class GuitarProImporter {
+public final class GuitarProImporter implements ScoreReader {
 
     private static final Logger logger = LoggerFactory.getLogger(GuitarProImporter.class);
 
@@ -133,6 +136,16 @@ public final class GuitarProImporter {
         }
     }
 
+    @Override
+    public Score read(Path path) {
+        return fromGuitarPro(path);
+    }
+
+    @Override
+    public Score read(InputStream in) {
+        return fromGuitarPro(in);
+    }
+
     // ------------------------------------------------------------------
     // Container + XML plumbing
     // ------------------------------------------------------------------
@@ -148,7 +161,7 @@ public final class GuitarProImporter {
                 throw new GuitarProException("Not a Guitar Pro 8 (.gp) file: no score.gpif entry found");
             }
             try (InputStream in = zip.getInputStream(entry)) {
-                return in.readAllBytes();
+                return BoundedRead.readAtMost(in, BoundedRead.MAX_ENTRY_BYTES, entry.getName());
             }
         }
     }
@@ -276,21 +289,24 @@ public final class GuitarProImporter {
                     if (bar == null) {
                         continue;
                     }
-                    Element voice = primaryVoice(bar, voices);
-                    if (voice == null) {
-                        continue;
-                    }
-                    List<BeatItem> items = new ArrayList<>();
-                    for (int beatId : intList(textOf(firstChild(voice, "Beats")))) {
-                        BeatItem item = beatItem(beats.get(beatId), rhythms, notes,
-                                staves.get(s), s + 1, partKey);
-                        if (item != null) {
-                            items.add(item);
+                    int[] voiceIds = intList(textOf(firstChild(bar, "Voices")));
+                    for (int slot = 0; slot < voiceIds.length; slot++) {
+                        Element voice = voiceIds[slot] >= 0 ? voices.get(voiceIds[slot]) : null;
+                        if (voice == null) {
+                            continue;
                         }
-                    }
-                    assignBeams(items, currentTime);
-                    for (BeatItem item : items) {
-                        measure.addElement(toElement(item));
+                        List<BeatItem> items = new ArrayList<>();
+                        for (int beatId : intList(textOf(firstChild(voice, "Beats")))) {
+                            BeatItem item = beatItem(beats.get(beatId), rhythms, notes,
+                                    staves.get(s), s + 1, partKey);
+                            if (item != null) {
+                                items.add(item);
+                            }
+                        }
+                        assignBeams(items, currentTime);
+                        for (BeatItem item : items) {
+                            measure.addElement(toElement(item, slot + 1));
+                        }
                     }
                 }
 
@@ -331,25 +347,26 @@ public final class GuitarProImporter {
     }
 
     /** Build the model element for a resolved beat, attaching any beams. */
-    private MusicElement toElement(BeatItem item) {
+    private MusicElement toElement(BeatItem item, int voice) {
         if (item.isRest()) {
-            return Rest.builder().duration(item.duration).staff(item.staffNumber).build();
+            return Rest.builder().duration(item.duration).staff(item.staffNumber).voice(voice).build();
         }
         if (item.pitches.size() == 1) {
-            return buildNote(item.pitches.get(0), item);
+            return buildNote(item.pitches.get(0), item, voice);
         }
         List<Note> chordNotes = new ArrayList<>(item.pitches.size());
         for (Pitch pitch : item.pitches) {
-            chordNotes.add(buildNote(pitch, item));
+            chordNotes.add(buildNote(pitch, item, voice));
         }
         return new Chord(chordNotes);
     }
 
-    private Note buildNote(Pitch pitch, BeatItem item) {
+    private Note buildNote(Pitch pitch, BeatItem item, int voice) {
         Note.Builder note = Note.builder()
                 .pitch(pitch)
                 .duration(item.duration)
-                .staff(item.staffNumber);
+                .staff(item.staffNumber)
+                .voice(voice);
         for (Beam beam : item.beams) {
             note.addBeam(beam);
         }
@@ -463,18 +480,6 @@ public final class GuitarProImporter {
             return null;
         }
         return bars.get(barIds[index]);
-    }
-
-    private Element primaryVoice(Element bar, Map<Integer, Element> voices) {
-        for (int voiceId : intList(textOf(firstChild(bar, "Voices")))) {
-            if (voiceId >= 0) {
-                Element voice = voices.get(voiceId);
-                if (voice != null) {
-                    return voice;
-                }
-            }
-        }
-        return null;
     }
 
     private Integer midiOf(Element note, StaffInfo staff) {

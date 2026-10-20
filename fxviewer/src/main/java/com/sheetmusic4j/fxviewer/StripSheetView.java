@@ -7,41 +7,55 @@ import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.layout.LayoutMode;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
+import com.sheetmusic4j.engraving.layout.PlaybackTimeline;
+import com.sheetmusic4j.render.NoteBackgroundStyle;
 import javafx.beans.property.*;
-import javafx.collections.FXCollections;
-import javafx.collections.MapChangeListener;
 import javafx.collections.ObservableMap;
 import javafx.geometry.Insets;
+import javafx.scene.Node;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.layout.Background;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
 import javafx.scene.shape.Rectangle;
 
-import java.util.IdentityHashMap;
-import java.util.Optional;
 
 /**
  * One-line "strip" score view designed for play-along use. The score is
  * engraved in {@link LayoutMode#STRIP} mode into one endless system; a
  * fixed vertical cursor line sits at
  * {@link #cursorScreenPositionProperty() cursorScreenPosition} of the
- * viewport width, and the score canvas underneath is translated so the
+ * viewport width, and the score underneath is translated so the
  * musical time given by {@link #cursorTimeProperty()} sits exactly under
- * that cursor.
+ * that cursor. Time maps to x through the layout's {@link PlaybackTimeline},
+ * so the cursor passes through each notehead at its onset.
  *
- * <p>Advancing the cursor time is therefore a cheap {@code translateX}
- * update - no re-engrave, no repaint - which is important for smooth
- * playback. Highlight changes go through the same
+ * <p>The score is drawn in {@link LayoutTiles tiles} of at most
+ * {@value #TILE_PIXELS} pixels wide, and only the tiles around the visible
+ * part exist, so a strip of any length stays within GPU texture limits and
+ * a few megabytes. Advancing the cursor time is a cheap translation plus,
+ * every tile width, painting one new tile - no re-engrave - which is
+ * important for smooth playback. Highlight changes go through the same
  * {@link #noteHighlights()} map as {@link SheetView}.
+ *
+ * <p>Setting {@link #revealTimeProperty() revealTime} shows only the music
+ * that has started by then, so the strip fills in note by note while it
+ * plays; only the tiles around a newly revealed note are repainted.
  */
 public final class StripSheetView extends Region {
 
     private static final double FALLBACK_HEIGHT = LayoutOptions.defaults().staffHeight()
             + LayoutOptions.defaults().topMargin() * 2;
 
-    private final Canvas canvas = new Canvas();
+    /** Width of one tile in pixels, well below every GPU's texture limit. */
+    private static final double TILE_PIXELS = 2048;
+
+    /** Tallest tile in pixels; a strip taller than this (a huge score, zoomed in) is cut off at the bottom. */
+    private static final double MAX_TILE_HEIGHT = 16384;
+
+    private final LayoutTiles tiles = new LayoutTiles(this::paintTile);
     private final Line cursor = new Line();
     private final Rectangle clip = new Rectangle();
     private final Engraver engraver = new Engraver();
@@ -64,24 +78,29 @@ public final class StripSheetView extends Region {
     private final DoubleProperty stripSpacingFactor =
             new SimpleDoubleProperty(this, "stripSpacingFactor", LayoutOptions.DEFAULT_STRIP_SPACING_FACTOR);
 
-    private final ObservableMap<MusicElement, Color> noteHighlights =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
-    private final ObservableMap<MusicElement, Color> noteBackgrounds =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
-    private final ObservableMap<MusicElement, Accidental> noteAccidentals =
-            FXCollections.observableMap(new IdentityHashMap<>());
-
     private final ObjectProperty<NoteBackgroundStyle> noteBackgroundStyle =
             new SimpleObjectProperty<>(this, "noteBackgroundStyle", NoteBackgroundStyle.defaults());
 
+    private final DoubleProperty revealTime =
+            new SimpleDoubleProperty(this, "revealTime", Double.POSITIVE_INFINITY);
+
+    private final ObjectProperty<Color> pageColor =
+            new SimpleObjectProperty<>(this, "pageColor", Color.WHITE);
+
+    private final ObjectProperty<Color> inkColor =
+            new SimpleObjectProperty<>(this, "inkColor", Color.BLACK);
+
+    private final NoteDecorations decorations = new NoteDecorations(renderer.painter(), this::repaint);
+
+    private final RevealTracker reveal = new RevealTracker(renderer.painter());
+
     private Score score;
     private LayoutResult layout;
+    private PlaybackTimeline timeline;
 
     /**
      * When set (not NaN), the cursor is pinned to this explicit x in layout
-     * (pre-zoom) units instead of the time-based {@link LayoutResult#xAtTime}
+     * (pre-zoom) units instead of the {@link PlaybackTimeline#cursorX}
      * placement. Cleared by {@link #setCursorTime}.
      */
     private double cursorLayoutX = Double.NaN;
@@ -91,27 +110,25 @@ public final class StripSheetView extends Region {
      */
     public StripSheetView() {
         setPadding(new Insets(4));
-        getChildren().addAll(canvas, cursor);
+        getChildren().addAll(tiles.group(), cursor);
         setClip(clip);
         cursor.setStrokeWidth(2.0);
         cursor.strokeProperty().bind(cursorColor);
         cursor.visibleProperty().bind(cursorVisible);
-        renderer.setNoteColorProvider(this::highlightFor);
-        renderer.setNoteBackgroundProvider(this::backgroundFor);
-        renderer.setNoteAccidentalProvider(this::accidentalFor);
-        renderer.setNoteBackgroundStyle(noteBackgroundStyle.get());
+        renderer.painter().setNoteBackgroundStyle(noteBackgroundStyle.get());
 
         cursorTime.addListener((obs, o, n) -> updateCursor());
         cursorScreenPosition.addListener((obs, o, n) -> updateCursor());
         zoom.addListener((obs, o, n) -> rebuild());
         stripSpacingFactor.addListener((obs, o, n) -> rebuild());
-        noteHighlights.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
-        noteBackgrounds.addListener((MapChangeListener<MusicElement, Color>) c -> repaint());
-        noteAccidentals.addListener((MapChangeListener<MusicElement, Accidental>) c -> repaint());
         noteBackgroundStyle.addListener((obs, o, n) -> {
-            renderer.setNoteBackgroundStyle(n);
+            renderer.painter().setNoteBackgroundStyle(n);
             repaint();
         });
+        revealTime.addListener((obs, o, n) -> updateReveal());
+        pageColor.addListener((obs, o, n) -> applyColors());
+        inkColor.addListener((obs, o, n) -> applyColors());
+        applyColors();
 
         widthProperty().addListener((obs, o, n) -> {
             clip.setWidth(n.doubleValue());
@@ -121,21 +138,8 @@ public final class StripSheetView extends Region {
             clip.setHeight(n.doubleValue());
             cursor.setEndY(n.doubleValue());
         });
-        canvas.setWidth(400);
-        canvas.setHeight(FALLBACK_HEIGHT);
         setMinSize(200, 60);
         setPrefSize(400, FALLBACK_HEIGHT);
-    }
-
-    private static Optional<RenderColor> toRenderColor(Color c) {
-        if (c == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new RenderColor(
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255),
-                (int) Math.round(c.getOpacity() * 255)));
     }
 
     private static double clamp01(double v) {
@@ -174,9 +178,19 @@ public final class StripSheetView extends Region {
     }
 
     /**
+     * The playback timeline of the last engraved layout (which notes sound
+     * when, and where the cursor sits), or {@code null} if no score has been
+     * set.
+     */
+    public PlaybackTimeline getTimeline() {
+        return timeline;
+    }
+
+    /**
      * Musical time (in quarter notes from the start of the score) at which
-     * the fixed cursor sits. Mutations only update a canvas translation -
-     * no re-engrave or repaint - so this is safe to animate at 60 fps.
+     * the fixed cursor sits. Mutations only update a translation (and paint
+     * one new tile each time a tile width scrolls into view) - no re-engrave
+     * - so this is safe to animate at 60 fps.
      */
     public DoubleProperty cursorTimeProperty() {
         return cursorTime;
@@ -194,12 +208,8 @@ public final class StripSheetView extends Region {
 
     /**
      * Pin the cursor to an explicit x position in layout (pre-zoom) units,
-     * overriding the time-based {@link LayoutResult#xAtTime} placement until
-     * the next {@link #setCursorTime} call. Use this to align the cursor
-     * exactly with a note's rendered centre (its
-     * {@link com.sheetmusic4j.engraving.layout.NoteAnchor} x) rather than the
-     * piecewise-linear time interpolation, which spaces time evenly across a
-     * measure and so does not land on individual noteheads.
+     * overriding the {@link PlaybackTimeline#cursorX} placement until the
+     * next {@link #setCursorTime} call.
      *
      * @param layoutX the x coordinate in layout units to place under the cursor
      */
@@ -268,7 +278,7 @@ public final class StripSheetView extends Region {
      * on keys; mutations only trigger a canvas repaint.
      */
     public ObservableMap<MusicElement, Color> noteHighlights() {
-        return noteHighlights;
+        return decorations.highlights();
     }
 
     /**
@@ -281,7 +291,7 @@ public final class StripSheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Color> noteBackgrounds() {
-        return noteBackgrounds;
+        return decorations.backgrounds();
     }
 
     /**
@@ -297,7 +307,7 @@ public final class StripSheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Accidental> noteAccidentals() {
-        return noteAccidentals;
+        return decorations.accidentals();
     }
 
     /**
@@ -359,25 +369,67 @@ public final class StripSheetView extends Region {
         }
     }
 
-    private Optional<RenderColor> highlightFor(MusicElement element) {
-        return toRenderColor(noteHighlights.get(element));
+    /**
+     * Musical time (quarter notes) up to which the music is shown: notes,
+     * chords and rests starting later are left out, so the strip can be
+     * filled in note by note during playback (see
+     * {@code ScorePainter#setRevealTime}). Positive infinity, the default,
+     * shows everything. Usually bound to, or set together with,
+     * {@link #cursorTimeProperty()}; changing it only repaints the tiles
+     * around elements that appear or disappear.
+     */
+    public DoubleProperty revealTimeProperty() {
+        return revealTime;
     }
 
-    private Optional<RenderColor> backgroundFor(MusicElement element) {
-        return toRenderColor(noteBackgrounds.get(element));
+    public double getRevealTime() {
+        return revealTime.get();
     }
 
-    private Optional<Accidental> accidentalFor(MusicElement element) {
-        return Optional.ofNullable(noteAccidentals.get(element));
+    public void setRevealTime(double quarters) {
+        revealTime.set(quarters);
+    }
+
+    /**
+     * Colour of the paper behind the music; also fills the parts of the view
+     * the strip does not reach. Defaults to white.
+     */
+    public ObjectProperty<Color> pageColorProperty() {
+        return pageColor;
+    }
+
+    /**
+     * Colour of the engraved ink (staff lines, notes, text). Highlighted
+     * notes keep their own colour. Defaults to black.
+     */
+    public ObjectProperty<Color> inkColorProperty() {
+        return inkColor;
+    }
+
+    private void applyColors() {
+        Color page = pageColor.get();
+        renderer.painter().setPageColor(NoteDecorations.toRenderColor(page).orElse(null));
+        renderer.painter().setInkColor(NoteDecorations.toRenderColor(inkColor.get()).orElse(null));
+        setBackground(page == null ? Background.EMPTY : Background.fill(page));
+        repaint();
+    }
+
+    private void updateReveal() {
+        double[] dirty = reveal.apply(timeline, revealTime.get());
+        if (dirty == RevealTracker.ALL) {
+            repaint();
+        } else if (dirty != null && layout != null) {
+            tiles.repaint(dirty[0], dirty[1]);
+        }
     }
 
     private void rebuild() {
         double zoomFactor = Math.max(zoom.get(), 0.01);
         if (score == null) {
             layout = null;
-            canvas.setWidth(400);
-            canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
-            canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            timeline = null;
+            tiles.reset(0, 1);
+            setPrefHeight(FALLBACK_HEIGHT * zoomFactor);
             updateCursor();
             return;
         }
@@ -387,10 +439,10 @@ public final class StripSheetView extends Region {
                 .stripSpacingFactor(stripSpacingFactor.get())
                 .build();
         layout = engraver.layout(score, options);
-        canvas.setWidth(Math.max(layout.width() * zoomFactor, 1.0));
-        canvas.setHeight(Math.max(layout.height() * zoomFactor, 1.0));
-        setPrefHeight(canvas.getHeight());
-        paintCurrent();
+        timeline = PlaybackTimeline.of(layout);
+        reveal.apply(timeline, revealTime.get());
+        tiles.reset(layout.width(), TILE_PIXELS / zoomFactor);
+        setPrefHeight(Math.max(layout.height() * zoomFactor, 1.0));
         updateCursor();
     }
 
@@ -398,17 +450,20 @@ public final class StripSheetView extends Region {
         if (layout == null) {
             return;
         }
-        paintCurrent();
+        tiles.repaint();
     }
 
-    private void paintCurrent() {
+    /** One tile: a canvas covering {@code [x0, x0 + width)} of the layout, placed at its zoomed x. */
+    private Node paintTile(double x0, double width) {
         double zoomFactor = Math.max(zoom.get(), 0.01);
+        Canvas canvas = new Canvas(Math.ceil(width * zoomFactor),
+                Math.min(Math.ceil(layout.height() * zoomFactor), MAX_TILE_HEIGHT));
+        canvas.setLayoutX(x0 * zoomFactor);
         GraphicsContext gc = canvas.getGraphicsContext2D();
-        gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        gc.save();
         gc.scale(zoomFactor, zoomFactor);
-        renderer.render(gc, layout, layout.width(), layout.height());
-        gc.restore();
+        gc.translate(-x0, 0);
+        renderer.renderRegion(gc, layout, x0, 0, x0 + width, layout.height());
+        return canvas;
     }
 
     private void updateCursor() {
@@ -419,17 +474,19 @@ public final class StripSheetView extends Region {
         cursor.setStartY(0);
         cursor.setEndY(getHeight());
         if (layout == null) {
-            canvas.setLayoutX(0);
+            tiles.group().setLayoutX(0);
             return;
         }
         double zoomFactor = Math.max(zoom.get(), 0.01);
-        double layoutX = Double.isNaN(cursorLayoutX) ? layout.xAtTime(cursorTime.get()) : cursorLayoutX;
-        canvas.setLayoutX(cursorScreenX - layoutX * zoomFactor);
+        double layoutX = Double.isNaN(cursorLayoutX) ? timeline.cursorX(cursorTime.get()) : cursorLayoutX;
+        double offset = cursorScreenX - layoutX * zoomFactor;
+        tiles.group().setLayoutX(offset);
+        tiles.show(-offset / zoomFactor, (viewportWidth - offset) / zoomFactor);
     }
 
     @Override
     protected void layoutChildren() {
-        // Cursor is positioned via its own start/end coords, and canvas via
-        // its layoutX property. Nothing to lay out here.
+        // Cursor is positioned via its own start/end coords, and the tiles via
+        // the group's layoutX. Nothing to lay out here.
     }
 }

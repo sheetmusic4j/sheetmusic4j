@@ -14,7 +14,7 @@ public final class Measure {
     private final Attributes attributes;
     private final List<MusicElement> elements;
     private final Barline barline;
-    private final boolean leadingRepeatStart;
+    private final Barline leadingBarline;
     private final String ending;
     private final String sectionTitle;
     private final boolean forceSystemBreak;
@@ -24,7 +24,7 @@ public final class Measure {
         this.attributes = builder.attributes;
         this.elements = List.copyOf(builder.elements);
         this.barline = builder.barline;
-        this.leadingRepeatStart = builder.leadingRepeatStart;
+        this.leadingBarline = builder.leadingBarline;
         this.ending = builder.ending;
         this.sectionTitle = builder.sectionTitle;
         this.forceSystemBreak = builder.forceSystemBreak;
@@ -68,16 +68,25 @@ public final class Measure {
     }
 
     /**
-     * Whether a repeat-start mark ({@code |:}) should be drawn at this
-     * measure's left edge. Used when the repeat opens with nothing to
-     * attach trailing dots to on a preceding measure (e.g. the very first
-     * measure of a part, or right after a measure with no notes of its
-     * own).
+     * A barline opening this measure, drawn at its start: a repeat-start
+     * ({@code |:}) when the repeat opens with nothing to attach trailing dots
+     * to on a preceding measure (e.g. the very first measure of a part), or
+     * a heavy-light line opening the piece ({@code [|}). Empty for none.
+     *
+     * @return the leading barline, or empty if not set
+     */
+    public Optional<Barline> leadingBarline() {
+        return Optional.ofNullable(leadingBarline);
+    }
+
+    /**
+     * Whether this measure opens with a repeat-start mark ({@code |:}), i.e.
+     * its {@link #leadingBarline()} carries forward repeat dots.
      *
      * @return {@code true} if a leading repeat-start mark should be drawn
      */
     public boolean leadingRepeatStart() {
-        return leadingRepeatStart;
+        return leadingBarline != null && leadingBarline.repeat() == Barline.Repeat.FORWARD;
     }
 
     /**
@@ -129,7 +138,7 @@ public final class Measure {
         private Attributes attributes;
         private final List<MusicElement> elements = new ArrayList<>();
         private Barline barline;
-        private boolean leadingRepeatStart;
+        private Barline leadingBarline;
         private String ending;
         private String sectionTitle;
         private boolean forceSystemBreak;
@@ -184,14 +193,29 @@ public final class Measure {
         }
 
         /**
+         * Sets the barline opening this measure; {@code null} for none.
+         *
+         * @param leadingBarline the leading barline
+         * @return this builder
+         */
+        public Builder leadingBarline(Barline leadingBarline) {
+            this.leadingBarline = leadingBarline;
+            return this;
+        }
+
+        /**
          * Marks this measure as starting with a leading repeat-start mark
-         * ({@code |:}) at its left edge.
+         * ({@code |:}), or removes one.
          *
          * @param leadingRepeatStart whether to draw a leading repeat-start mark
          * @return this builder
          */
         public Builder leadingRepeatStart(boolean leadingRepeatStart) {
-            this.leadingRepeatStart = leadingRepeatStart;
+            if (leadingRepeatStart) {
+                this.leadingBarline = new Barline(Barline.Style.HEAVY_LIGHT, Barline.Repeat.FORWARD);
+            } else if (this.leadingBarline != null && this.leadingBarline.repeat() == Barline.Repeat.FORWARD) {
+                this.leadingBarline = null;
+            }
             return this;
         }
 

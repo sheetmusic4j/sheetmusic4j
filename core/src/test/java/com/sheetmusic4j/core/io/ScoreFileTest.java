@@ -85,28 +85,10 @@ class ScoreFileTest {
     }
 
     @Test
-    void supportedExtensionsMatchesEnum() {
-        // The facade's derived list must contain every extension declared
-        // on Format, and nothing else. This is the anchor test callers
-        // (SheetDemoApp, StripDemoApp) rely on when they enumerate
-        // supportedExtensions() to build file filters.
-        List<String> declared = new java.util.ArrayList<>();
-        for (ScoreFile.Format f : ScoreFile.Format.values()) {
-            declared.addAll(f.extensions());
-        }
-        assertEquals(declared, ScoreFile.supportedExtensions());
-        // Sanity: LilyPond and ABC are known to be present.
-        assertTrue(ScoreFile.supportedExtensions().contains("ly"));
-        assertTrue(ScoreFile.supportedExtensions().contains("abc"));
-    }
-
-    @Test
-    void writableFlagReflectsSupport() {
-        assertTrue(ScoreFile.Format.MUSICXML.writable());
-        assertTrue(ScoreFile.Format.MIDI.writable());
-        assertTrue(ScoreFile.Format.ABC.writable());
-        assertTrue(ScoreFile.Format.LILYPOND.writable());
-        assertFalse(ScoreFile.Format.GUITARPRO.writable());
+    void lilyPondIsWritable() {
+        ScoreFormat format = ScoreFile.formatFor(Path.of("tune.ly"));
+        assertEquals("LilyPond", format.name());
+        assertTrue(format.writer().isPresent());
     }
 
     @Test
@@ -116,5 +98,11 @@ class ScoreFileTest {
         ScoreFile.save(original, out);
         Score reloaded = ScoreFile.load(out);
         assertFalse(reloaded.parts().isEmpty(), "extension dispatch must ignore case");
+    }
+
+    @Test
+    void builtInFormatsAreDiscoveredInOrder() {
+        assertEquals(java.util.List.of("MusicXML", "MIDI", "ABC", "Guitar Pro", "LilyPond"),
+                ScoreFile.formats().stream().map(ScoreFormat::name).limit(5).toList());
     }
 }

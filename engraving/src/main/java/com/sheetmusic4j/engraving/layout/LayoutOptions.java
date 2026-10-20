@@ -1,5 +1,11 @@
 package com.sheetmusic4j.engraving.layout;
 
+
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Set;
+
+import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 /**
  * Tunable parameters controlling how a score is laid out. All measurements are
  * in abstract pixel-like units.
@@ -28,6 +34,8 @@ public final class LayoutOptions {
     private final boolean showTimeSignature;
     private final boolean showTitleTexts;
     private final double stripSpacingFactor;
+    private final TextMetrics textMetrics;
+    private final Set<MarkingCategory> hiddenCategories;
 
     /** Default uniform spacing scale for {@link LayoutMode#STRIP} layout. */
     public static final double DEFAULT_STRIP_SPACING_FACTOR = 2.0;
@@ -53,7 +61,8 @@ public final class LayoutOptions {
                          double measureMinWidth, double fontSize) {
         this(staffLineGap, staffSpacing, systemWidth, leftMargin, rightMargin, topMargin,
                 measureMinWidth, fontSize,
-                LayoutMode.PAGE, true, true, true, true, DEFAULT_STRIP_SPACING_FACTOR);
+                LayoutMode.PAGE, true, true, true, true, DEFAULT_STRIP_SPACING_FACTOR, TextMetrics.estimate(),
+                Set.of());
     }
 
     private LayoutOptions(double staffLineGap, double staffSpacing, double systemWidth,
@@ -61,7 +70,8 @@ public final class LayoutOptions {
                           double measureMinWidth, double fontSize,
                           LayoutMode layoutMode, boolean showClef, boolean showKeySignature,
                           boolean showTimeSignature, boolean showTitleTexts,
-                          double stripSpacingFactor) {
+                          double stripSpacingFactor, TextMetrics textMetrics,
+                          Set<MarkingCategory> hiddenCategories) {
         this.staffLineGap = staffLineGap;
         this.staffSpacing = staffSpacing;
         this.systemWidth = systemWidth;
@@ -76,6 +86,10 @@ public final class LayoutOptions {
         this.showTimeSignature = showTimeSignature;
         this.showTitleTexts = showTitleTexts;
         this.stripSpacingFactor = stripSpacingFactor > 0 ? stripSpacingFactor : DEFAULT_STRIP_SPACING_FACTOR;
+        this.textMetrics = textMetrics != null ? textMetrics : TextMetrics.estimate();
+        this.hiddenCategories = hiddenCategories == null || hiddenCategories.isEmpty()
+                ? Set.of()
+                : Collections.unmodifiableSet(EnumSet.copyOf(hiddenCategories));
     }
 
     /** Returns a fresh options instance populated with sensible defaults. */
@@ -165,6 +179,30 @@ public final class LayoutOptions {
     }
 
     /**
+     * How text (lyrics, labels) is measured. Defaults to
+     * {@link TextMetrics#estimate()}.
+     */
+    public TextMetrics textMetrics() {
+        return textMetrics;
+    }
+
+    /**
+     * Marking categories left out of the layout entirely - no placements,
+     * and no room reserved for them. Empty by default. {@link
+     * MarkingCategory#NOTE} cannot be hidden.
+     */
+    public Set<MarkingCategory> hiddenCategories() {
+        return hiddenCategories;
+    }
+
+    /**
+     * Whether markings of the given category are laid out.
+     */
+    public boolean isVisible(MarkingCategory category) {
+        return category == null || category == MarkingCategory.NOTE || !hiddenCategories.contains(category);
+    }
+
+    /**
      * Height of a five-line staff (four gaps).
      */
     public double staffHeight() {
@@ -191,6 +229,8 @@ public final class LayoutOptions {
         private boolean showTimeSignature;
         private boolean showTitleTexts;
         private double stripSpacingFactor;
+        private TextMetrics textMetrics;
+        private Set<MarkingCategory> hiddenCategories;
 
         private Builder(LayoutOptions base) {
             this.staffLineGap = base.staffLineGap;
@@ -207,6 +247,8 @@ public final class LayoutOptions {
             this.showTimeSignature = base.showTimeSignature;
             this.showTitleTexts = base.showTitleTexts;
             this.stripSpacingFactor = base.stripSpacingFactor;
+            this.textMetrics = base.textMetrics;
+            this.hiddenCategories = base.hiddenCategories;
         }
 
         public Builder staffLineGap(double v) {
@@ -279,11 +321,29 @@ public final class LayoutOptions {
             return this;
         }
 
+        /**
+         * How text is measured; {@code null} restores
+         * {@link TextMetrics#estimate()}.
+         */
+        public Builder textMetrics(TextMetrics metrics) {
+            this.textMetrics = metrics;
+            return this;
+        }
+
+        /**
+         * Marking categories to leave out of the layout (and not reserve
+         * room for); {@code null} or empty shows everything.
+         */
+        public Builder hiddenCategories(Set<MarkingCategory> categories) {
+            this.hiddenCategories = categories;
+            return this;
+        }
+
         public LayoutOptions build() {
             return new LayoutOptions(staffLineGap, staffSpacing, systemWidth,
                     leftMargin, rightMargin, topMargin, measureMinWidth, fontSize,
                     layoutMode, showClef, showKeySignature, showTimeSignature, showTitleTexts,
-                    stripSpacingFactor);
+                    stripSpacingFactor, textMetrics, hiddenCategories);
         }
     }
 }

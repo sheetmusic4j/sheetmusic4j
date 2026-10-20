@@ -18,7 +18,8 @@ public enum LayoutMode {
      * system with no row breaks. {@link LayoutOptions#systemWidth()} is
      * ignored; the resulting {@link LayoutResult#width()} equals the natural
      * width of the entire score. Suited for scrolling playback views (see
-     * {@code StripSheetView} in the fxviewer module).
+     * {@code StripSheetView} and {@code FlyOverSheetView} in the fxviewer
+     * module).
      */
     STRIP
 }

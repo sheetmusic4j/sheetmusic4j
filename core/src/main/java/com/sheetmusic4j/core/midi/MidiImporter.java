@@ -1,5 +1,6 @@
 package com.sheetmusic4j.core.midi;
 
+import com.sheetmusic4j.core.io.ScoreReader;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Clef;
 import com.sheetmusic4j.core.model.Duration;
@@ -40,7 +41,7 @@ import java.util.Map;
  *       sequentially; gaps become rests.</li>
  * </ul>
  */
-public final class MidiImporter {
+public final class MidiImporter implements ScoreReader {
 
     private final TimeSignature timeSignature;
 
@@ -66,6 +67,16 @@ public final class MidiImporter {
         } catch (InvalidMidiDataException | IOException e) {
             throw new MidiException("Could not read MIDI stream", e);
         }
+    }
+
+    @Override
+    public Score read(Path path) {
+        return fromMidi(path);
+    }
+
+    @Override
+    public Score read(InputStream in) {
+        return fromMidi(in);
     }
 
     public Score fromSequence(Sequence sequence) {

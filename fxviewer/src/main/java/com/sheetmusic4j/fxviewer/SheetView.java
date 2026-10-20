@@ -6,25 +6,24 @@ import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.engraving.Engraver;
 import com.sheetmusic4j.engraving.glyph.MarkingCategory;
 import com.sheetmusic4j.engraving.layout.LayoutOptions;
+import com.sheetmusic4j.engraving.layout.CursorPlacement;
 import com.sheetmusic4j.engraving.layout.LayoutResult;
-import com.sheetmusic4j.engraving.layout.NoteAnchor;
-import com.sheetmusic4j.engraving.layout.SystemLayout;
+import com.sheetmusic4j.engraving.layout.PlaybackTimeline;
 import com.sheetmusic4j.engraving.placement.BracketPlacement;
-import com.sheetmusic4j.engraving.placement.TextPlacement;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.*;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Line;
 
 import java.util.EnumSet;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * A JavaFX control that renders a {@link Score}. It engraves the score into a
@@ -61,6 +60,12 @@ import java.util.Optional;
  * {@link #noteHighlights()} map: adding {@code (element, color)} pairs
  * repaints the view without re-engraving, so highlights are cheap enough to
  * drive from real-time MIDI events.
+ *
+ * <p>For play-along use, {@link #cursorTimeProperty() cursorTime} places a
+ * cursor line on the system that is playing (shown when
+ * {@link #cursorVisibleProperty() cursorVisible}), and
+ * {@link #revealTimeProperty() revealTime} shows only the music that has
+ * started, so the page fills in note by note.
  */
 public final class SheetView extends Region {
 
@@ -135,66 +140,60 @@ public final class SheetView extends Region {
     private final BooleanProperty bracketsVisible =
             new SimpleBooleanProperty(this, "bracketsVisible", true);
 
-    /**
-     * Live map of per-element highlight colours. Uses identity comparisons
-     * on keys so a caller can hold the exact {@link MusicElement} instance
-     * returned by the model builder as the map key. Mutations trigger a
-     * cheap {@link #repaint()} - no re-engrave.
-     */
-    private final ObservableMap<MusicElement, Color> noteHighlights =
-            FXCollections.observableMap(new IdentityHashMap<>());
+    private final NoteDecorations decorations = new NoteDecorations(renderer.painter(), this::repaint);
 
-    /**
-     * Live map of per-element background colours. Independent of
-     * {@link #noteHighlights} - an element can carry a tint, a
-     * background, both, or neither.
-     */
-    private final ObservableMap<MusicElement, Color> noteBackgrounds =
-            FXCollections.observableMap(new IdentityHashMap<>());
+    private final DoubleProperty cursorTime = new SimpleDoubleProperty(this, "cursorTime", 0.0);
 
-    /**
-     * Live map of per-element accidental overlays. Independent of
-     * {@link #noteHighlights} and {@link #noteBackgrounds} - an element
-     * can carry any combination of tint, background, and accidental
-     * overlay.
-     */
-    private final ObservableMap<MusicElement, Accidental> noteAccidentals =
-            FXCollections.observableMap(new IdentityHashMap<>());
+    private final BooleanProperty cursorVisible = new SimpleBooleanProperty(this, "cursorVisible", false);
+
+    private final ObjectProperty<Color> cursorColor =
+            new SimpleObjectProperty<>(this, "cursorColor", Color.CRIMSON);
+
+    private final DoubleProperty revealTime =
+            new SimpleDoubleProperty(this, "revealTime", Double.POSITIVE_INFINITY);
+
+    private final ObjectProperty<Color> pageColor =
+            new SimpleObjectProperty<>(this, "pageColor", Color.WHITE);
+
+    private final ObjectProperty<Color> inkColor =
+            new SimpleObjectProperty<>(this, "inkColor", Color.BLACK);
+
+    private final RevealTracker reveal = new RevealTracker(renderer.painter());
+
+    private final Line cursor = new Line();
 
     private Score score;
     private LayoutResult layout;
+    private PlaybackTimeline timeline;
 
     /**
      * Creates an empty score view at the default engraving width.
      */
     public SheetView() {
-        getChildren().add(canvas);
+        getChildren().addAll(canvas, cursor);
+        cursor.setManaged(false);
+        cursor.setStrokeWidth(2.0);
+        cursor.strokeProperty().bind(cursorColor);
+        cursor.setVisible(false);
+        cursorTime.addListener((obs, oldV, newV) -> updateCursor());
+        cursorVisible.addListener((obs, oldV, newV) -> updateCursor());
+        revealTime.addListener((obs, oldV, newV) -> {
+            if (reveal.apply(timeline, newV.doubleValue()) != null) {
+                repaint();
+            }
+        });
+        pageColor.addListener((obs, oldV, newV) -> applyColors());
+        inkColor.addListener((obs, oldV, newV) -> applyColors());
+        applyColors();
         systemWidth.addListener((obs, oldV, newV) -> rebuild());
         zoom.addListener((obs, oldV, newV) -> rebuild());
         viewportTop.addListener((obs, oldV, newV) -> updateWindow(false));
         viewportHeight.addListener((obs, oldV, newV) -> updateWindow(false));
         hiddenTextCategories.addListener((SetChangeListener<MarkingCategory>) change -> repaint());
         bracketsVisible.addListener((obs, oldV, newV) -> repaint());
-        noteHighlights.addListener((MapChangeListener<MusicElement, Color>) change -> repaint());
-        noteBackgrounds.addListener((MapChangeListener<MusicElement, Color>) change -> repaint());
-        noteAccidentals.addListener((MapChangeListener<MusicElement, Accidental>) change -> repaint());
-        renderer.setNoteColorProvider(this::highlightFor);
-        renderer.setNoteBackgroundProvider(this::backgroundFor);
-        renderer.setNoteAccidentalProvider(this::accidentalFor);
         setMinSize(200, 120);
         // Initial empty canvas at the default width; setScore replaces it.
         rebuild();
-    }
-
-    private static Optional<RenderColor> toRenderColor(Color c) {
-        if (c == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new RenderColor(
-                (int) Math.round(c.getRed() * 255),
-                (int) Math.round(c.getGreen() * 255),
-                (int) Math.round(c.getBlue() * 255),
-                (int) Math.round(c.getOpacity() * 255)));
     }
 
     /**
@@ -351,7 +350,7 @@ public final class SheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Color> noteHighlights() {
-        return noteHighlights;
+        return decorations.highlights();
     }
 
     /**
@@ -368,7 +367,7 @@ public final class SheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Color> noteBackgrounds() {
-        return noteBackgrounds;
+        return decorations.backgrounds();
     }
 
     /**
@@ -399,32 +398,86 @@ public final class SheetView extends Region {
      * @return the observable map (never {@code null})
      */
     public ObservableMap<MusicElement, Accidental> noteAccidentals() {
-        return noteAccidentals;
+        return decorations.accidentals();
     }
 
     /**
-     * Look up the highlight colour for the given source element, if any.
-     * Wrapped as a {@link RenderColor} so the surface-agnostic
-     * {@link ScorePainter} can apply it without dragging in JavaFX.
+     * The playback timeline of the last engraved layout, or {@code null}
+     * when no score has been set.
      */
-    private Optional<RenderColor> highlightFor(MusicElement element) {
-        return toRenderColor(noteHighlights.get(element));
+    public PlaybackTimeline getTimeline() {
+        return timeline;
     }
 
     /**
-     * Look up the background colour for the given source element, if any.
-     * Honours the JavaFX colour's opacity so callers can drive
-     * semi-transparent highlights straight from a {@link Color} literal.
+     * Musical time (quarter notes from the start of the score) of the
+     * cursor line; see {@link PlaybackTimeline#cursorAt}. Moving it never
+     * repaints the score.
      */
-    private Optional<RenderColor> backgroundFor(MusicElement element) {
-        return toRenderColor(noteBackgrounds.get(element));
+    public DoubleProperty cursorTimeProperty() {
+        return cursorTime;
     }
 
     /**
-     * Look up the accidental overlay for the given source element, if any.
+     * Whether the cursor line is drawn; off by default.
      */
-    private Optional<Accidental> accidentalFor(MusicElement element) {
-        return Optional.ofNullable(noteAccidentals.get(element));
+    public BooleanProperty cursorVisibleProperty() {
+        return cursorVisible;
+    }
+
+    /**
+     * Colour of the cursor line.
+     */
+    public ObjectProperty<Color> cursorColorProperty() {
+        return cursorColor;
+    }
+
+    /**
+     * Musical time (quarter notes) up to which the music is shown, see
+     * {@code ScorePainter#setRevealTime}; positive infinity (the default)
+     * shows everything. The page is only repainted when an element appears
+     * or disappears, not every time this changes.
+     */
+    public DoubleProperty revealTimeProperty() {
+        return revealTime;
+    }
+
+    /**
+     * Colour of the paper behind the music; {@code null} leaves it
+     * transparent. Defaults to white.
+     */
+    public ObjectProperty<Color> pageColorProperty() {
+        return pageColor;
+    }
+
+    /**
+     * Colour of the engraved ink (staff lines, notes, text). Highlighted
+     * notes keep their own colour. Defaults to black.
+     */
+    public ObjectProperty<Color> inkColorProperty() {
+        return inkColor;
+    }
+
+    private void applyColors() {
+        renderer.painter().setPageColor(NoteDecorations.toRenderColor(pageColor.get()).orElse(null));
+        renderer.painter().setInkColor(NoteDecorations.toRenderColor(inkColor.get()).orElse(null));
+        repaint();
+    }
+
+    private void updateCursor() {
+        if (timeline == null || !cursorVisible.get()) {
+            cursor.setVisible(false);
+            return;
+        }
+        double zoomFactor = Math.max(zoom.get(), 0.01);
+        CursorPlacement placement = timeline.cursorAt(cursorTime.get());
+        double overhang = (placement.bottom() - placement.top()) * 0.15 + 8;
+        double x = placement.x() * zoomFactor;
+        cursor.setStartX(x);
+        cursor.setEndX(x);
+        cursor.setStartY((placement.top() - overhang) * zoomFactor);
+        cursor.setEndY((placement.bottom() + overhang) * zoomFactor);
+        cursor.setVisible(true);
     }
 
     /**
@@ -438,6 +491,7 @@ public final class SheetView extends Region {
         windowStartLayoutY = 0;
         if (score == null) {
             layout = null;
+            timeline = null;
             double zoomFactor = Math.max(zoom.get(), 0.01);
             canvas.setWidth(systemWidth.get() * zoomFactor);
             canvas.setHeight(FALLBACK_HEIGHT * zoomFactor);
@@ -445,6 +499,8 @@ public final class SheetView extends Region {
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         } else {
             layout = engraver.layout(score, layoutOptions());
+            timeline = PlaybackTimeline.of(layout);
+            reveal.apply(timeline, revealTime.get());
             updateWindow(true);
         }
 
@@ -453,6 +509,7 @@ public final class SheetView extends Region {
         setPrefSize(totalWidth, totalHeight);
         setMinSize(Math.min(200, totalWidth), Math.min(120, totalHeight));
         setMaxSize(totalWidth, totalHeight);
+        updateCursor();
         requestLayout();
         if (getParent() != null) {
             getParent().requestLayout();
@@ -509,24 +566,6 @@ public final class SheetView extends Region {
     }
 
     /**
-     * Restricts a full layout to just the systems/texts/note-anchors whose
-     * y-position falls within {@code [startY, endY)}, so the Canvas only
-     * pays the drawing cost for its own window instead of the whole score.
-     */
-    private static LayoutResult sliceForWindow(LayoutResult full, double startY, double endY) {
-        List<SystemLayout> systems = full.systems().stream()
-                .filter(s -> s.y() >= startY && s.y() < endY)
-                .toList();
-        List<TextPlacement> texts = full.texts().stream()
-                .filter(t -> t.y() >= startY && t.y() < endY)
-                .toList();
-        List<NoteAnchor> anchors = full.noteAnchors().stream()
-                .filter(a -> a.y() >= startY && a.y() < endY)
-                .toList();
-        return new LayoutResult(systems, texts, anchors, full.width(), endY - startY);
-    }
-
-    /**
      * Redraw the currently materialized window from the cached layout
      * without re-engraving or repositioning it. Used whenever only per-note
      * highlights or the bracket visibility flag change.
@@ -540,15 +579,15 @@ public final class SheetView extends Region {
 
     private void paintWindow() {
         double zoomFactor = Math.max(zoom.get(), 0.01);
-        renderer.setHiddenTextCategories(hiddenTextCategories);
-        renderer.setBracketsVisible(bracketsVisible.get());
+        renderer.painter().setHiddenCategories(hiddenTextCategories);
+        renderer.painter().setBracketsVisible(bracketsVisible.get());
         GraphicsContext gc = canvas.getGraphicsContext2D();
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         gc.save();
         gc.translate(0, -windowStartLayoutY * zoomFactor);
         gc.scale(zoomFactor, zoomFactor);
         double windowEndLayoutY = windowStartLayoutY + canvas.getHeight() / zoomFactor;
-        LayoutResult slice = sliceForWindow(layout, windowStartLayoutY, windowEndLayoutY);
+        LayoutResult slice = layout.slice(windowStartLayoutY, windowEndLayoutY);
         renderer.render(gc, slice, layout.width(), canvas.getHeight() / zoomFactor);
         gc.restore();
     }

@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import com.sheetmusic4j.core.io.ScoreReader;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
@@ -56,11 +57,12 @@ import com.sheetmusic4j.core.model.Tuplet;
  * <p>Only the first tune (leading {@code X:} block) is loaded; subsequent
  * tunes in a multi-tune file are ignored for MVP.
  */
-public final class AbcReader {
+public final class AbcReader implements ScoreReader {
 
     /** Divisions per quarter note used by the produced {@link Score}. */
     private static final int DIVISIONS = 96;
 
+    @Override
     public Score read(Path path) {
         try (InputStream in = Files.newInputStream(path)) {
             return read(in);
@@ -69,6 +71,7 @@ public final class AbcReader {
         }
     }
 
+    @Override
     public Score read(InputStream in) {
         try {
             String text = readAll(in);
@@ -538,10 +541,11 @@ public final class AbcReader {
         // Barline / repeat / ending bookkeeping. A repeat-start ("|:") has
         // nothing to attach trailing dots to on the measure it follows (it
         // may be the very first measure of the part), so it is carried
-        // forward as a leading mark on the next measure instead. An ending
-        // label stays active on every subsequent measure until a new bar
-        // token introduces a different one (see applyBarToken).
-        private boolean pendingLeadingRepeatStart;
+        // forward as a leading barline on the next measure instead - as is
+        // a heavy-light "[|" opening the tune. An ending label stays active
+        // on every subsequent measure until a new bar token introduces a
+        // different one (see applyBarToken).
+        private Barline pendingLeadingBarline;
         private String currentEndingLabel;
 
         /** Grace-note pitches captured from a "{...}" run, attached to the next emitted note. */
@@ -630,9 +634,9 @@ public final class AbcReader {
             currentMeasure = new PendingMeasure(measureNumber);
             pendingElements = currentMeasure.elements;
             currentMeasure.ending = currentEndingLabel;
-            if (pendingLeadingRepeatStart) {
-                currentMeasure.leadingRepeatStart = true;
-                pendingLeadingRepeatStart = false;
+            if (pendingLeadingBarline != null) {
+                currentMeasure.leadingBarline = pendingLeadingBarline;
+                pendingLeadingBarline = null;
             }
             if (!firstMeasureFlushed && lineMeasures.isEmpty()) {
                 currentMeasure.attributes = Attributes.builder()
@@ -682,7 +686,7 @@ public final class AbcReader {
                 if (pm.barline != null) {
                     b.barline(pm.barline);
                 }
-                b.leadingRepeatStart(pm.leadingRepeatStart);
+                b.leadingBarline(pm.leadingBarline);
                 if (pm.ending != null) {
                     b.ending(pm.ending);
                 }
@@ -699,19 +703,29 @@ public final class AbcReader {
         /**
          * Classify a captured bar-line token and apply its style/repeat to
          * the measure being closed. A bare "|:" has nothing to attach
-         * trailing dots to (see {@link #pendingLeadingRepeatStart}), so it
-         * only sets a pending flag consumed by the next {@link #startMeasure()}.
+         * trailing dots to (see {@link #pendingLeadingBarline}), so it only
+         * sets a pending barline consumed by the next {@link #startMeasure()};
+         * so does a "[|" opening the tune before any note.
          */
         private void applyBarToken(String token) {
+            boolean tuneStart = currentMeasure.elements.isEmpty() && lineMeasures.isEmpty() && !firstMeasureFlushed;
             switch (token) {
+                case "[|" -> {
+                    Barline heavyLight = new Barline(Barline.Style.HEAVY_LIGHT, Barline.Repeat.NONE);
+                    if (tuneStart) {
+                        pendingLeadingBarline = heavyLight;
+                    } else {
+                        currentMeasure.barline = heavyLight;
+                    }
+                }
                 case "||" -> currentMeasure.barline = new Barline(Barline.Style.DOUBLE, Barline.Repeat.NONE);
                 case "|]" -> currentMeasure.barline = new Barline(Barline.Style.FINAL, Barline.Repeat.NONE);
                 case ":|" -> currentMeasure.barline = new Barline(Barline.Style.FINAL, Barline.Repeat.BACKWARD);
                 case "::" -> currentMeasure.barline = new Barline(Barline.Style.DOUBLE, Barline.Repeat.BOTH);
-                case "|:" -> pendingLeadingRepeatStart = true;
+                case "|:" -> pendingLeadingBarline = new Barline(Barline.Style.HEAVY_LIGHT, Barline.Repeat.FORWARD);
                 default -> {
-                    // "|", the decorative "[|", or an unrecognized run of
-                    // bar punctuation: a plain barline.
+                    // "|" or an unrecognized run of bar punctuation: a plain
+                    // barline.
                 }
             }
         }
@@ -722,7 +736,7 @@ public final class AbcReader {
             Attributes attributes;
             final List<MusicElement> elements = new ArrayList<>();
             Barline barline;
-            boolean leadingRepeatStart;
+            Barline leadingBarline;
             String ending;
             String sectionTitle;
             boolean forceSystemBreak;
@@ -1345,6 +1359,7 @@ public final class AbcReader {
             boolean explicitAccidental;
             AbcNoteLength.Fraction length;
             boolean isRest;
+            boolean isInvisibleRest;
             boolean isMeasureRest;
             int consumed;
         }
@@ -1384,6 +1399,7 @@ public final class AbcReader {
 
             if (letter == 'z' || letter == 'x') {
                 out.isRest = true;
+                out.isInvisibleRest = letter == 'x';
                 AbcNoteLength.Parsed p = AbcNoteLength.parseSuffix(line, i);
                 i += p.consumed();
                 out.length = p.multiplier();
@@ -1393,6 +1409,7 @@ public final class AbcReader {
             if (letter == 'Z' || letter == 'X') {
                 // Whole-measure rest (Z), possibly repeated (Z2 = 2 measures).
                 out.isRest = true;
+                out.isInvisibleRest = letter == 'X';
                 out.isMeasureRest = true;
                 AbcNoteLength.Parsed p = AbcNoteLength.parseSuffix(line, i);
                 i += p.consumed();
@@ -1472,6 +1489,7 @@ public final class AbcReader {
                     Rest rest = Rest.builder()
                             .duration(measureDuration())
                             .type(NoteType.WHOLE)
+                            .visible(!parsed.isInvisibleRest)
                             .build();
                     pendingElements.add(rest);
                     lyricNoteAnchors.add(null);
@@ -1496,7 +1514,7 @@ public final class AbcReader {
                 effective = effective.times(tupletNormalNotes, tupletActualNotes);
             }
             Duration duration = toDuration(effective);
-            Rest.Builder rb = Rest.builder().duration(duration);
+            Rest.Builder rb = Rest.builder().duration(duration).visible(!parsed.isInvisibleRest);
             setTypeAndDots(rb, writtenDuration);
             pendingElements.add(rb.build());
             lyricNoteAnchors.add(null);
@@ -1619,7 +1637,7 @@ public final class AbcReader {
                 }
                 if (el instanceof Rest rest) {
                     Duration scaled = scale(rest.duration(), mul);
-                    Rest.Builder rb = Rest.builder().duration(scaled);
+                    Rest.Builder rb = Rest.builder().duration(scaled).visible(rest.visible());
                     setTypeAndDots(rb, scaled);
                     pendingElements.set(i, rb.build());
                     return;

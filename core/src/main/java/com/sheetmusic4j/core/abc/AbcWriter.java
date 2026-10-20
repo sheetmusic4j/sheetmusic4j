@@ -13,12 +13,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.sheetmusic4j.core.io.ScoreWriter;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MeasureTiming;
 import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.Part;
@@ -35,18 +37,23 @@ import com.sheetmusic4j.core.model.Tuplet;
  * subset understood by {@link AbcReader} so that a read/write/read
  * round-trip is structurally stable.
  *
- * <p>One tune ({@code X:N}) is emitted per {@link Part}. The unit note length
+ * <p>One tune ({@code X:N}) is emitted per {@link Part}. ABC voices
+ * ({@code V:}) are not written: each tune carries only the part's primary
+ * voice - the staff and voice of its first note or rest - so a multi-voice
+ * or grand-staff part keeps correct rhythm instead of having its voices
+ * strung one after another. The unit note length
  * is fixed at {@code L:1/8}, which is the ABC convention for most tune types
  * and is compatible with all common note values through {@code Duration}
  * arithmetic.
  */
-public final class AbcWriter {
+public final class AbcWriter implements ScoreWriter {
 
     /** Numerator of the fixed unit note length ({@code 1/8}). */
     private static final int UNIT_NUM = 1;
     /** Denominator of the fixed unit note length ({@code 1/8}). */
     private static final int UNIT_DEN = 8;
 
+    @Override
     public void write(Score score, Path path) {
         try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(path))) {
             write(score, out);
@@ -55,6 +62,7 @@ public final class AbcWriter {
         }
     }
 
+    @Override
     public void write(Score score, OutputStream out) {
         try (Writer w = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
             writeScore(w, score);
@@ -147,6 +155,7 @@ public final class AbcWriter {
         int emittedMeasuresOnLine = 0;
         KeySignature currentKey = key;
         Map<String, Integer> measureAccidentals = new HashMap<>();
+        MeasureTiming.VoiceKey primaryVoice = primaryVoice(part);
         for (Measure measure : part.measures()) {
             // Detect key change mid-body and emit an inline K: field.
             Optional<Attributes> attrs = measure.attributes();
@@ -166,7 +175,9 @@ public final class AbcWriter {
             }
             measureAccidentals.clear();
             for (MusicElement element : measure.elements()) {
-                writeElement(line, element, currentKey, measureAccidentals);
+                if (!MeasureTiming.isTimed(element) || MeasureTiming.voiceKey(element).equals(primaryVoice)) {
+                    writeElement(line, element, currentKey, measureAccidentals);
+                }
             }
             line.append('|');
             emittedMeasuresOnLine++;
@@ -188,6 +199,20 @@ public final class AbcWriter {
             w.write("\n");
         }
         }
+
+    /**
+     * The (staff, voice) of the part's first note or rest.
+     */
+    private static MeasureTiming.VoiceKey primaryVoice(Part part) {
+        for (Measure measure : part.measures()) {
+            for (MusicElement element : measure.elements()) {
+                if (MeasureTiming.isTimed(element)) {
+                    return MeasureTiming.voiceKey(element);
+                }
+            }
+        }
+        return new MeasureTiming.VoiceKey(1, 1);
+    }
 
     private void writeElement(StringBuilder line, MusicElement element, KeySignature key,
             Map<String, Integer> measureAccidentals) {
@@ -254,7 +279,7 @@ public final class AbcWriter {
             }
 
     private void writeRest(StringBuilder line, Rest rest) {
-        line.append('z');
+        line.append(rest.visible() ? 'z' : 'x');
         appendLengthSuffix(line, rest.duration());
     }
 

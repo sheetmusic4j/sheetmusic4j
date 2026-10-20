@@ -1,5 +1,10 @@
 package com.sheetmusic4j.fxviewer;
 
+import com.sheetmusic4j.render.RenderColor;
+import com.sheetmusic4j.render.RenderSurface;
+import com.sheetmusic4j.render.ScorePainter;
+import com.sheetmusic4j.render.SmuflGlyphs;
+
 import java.io.InputStream;
 
 import javafx.scene.canvas.GraphicsContext;
@@ -10,7 +15,7 @@ import javafx.scene.text.Font;
  * {@link RenderSurface} backed by a JavaFX {@link GraphicsContext}.
  *
  * <p>On first call to {@link #drawSmuflGlyph}, this surface tries to load
- * {@link SmuflGlyphs#BRAVURA_RESOURCE Bravura.otf} from the fxviewer classpath.
+ * {@link SmuflGlyphs#BRAVURA_RESOURCE Bravura.otf} through {@link SmuflGlyphs#openBravura()}.
  * If the font is available, subsequent SMuFL draws use it; if not, this method
  * returns {@code false} so {@link ScorePainter} falls back to primitives.
  */
@@ -104,7 +109,7 @@ public final class FxRenderSurface implements RenderSurface {
     @Override
     public void drawText(String text, double x, double y, double fontSize) {
         Font previous = gc.getFont();
-        gc.setFont(Font.font(previous != null ? previous.getFamily() : "System", fontSize));
+        gc.setFont(FontCache.font(previous != null ? previous.getFamily() : "System", fontSize));
         gc.fillText(text, x, y);
         gc.setFont(previous);
     }
@@ -116,18 +121,18 @@ public final class FxRenderSurface implements RenderSurface {
             return false;
         }
         Font previous = gc.getFont();
-        gc.setFont(Font.font(font.getFamily(), sizeHint));
+        gc.setFont(FontCache.font(font.getFamily(), sizeHint));
         gc.fillText(glyphChars, x, y);
         gc.setFont(previous);
         return true;
     }
 
-    private static synchronized Font ensureBravura(double sizeHint) {
+    static synchronized Font ensureBravura(double sizeHint) {
         if (bravuraAttempted) {
             return bravuraTemplate == null ? null : bravuraTemplate;
         }
         bravuraAttempted = true;
-        try (InputStream in = FxRenderSurface.class.getResourceAsStream(SmuflGlyphs.BRAVURA_RESOURCE)) {
+        try (InputStream in = SmuflGlyphs.openBravura()) {
             if (in == null) {
                 return null;
             }

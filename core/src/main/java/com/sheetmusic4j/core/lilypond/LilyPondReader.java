@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import com.sheetmusic4j.core.io.ScoreReader;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
@@ -63,11 +64,12 @@ import com.sheetmusic4j.core.model.Tuplet;
  * ossia, {@code \override}/{@code \set}, most ornaments) are skipped
  * silently so real-world files survive round-tripping structurally.
  */
-public final class LilyPondReader {
+public final class LilyPondReader implements ScoreReader {
 
     /** Divisions per quarter note used by the produced {@link Score}. */
     private static final int DIVISIONS = 96;
 
+    @Override
     public Score read(Path path) {
         try (InputStream in = Files.newInputStream(path)) {
             return read(in);
@@ -76,6 +78,7 @@ public final class LilyPondReader {
         }
     }
 
+    @Override
     public Score read(InputStream in) {
         try {
             String text = readAll(in);

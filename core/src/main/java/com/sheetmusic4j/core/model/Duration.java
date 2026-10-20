@@ -34,6 +34,16 @@ public record Duration(int value, int divisions) {
     }
 
     /**
+     * Duration expressed exactly, in quarter notes. Prefer this over
+     * {@link #inQuarters()} whenever durations are summed.
+     *
+     * @return the duration as an exact number of quarter notes
+     */
+    public Fraction quarters() {
+        return Fraction.of(value, divisions);
+    }
+
+    /**
      * Whether this duration occupies zero time on the timeline.
      *
      * @return true if the duration is zero

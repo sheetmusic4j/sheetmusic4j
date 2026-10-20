@@ -15,21 +15,43 @@ import com.sheetmusic4j.core.model.Barline;
  *                       quarter notes
  * @param barline        the barline drawn at this measure's right edge, or
  *                       {@code null} for a plain single thin line
- * @param leadingRepeatStart whether a repeat-start mark ({@code |:}) is
- *                       drawn at this measure's left edge
- * @param ending         the first/second-ending label active for this
+ * @param leadingBarline the barline opening this measure (a repeat-start
+ *                       {@code |:} or a heavy-light {@code [|}), or
+ *                       {@code null}
+ * @param leadingBarlineX x at which the leading barline starts: the
+ *                       measure's left edge, or - on the first measure of
+ *                       a row - just after the clef / key / time signature
+ * @param ending        the first/second-ending label active for this
  *                       measure (e.g. {@code "1"}), or {@code null}
  */
 public record MeasureLayout(int number, double x, double width,
                             double startQuarters, double endQuarters,
-                            Barline barline, boolean leadingRepeatStart, String ending) {
+                            Barline barline, Barline leadingBarline, double leadingBarlineX, String ending) {
+
+    /**
+     * Constructor for callers that only know whether the measure opens with
+     * a repeat-start, drawn at its left edge.
+     */
+    public MeasureLayout(int number, double x, double width, double startQuarters, double endQuarters,
+                         Barline barline, boolean leadingRepeatStart, String ending) {
+        this(number, x, width, startQuarters, endQuarters, barline,
+                leadingRepeatStart ? new Barline(Barline.Style.HEAVY_LIGHT, Barline.Repeat.FORWARD) : null,
+                x, ending);
+    }
+
+    /**
+     * Whether the measure opens with a repeat-start mark.
+     */
+    public boolean leadingRepeatStart() {
+        return leadingBarline != null && leadingBarline.repeat() == Barline.Repeat.FORWARD;
+    }
 
     /**
      * Backwards-compatible constructor for callers that pre-date barline /
      * ending support.
      */
     public MeasureLayout(int number, double x, double width, double startQuarters, double endQuarters) {
-        this(number, x, width, startQuarters, endQuarters, null, false, null);
+        this(number, x, width, startQuarters, endQuarters, null, null, x, null);
     }
 
     /**

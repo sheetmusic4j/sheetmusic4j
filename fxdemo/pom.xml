@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.sheetmusic4j</groupId>
         <artifactId>parent</artifactId>
-        <version>0.0.2-SNAPSHOT</version>
+        <version>0.0.4-SNAPSHOT</version>
     </parent>
 
     <artifactId>fxdemo</artifactId>
@@ -32,6 +32,14 @@
         <dependency>
             <groupId>com.sheetmusic4j</groupId>
             <artifactId>engraving</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sheetmusic4j</groupId>
+            <artifactId>render</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sheetmusic4j</groupId>
+            <artifactId>render-awt</artifactId>
         </dependency>
         <dependency>
             <groupId>com.sheetmusic4j</groupId>
@@ -95,6 +103,20 @@
             <id>strip</id>
             <properties>
                 <exec.mainClass>com.sheetmusic4j.fxdemo.StripDemoApp</exec.mainClass>
+            </properties>
+        </profile>
+        <!-- Run the 3D fly-over showcase: mvn -pl fxdemo -Pflyover javafx:run -->
+        <profile>
+            <id>flyover</id>
+            <properties>
+                <exec.mainClass>com.sheetmusic4j.fxdemo.FlyOverDemoApp</exec.mainClass>
+            </properties>
+        </profile>
+        <!-- Run the retained-mode node view showcase: mvn -pl fxdemo -Pnode javafx:run -->
+        <profile>
+            <id>node</id>
+            <properties>
+                <exec.mainClass>com.sheetmusic4j.fxdemo.NodeDemoApp</exec.mainClass>
             </properties>
         </profile>
     </profiles>

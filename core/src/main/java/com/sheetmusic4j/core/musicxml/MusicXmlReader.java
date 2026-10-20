@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +24,8 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import com.sheetmusic4j.core.internal.BoundedRead;
+import com.sheetmusic4j.core.io.ScoreReader;
 import com.sheetmusic4j.core.model.Accidental;
 import com.sheetmusic4j.core.model.Articulation;
 import com.sheetmusic4j.core.model.Attributes;
@@ -35,12 +38,15 @@ import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Duration;
 import com.sheetmusic4j.core.model.DynamicMark;
+import com.sheetmusic4j.core.model.Fraction;
 import com.sheetmusic4j.core.model.GroupSymbol;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.HarmonyKind;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Lyric;
 import com.sheetmusic4j.core.model.Measure;
+import com.sheetmusic4j.core.model.MeasureTiming;
+import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;
@@ -63,7 +69,7 @@ import com.sheetmusic4j.core.model.Tuplet;
  * (divisions, key, time, clef), and notes (pitch, rest, chord, duration, type,
  * dots, ties). Unknown elements are ignored leniently.
  */
-public final class MusicXmlReader {
+public final class MusicXmlReader implements ScoreReader {
 
     /**
      * Set of {@code <credit-type>} values recognised as creator roles when we
@@ -82,6 +88,7 @@ public final class MusicXmlReader {
         this.factory.setProperty(XMLInputFactory.SUPPORT_DTD, Boolean.FALSE);
     }
 
+    @Override
     public Score read(Path path) {
         try (InputStream in = Files.newInputStream(path)) {
             return read(in);
@@ -90,6 +97,7 @@ public final class MusicXmlReader {
         }
     }
 
+    @Override
     public Score read(InputStream in) {
         XMLStreamReader reader = null;
         try {
@@ -124,11 +132,18 @@ public final class MusicXmlReader {
         }
 
         Map<String, byte[]> entries = new LinkedHashMap<>();
+        long total = 0;
         try (ZipInputStream zip = new ZipInputStream(buffered)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
                 if (!entry.isDirectory()) {
-                    entries.put(entry.getName(), zip.readAllBytes());
+                    byte[] bytes = BoundedRead.readAtMost(zip, BoundedRead.MAX_ENTRY_BYTES, entry.getName());
+                    total += bytes.length;
+                    if (total > BoundedRead.MAX_TOTAL_BYTES) {
+                        throw new IOException("Compressed MusicXML archive exceeds the maximum total size of "
+                                + BoundedRead.MAX_TOTAL_BYTES + " bytes");
+                    }
+                    entries.put(entry.getName(), bytes);
                 }
             }
         }
@@ -460,6 +475,17 @@ public final class MusicXmlReader {
         // correct instead of shifting to whatever index the partial
         // block's shorter list alone would occupy.
         Attributes currentAttributes = null;
+        // Current time position within the measure, moved by notes and by
+        // <backup>/<forward>, and the end of what each voice has written so
+        // far. A voice that resumes later than its own end (e.g. a second
+        // voice entering mid-measure after a <backup>) gets an invisible
+        // rest for the gap, so every voice reads as one gap-free timeline
+        // (see MeasureTiming).
+        Fraction position = Fraction.ZERO;
+        Map<MeasureTiming.VoiceKey, Fraction> voiceEnds = new HashMap<>();
+        // <grace/> notes take no time of their own; they are attached to the
+        // next real note as its grace-note run.
+        List<Pitch> pendingGrace = new ArrayList<>();
 
         while (reader.hasNext()) {
             int event = reader.next();
@@ -473,18 +499,39 @@ public final class MusicXmlReader {
                         }
                     }
                     case "note" -> {
-                        ParsedNote parsed = readNote(reader, divisions[0]);
+                        ParsedNote parsed = readNote(reader, divisions[0], pendingGrace);
+                        if (parsed.grace) {
+                            if (!parsed.rest && !parsed.chord) {
+                                pendingGrace.add(parsed.note.pitch());
+                            }
+                            continue;
+                        }
+                        if (!parsed.rest) {
+                            pendingGrace.clear();
+                        }
                         if (parsed.chord && !pendingChord.isEmpty()) {
                             pendingChord.add(parsed.note);
                         } else {
                             flushChord(measure, pendingChord);
+                            MusicElement element = parsed.rest ? parsed.restElement : parsed.note;
+                            MeasureTiming.VoiceKey key = MeasureTiming.voiceKey(element);
+                            Fraction voiceEnd = voiceEnds.getOrDefault(key, Fraction.ZERO);
+                            if (voiceEnd.compareTo(position) < 0) {
+                                measure.addElement(spacerRest(position.minus(voiceEnd), key));
+                            }
                             if (parsed.rest) {
                                 measure.addElement(parsed.restElement);
                             } else {
                                 pendingChord.add(parsed.note);
                             }
+                            position = position.plus(element.duration().quarters());
+                            voiceEnds.put(key, Fraction.max(voiceEnd, position));
                         }
                     }
+                    case "backup" -> position = Fraction.max(Fraction.ZERO,
+                            position.minus(Fraction.of(readDuration(reader, "backup"), divisions[0])));
+                    case "forward" -> position = position.plus(
+                            Fraction.of(readDuration(reader, "forward"), divisions[0]));
                     case "direction" -> {
                         Direction direction = readDirection(reader);
                         if (direction != null) {
@@ -499,7 +546,7 @@ public final class MusicXmlReader {
                             measure.addElement(harmony);
                         }
                     }
-                    default -> { /* backup/forward/other ignored */ }
+                    default -> { /* other children ignored */ }
                 }
             } else if (event == XMLStreamConstants.END_ELEMENT && "measure".equals(reader.getLocalName())) {
                 break;
@@ -507,6 +554,40 @@ public final class MusicXmlReader {
         }
         flushChord(measure, pendingChord);
         return measure.build();
+    }
+
+    /**
+     * The {@code <duration>} of a {@code <backup>} or {@code <forward>}
+     * element, in divisions; consumes the element.
+     */
+    private int readDuration(XMLStreamReader reader, String elementName) throws XMLStreamException {
+        int duration = 0;
+        while (reader.hasNext()) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.START_ELEMENT) {
+                if ("duration".equals(reader.getLocalName())) {
+                    duration = parseIntOr(readText(reader), 0);
+                } else {
+                    skipElement(reader);
+                }
+            } else if (event == XMLStreamConstants.END_ELEMENT && elementName.equals(reader.getLocalName())) {
+                break;
+            }
+        }
+        return Math.max(duration, 0);
+    }
+
+    /**
+     * An invisible rest filling a gap of {@code length} quarter notes in the
+     * given voice.
+     */
+    private static Rest spacerRest(Fraction length, MeasureTiming.VoiceKey key) {
+        return Rest.builder()
+                .duration(new Duration(Math.toIntExact(length.numerator()), Math.toIntExact(length.denominator())))
+                .staff(key.staff())
+                .voice(key.voice())
+                .visible(false)
+                .build();
     }
 
     private void flushChord(Measure.Builder measure, List<Note> pendingChord) {
@@ -901,7 +982,11 @@ public final class MusicXmlReader {
         return new Harmony.Bass(step, alter);
     }
 
-    private ParsedNote readNote(XMLStreamReader reader, int divisions) throws XMLStreamException {
+    private ParsedNote readNote(XMLStreamReader reader, int divisions, List<Pitch> graceNotes)
+            throws XMLStreamException {
+        boolean grace = false;
+        boolean printed = !"no".equals(reader.getAttributeValue(null, "print-object"));
+        int voice = 1;
         boolean rest = false;
         boolean chord = false;
         Step step = null;
@@ -928,6 +1013,7 @@ public final class MusicXmlReader {
             if (event == XMLStreamConstants.START_ELEMENT) {
                 switch (reader.getLocalName()) {
                     case "chord" -> chord = true;
+                    case "grace" -> grace = true;
                     case "rest" -> rest = true;
                     case "step" -> step = Step.valueOf(readText(reader).trim().toUpperCase());
                     case "octave" -> octave = parseIntOr(readText(reader), 4);
@@ -936,6 +1022,7 @@ public final class MusicXmlReader {
                     case "type" -> type = NoteType.fromXml(readText(reader).trim());
                     case "dot" -> dots++;
                     case "staff" -> staff = parseIntOr(readText(reader), 1);
+                    case "voice" -> voice = Math.max(1, parseIntOr(readText(reader), 1));
                     case "accidental" -> accidental = parseAccidental(readText(reader));
                     case "beam" -> {
                         int number = parseIntOr(reader.getAttributeValue(null, "number"), 1);
@@ -1004,14 +1091,15 @@ public final class MusicXmlReader {
 
         Duration dur = new Duration(Math.max(duration, 0), divisions);
         if (rest) {
-            Rest.Builder rb = Rest.builder().duration(dur).dots(dots).tuplets(tuplets).staff(staff);
+            Rest.Builder rb = Rest.builder().duration(dur).dots(dots).tuplets(tuplets).staff(staff)
+                    .voice(voice).visible(printed);
             if (type != null) {
                 rb.type(type);
             }
             if (timeModification != null) {
                 rb.timeModification(timeModification);
             }
-            return ParsedNote.rest(rb.build());
+            return ParsedNote.rest(rb.build(), grace);
         }
 
         Note.Builder nb = Note.builder()
@@ -1021,12 +1109,16 @@ public final class MusicXmlReader {
                 .tieStart(tieStart)
                 .tieStop(tieStop)
                 .staff(staff)
+                .voice(voice)
                 .beams(beams)
                 .lyrics(lyrics)
                 .articulations(articulations)
                 .slurs(slurs)
                 .tuplets(tuplets)
                 .stemUp(stemUp);
+        if (!grace && !chord) {
+            nb.graceNotes(graceNotes);
+        }
         if (accidental != null) {
             nb.displayedAccidental(accidental);
         }
@@ -1036,7 +1128,7 @@ public final class MusicXmlReader {
         if (timeModification != null) {
             nb.timeModification(timeModification);
         }
-        return ParsedNote.note(nb.build(), chord);
+        return ParsedNote.note(nb.build(), chord, grace);
     }
 
     /**
@@ -1117,13 +1209,13 @@ public final class MusicXmlReader {
         }
     }
 
-    private record ParsedNote(Note note, boolean chord, boolean rest, Rest restElement) {
-        static ParsedNote note(Note note, boolean chord) {
-            return new ParsedNote(note, chord, false, null);
+    private record ParsedNote(Note note, boolean chord, boolean rest, Rest restElement, boolean grace) {
+        static ParsedNote note(Note note, boolean chord, boolean grace) {
+            return new ParsedNote(note, chord, false, null, grace);
         }
 
-        static ParsedNote rest(Rest rest) {
-            return new ParsedNote(null, false, true, rest);
+        static ParsedNote rest(Rest rest, boolean grace) {
+            return new ParsedNote(null, false, true, rest, grace);
         }
     }
 }

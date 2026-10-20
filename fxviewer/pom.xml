@@ -7,14 +7,14 @@
     <parent>
         <groupId>com.sheetmusic4j</groupId>
         <artifactId>parent</artifactId>
-        <version>0.0.2-SNAPSHOT</version>
+        <version>0.0.4-SNAPSHOT</version>
     </parent>
 
     <artifactId>fxviewer</artifactId>
     <packaging>jar</packaging>
 
     <name>Sheetmusic4J :: FX Viewer</name>
-    <description>JavaFX Canvas rendering of a LayoutResult using a SMuFL-compliant music font.</description>
+    <description>JavaFX controls (SheetView, StripSheetView, FlyOverSheetView) that draw a LayoutResult on a Canvas or in 3D via the render module.</description>
 
     <dependencies>
         <dependency>
@@ -24,6 +24,10 @@
         <dependency>
             <groupId>com.sheetmusic4j</groupId>
             <artifactId>engraving</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sheetmusic4j</groupId>
+            <artifactId>render</artifactId>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>

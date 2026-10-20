@@ -11,12 +11,14 @@ Sheetmusic4J requires **Java 21** or higher.
 
 ## Modules
 
-| Module      | Description                                                                                                                                               | JavaFX dependency |
-|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
+| Module      | Description                                                                                                                                                     | JavaFX dependency |
+|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
 | `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, ABC, and LilyPond import/export | No                |
-| `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                               | No                |
-| `fxviewer`  | JavaFX Canvas rendering of a `LayoutResult` using a SMuFL-compliant music font                                                                            | Yes               |
-| `fxdemo`    | Standalone JavaFX demo application for loading and inspecting scores                                                                                      | Yes               |
+| `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                                     | No                |
+| `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font                                                                                  | No                |
+| `render-awt` | Headless rendering to images through AWT (`AwtRenderSurface`, `HeadlessScoreImage`)                                                                           | No                |
+| `fxviewer`  | JavaFX controls (`SheetView`, `StripSheetView`, `FlyOverSheetView`, `NodeSheetView`) that draw a `LayoutResult` on a `Canvas`, in 3D, or as a node scene graph   | Yes               |
+| `fxdemo`    | Standalone JavaFX demo applications for loading and inspecting scores, plus strip, 3D fly-over and node-view showcases                                         | Yes               |
 
 ### Sheetmusic Terminology
 
@@ -28,9 +30,8 @@ renders, so you can point at something in a screenshot and know exactly which cl
 * Loading and saving of MusicXML 4.0 files, see https://www.musicxml.com/for-developers/
 * Importing and exporting MIDI files (`javax.sound.midi`)
 * Importing and exporting ABC music notation files (see https://abcnotation.com/)
-* Importing and exporting LilyPond files (see https://lilypond.org/)
 * `ScoreFile` convenience facade that dispatches to the right reader/writer based on file extension (`.musicxml`,
-  `.xml`, `.mxl`, `.mid`, `.midi`, `.abc`, `.ly`)
+  `.xml`, `.mxl`, `.mid`, `.midi`, `.abc`)
 * Testfiles from https://www.musicxml.com/music-in-musicxml/example-set/
 
 ### Engraving
@@ -38,16 +39,31 @@ renders, so you can point at something in a screenshot and know exactly which cl
 * Pure layout math (no JavaFX) that positions staves, measures, clefs, and notes from a `Score`, so it can be
   unit-tested headlessly and reused by any renderer
 
+### Render
+
+* `ScorePainter` draws a `LayoutResult` through a `RenderSurface` abstraction, so the same drawing logic serves JavaFX
+  and headless rendering
+* `HeadlessScoreImage` (in `render-awt`) renders a `Score` to a `BufferedImage` without a display
+
 ### FX Viewer
 
-* `SheetView`, a JavaFX `Region` that renders a `Score` on a `Canvas`
-* Drawing logic is shared with headless test rendering through a `RenderSurface` abstraction
+* `SheetView`, a JavaFX `Region` that renders a `Score` on a `Canvas`, and `StripSheetView`, a one-line play-along view
+* `FlyOverSheetView`, a 3D variant of the strip view: the score lies on a sheet of paper, a perspective camera flies
+  along it while it plays, a glowing ball per voice hops from note to note, and sounding noteheads light up
+* `NodeSheetView`, a retained-mode variant that builds a JavaFX scene graph with one node group per note, rest and chord,
+  so each element can take mouse and keyboard events, effects and selection; `LayoutResult.hitTest` does the same
+  picking on the plain layout for the canvas views
 
 ### FX Demo
 
 * Opens MusicXML/MIDI/ABC/LilyPond files and displays a debug/inspection pane alongside the rendered score
 * Shows a companion PDF side-by-side (via [pdfviewfx](https://github.com/dlsc-software-consulting-gmbh/PDFViewFX)) when
   one exists next to the loaded file with the same base name
+* "Report Visual Issue..." button to capture rendering problems, see [CONTRIBUTING.md](CONTRIBUTING.md)
+* `StripDemoApp` and `FlyOverDemoApp` showcase the one-line strip view and the 3D fly-over view, with play/pause,
+  tempo, and position controls
+* `NodeDemoApp` showcases the node view: hover and select elements, drag notes to snap them to staff positions
+  (Shift = sharp, Alt = flat), hide and restore them
 
 ## Requirements
 
@@ -63,8 +79,13 @@ mvn clean install
 ## Run the demo
 
 ```bash
-mvn -pl fxdemo javafx:run
+mvn -pl fxdemo javafx:run              # main demo app (SheetDemoApp)
+mvn -pl fxdemo -Pstrip javafx:run      # one-line strip view (StripDemoApp)
+mvn -pl fxdemo -Pflyover javafx:run    # 3D fly-over view (FlyOverDemoApp)
+mvn -pl fxdemo -Pnode javafx:run       # node-based view with draggable notes (NodeDemoApp)
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for a tour of the demo app and how to report rendering issues.
 
 ## Status
 
