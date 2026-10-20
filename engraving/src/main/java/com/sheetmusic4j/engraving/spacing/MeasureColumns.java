@@ -218,7 +218,9 @@ public final class MeasureColumns {
             Fraction next = i + 1 < n ? onsets[i + 1] : measureEnd;
             double delta = next.minus(onsets[i]).toDouble();
             double shortest = shortestSounding(sounding, onsets[i], delta);
-            double weight = (delta > 0 ? delta * Math.pow(shortest, NOTE_WIDTH_ALPHA - 1) : 0.0) + column.extraWeight;
+            // StrictMath: Math.pow may differ in the last ulp between CPU
+            // architectures, which makes layouts (and snapshots) platform-dependent.
+            double weight = (delta > 0 ? delta * StrictMath.pow(shortest, NOTE_WIDTH_ALPHA - 1) : 0.0) + column.extraWeight;
             weights[i] = weight > 0 ? weight : 1.0;
             leftShifts[i] = column.leftShift;
             i++;
