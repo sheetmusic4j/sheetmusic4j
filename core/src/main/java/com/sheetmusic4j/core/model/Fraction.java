@@ -51,6 +51,11 @@ public record Fraction(long numerator, long denominator) implements Comparable<F
         return new Fraction(Math.multiplyExact(numerator, factor), denominator);
     }
 
+    public Fraction times(Fraction other) {
+        return new Fraction(Math.multiplyExact(numerator, other.numerator),
+                Math.multiplyExact(denominator, other.denominator));
+    }
+
     public boolean isZero() {
         return numerator == 0;
     }

@@ -3,7 +3,6 @@ package com.sheetmusic4j.core.abc;
 import java.util.Locale;
 
 import com.sheetmusic4j.core.model.KeySignature;
-import com.sheetmusic4j.core.model.Step;
 
 /**
  * Parses the value of an ABC {@code K:} info-field into a {@link KeySignature}
@@ -15,36 +14,7 @@ import com.sheetmusic4j.core.model.Step;
  */
 final class AbcKey {
 
-    /** Order of sharps in a key signature: F, C, G, D, A, E, B. */
-    private static final Step[] SHARP_ORDER = {Step.F, Step.C, Step.G, Step.D, Step.A, Step.E, Step.B};
-    /** Order of flats in a key signature: B, E, A, D, G, C, F. */
-    private static final Step[] FLAT_ORDER = {Step.B, Step.E, Step.A, Step.D, Step.G, Step.C, Step.F};
-
     private AbcKey() {
-    }
-
-    /**
-     * The chromatic alteration ({@code +1}, {@code 0}, {@code -1}) implied by
-     * the given key signature for the given diatonic step.
-     */
-    static int alterFor(Step step, KeySignature key) {
-        if (key == null || key.fifths() == 0) {
-            return 0;
-        }
-        if (key.fifths() > 0) {
-            for (int i = 0; i < key.fifths() && i < SHARP_ORDER.length; i++) {
-                if (SHARP_ORDER[i] == step) {
-                    return 1;
-                }
-            }
-            return 0;
-        }
-        for (int i = 0; i < -key.fifths() && i < FLAT_ORDER.length; i++) {
-            if (FLAT_ORDER[i] == step) {
-                return -1;
-            }
-        }
-        return 0;
     }
 
     /** Fifths values for the twelve+ diatonic major keys. */

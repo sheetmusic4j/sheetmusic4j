@@ -355,7 +355,7 @@ final class LilyPondInterpreter {
                 return walkTuplet(tuplet, t, f);
             }
             case LyMusic.Scale scale -> {
-                Frame inner = new Frame(f.ctx(), LilyPondParser.multiply(f.scale(), scale.factor()), f.retype(),
+                Frame inner = new Frame(f.ctx(), f.scale().times(scale.factor()), f.retype(),
                         f.grace(), f.tuplets(), f.transposeSteps(), f.transposeSemitones(), f.keepTags(),
                         f.removeTags());
                 return walk(scale.body(), t, inner);
@@ -430,7 +430,7 @@ final class LilyPondInterpreter {
                 return t;
             }
             case LyMusic.ChordSymbol chord -> {
-                Fraction length = LilyPondParser.multiply(chord.length(), f.scale());
+                Fraction length = chord.length().times(f.scale());
                 if (chord.harmony() != null && !f.grace() && f.ctx().kind != CtxKind.IGNORED) {
                     Ctx target = f.ctx().kind == CtxKind.CHORD_NAMES ? f.ctx() : chordNamesFor(f);
                     target.harmonies.add(new Timed<>(t, chord.harmony()));
@@ -527,7 +527,7 @@ final class LilyPondInterpreter {
         List<TupletMark> marks = new ArrayList<>(f.tuplets());
         TupletMark mark = new TupletMark(tuplet.actual(), tuplet.normal(), tuplet.span(), marks.size() + 1);
         marks.add(mark);
-        Frame inner = new Frame(f.ctx(), LilyPondParser.multiply(f.scale(), factor), f.retype(), f.grace(),
+        Frame inner = new Frame(f.ctx(), f.scale().times(factor), f.retype(), f.grace(),
                 List.copyOf(marks), f.transposeSteps(), f.transposeSemitones(), f.keepTags(), f.removeTags());
         Fraction end = walk(tuplet.body(), t, inner);
         if (!mark.startPending && mark.last != null) {
@@ -572,7 +572,7 @@ final class LilyPondInterpreter {
     // ----- events --------------------------------------------------------------------------------
 
     private Fraction walkEvent(LyMusic.Event e, Fraction t, Frame f) {
-        Fraction length = LilyPondParser.multiply(e.length(), f.scale());
+        Fraction length = e.length().times(f.scale());
         Fraction end = t.plus(length);
         Ctx target = eventTarget(f);
         if (target == null) {

@@ -929,7 +929,7 @@ final class LilyPondParser {
     private LyMusic parseEvent(LyMusic.Event.Kind kind, List<LyMusic.EventPitch> pitches) {
         Duration duration = parseDuration();
         if (duration == null) {
-            duration = new Duration(defaultType, defaultDots, lengthOf(defaultType, defaultDots));
+            duration = new Duration(defaultType, defaultDots, defaultType.quarters(defaultDots));
         }
         skipTremolo();
         List<LyMusic.Post> post = parsePostEvents();
@@ -1018,7 +1018,7 @@ final class LilyPondParser {
             while (!atEnd() && Character.isDigit(peek())) {
                 pos++;
             }
-            type = typeForNumber(Integer.parseInt(src.substring(start, Math.min(pos, start + 4))));
+            type = LilyPondDuration.typeForNumber(Integer.parseInt(src.substring(start, Math.min(pos, start + 4))));
         } else if (peek() == '\\') {
             String name = peekCommandName();
             type = switch (name) {
@@ -1041,7 +1041,7 @@ final class LilyPondParser {
         }
         defaultType = type;
         defaultDots = dots;
-        Fraction length = lengthOf(type, dots);
+        Fraction length = type.quarters(dots);
         while (true) {
             // Multipliers may be spaced out: `16 * 1/8`.
             int save = pos;
@@ -1058,7 +1058,7 @@ final class LilyPondParser {
                 pos++;
                 den = Math.max(1, readInt(1));
             }
-            length = multiply(length, Fraction.of(num, den));
+            length = length.times(Fraction.of(num, den));
         }
         return new Duration(type, dots, length);
     }
@@ -1260,7 +1260,7 @@ final class LilyPondParser {
         String word = readNoteWord();
         if (word.equals("r") || word.equals("s") || word.equals("R")) {
             Duration d = parseDuration();
-            Fraction length = d == null ? lengthOf(defaultType, defaultDots) : d.length();
+            Fraction length = d == null ? defaultType.quarters(defaultDots) : d.length();
             parsePostEvents();
             return new LyMusic.ChordSymbol(null, length);
         }
@@ -1272,7 +1272,7 @@ final class LilyPondParser {
             pos++;
         }
         Duration d = parseDuration();
-        Fraction length = d == null ? lengthOf(defaultType, defaultDots) : d.length();
+        Fraction length = d == null ? defaultType.quarters(defaultDots) : d.length();
         String quality = "";
         if (peek() == ':') {
             pos++;
@@ -1858,7 +1858,7 @@ final class LilyPondParser {
                     skipWhitespace();
                     readInt(0);
                 }
-                unit = typeForNumber((int) number);
+                unit = LilyPondDuration.typeForNumber((int) number);
             } else {
                 pos = save;
                 dots = 0;
@@ -2679,50 +2679,5 @@ final class LilyPondParser {
         while (!atEnd() && !Character.isWhitespace(peek()) && "{}()\"\\".indexOf(peek()) < 0) {
             pos++;
         }
-    }
-
-    // ----- durations -----------------------------------------------------------------------------
-
-    static NoteType typeForNumber(int n) {
-        return switch (n) {
-            case 0, 1 -> NoteType.WHOLE;
-            case 2 -> NoteType.HALF;
-            case 4 -> NoteType.QUARTER;
-            case 8 -> NoteType.EIGHTH;
-            case 16 -> NoteType.SIXTEENTH;
-            case 32 -> NoteType.THIRTY_SECOND;
-            case 64 -> NoteType.SIXTY_FOURTH;
-            case 128 -> NoteType.HUNDRED_TWENTY_EIGHTH;
-            default -> NoteType.QUARTER;
-        };
-    }
-
-    /** Length in quarter notes of a note type with dots. */
-    static Fraction lengthOf(NoteType type, int dots) {
-        Fraction base = switch (type) {
-            case MAXIMA -> Fraction.of(32);
-            case LONG -> Fraction.of(16);
-            case BREVE -> Fraction.of(8);
-            case WHOLE -> Fraction.of(4);
-            case HALF -> Fraction.of(2);
-            case QUARTER -> Fraction.of(1);
-            case EIGHTH -> Fraction.of(1, 2);
-            case SIXTEENTH -> Fraction.of(1, 4);
-            case THIRTY_SECOND -> Fraction.of(1, 8);
-            case SIXTY_FOURTH -> Fraction.of(1, 16);
-            case HUNDRED_TWENTY_EIGHTH -> Fraction.of(1, 32);
-        };
-        Fraction total = base;
-        Fraction add = base;
-        for (int i = 0; i < dots; i++) {
-            add = Fraction.of(add.numerator(), add.denominator() * 2);
-            total = total.plus(add);
-        }
-        return total;
-    }
-
-    static Fraction multiply(Fraction a, Fraction b) {
-        return Fraction.of(Math.multiplyExact(a.numerator(), b.numerator()),
-                Math.multiplyExact(a.denominator(), b.denominator()));
     }
 }

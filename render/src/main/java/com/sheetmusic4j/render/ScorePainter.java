@@ -664,14 +664,6 @@ public final class ScorePainter {
     }
 
     /**
-     * Whether the given category should be skipped by the current painter.
-     * Package-private for tests.
-     */
-    boolean isHidden(MarkingCategory category) {
-        return hiddenCategories.contains(category);
-    }
-
-    /**
      * Draw a rounded, semi-transparent rectangle behind every element that
      * carries a background colour. Iterates {@link LayoutResult#noteAnchors()}
      * once; anchors whose element resolves to {@code null} in the

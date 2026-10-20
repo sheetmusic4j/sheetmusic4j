@@ -35,6 +35,21 @@ class FractionTest {
     }
 
     @Test
+    void multipliesFractions() {
+        assertEquals(Fraction.of(1, 3), Fraction.of(1, 2).times(Fraction.of(2, 3)));
+        assertEquals(Fraction.of(-3, 4), Fraction.of(3, 2).times(Fraction.of(-1, 2)));
+    }
+
+    @Test
+    void noteTypeLengthsIncludeDots() {
+        assertEquals(Fraction.of(1), NoteType.QUARTER.quarters(0));
+        assertEquals(Fraction.of(3, 2), NoteType.QUARTER.quarters(1));
+        assertEquals(Fraction.of(7, 8), NoteType.EIGHTH.quarters(2));
+        assertEquals(Fraction.of(32), NoteType.MAXIMA.quarters(0));
+        assertEquals(Fraction.of(1, 32), NoteType.HUNDRED_TWENTY_EIGHTH.quarters(0));
+    }
+
+    @Test
     void rejectsZeroDenominator() {
         assertThrows(IllegalArgumentException.class, () -> Fraction.of(1, 0));
     }

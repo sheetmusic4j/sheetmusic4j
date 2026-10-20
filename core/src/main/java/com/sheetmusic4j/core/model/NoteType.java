@@ -76,6 +76,18 @@ public enum NoteType {
     }
 
     /**
+     * Exact length in quarter notes of this type with the given number of
+     * augmentation dots: each dot adds half of the previous value.
+     *
+     * @param dots the number of dots (0 for an undotted note)
+     * @return the length in quarter notes
+     */
+    public Fraction quarters(int dots) {
+        long base = 1L << dots;
+        return Fraction.of(32 * (2 * base - 1), base << ordinal());
+    }
+
+    /**
      * Determine the closest note type for a duration expressed in quarter notes.
      *
      * @param quarters the duration in quarter notes

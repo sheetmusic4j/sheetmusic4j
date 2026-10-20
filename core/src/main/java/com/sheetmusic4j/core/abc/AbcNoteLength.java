@@ -1,5 +1,7 @@
 package com.sheetmusic4j.core.abc;
 
+import com.sheetmusic4j.core.model.Fraction;
+
 /**
  * Parses ABC note-length suffixes (the digits/slashes trailing a note letter)
  * into a rational multiplier of the current unit note length ({@code L:}).
@@ -15,35 +17,6 @@ package com.sheetmusic4j.core.abc;
  * </ul>
  */
 final class AbcNoteLength {
-
-    /** Rational number in lowest terms (num, den both positive). */
-    record Fraction(int num, int den) {
-        Fraction {
-            if (den <= 0) {
-                throw new IllegalArgumentException("den must be positive");
-            }
-            if (num < 0) {
-                throw new IllegalArgumentException("num must be non-negative");
-            }
-        }
-
-        static Fraction of(int n, int d) {
-            int g = gcd(Math.abs(n), Math.abs(d));
-            return new Fraction(n / g, d / g);
-        }
-
-        Fraction times(Fraction other) {
-            return Fraction.of(num * other.num, den * other.den);
-        }
-
-        Fraction times(int n, int d) {
-            return Fraction.of(num * n, den * d);
-        }
-
-        private static int gcd(int a, int b) {
-            return b == 0 ? (a == 0 ? 1 : a) : gcd(b, a % b);
-        }
-    }
 
     /** Result of parsing a length suffix from an input string. */
     record Parsed(Fraction multiplier, int consumed) {

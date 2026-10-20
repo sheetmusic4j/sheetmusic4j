@@ -8,6 +8,9 @@ package com.sheetmusic4j.core.model;
  */
 public record KeySignature(int fifths) {
 
+    private static final String SHARP_ORDER = "FCGDAEB";
+    private static final String FLAT_ORDER = "BEADGCF";
+
     /** Creates a C major key signature (no sharps or flats). */
     public static KeySignature cMajor() {
         return new KeySignature(0);
@@ -21,5 +24,16 @@ public record KeySignature(int fifths) {
     /** Returns the number of flats in this key signature. */
     public int flats() {
         return Math.max(-fifths, 0);
+    }
+
+    /**
+     * The alteration this key signature implies for a step: {@code +1} when
+     * the step carries a sharp, {@code -1} for a flat, {@code 0} otherwise.
+     */
+    public int alter(Step step) {
+        if (fifths > 0) {
+            return SHARP_ORDER.indexOf(step.name()) < fifths ? 1 : 0;
+        }
+        return FLAT_ORDER.indexOf(step.name()) < -fifths ? -1 : 0;
     }
 }

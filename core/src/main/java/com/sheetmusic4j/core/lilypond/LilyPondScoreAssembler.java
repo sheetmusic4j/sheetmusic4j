@@ -37,7 +37,6 @@ import com.sheetmusic4j.core.model.Placement;
 import com.sheetmusic4j.core.model.Rest;
 import com.sheetmusic4j.core.model.Score;
 import com.sheetmusic4j.core.model.Slur;
-import com.sheetmusic4j.core.model.Step;
 import com.sheetmusic4j.core.model.TimeModification;
 import com.sheetmusic4j.core.model.TimeSignature;
 import com.sheetmusic4j.core.model.Tuplet;
@@ -699,12 +698,11 @@ final class LilyPondScoreAssembler {
                 } else {
                     // Undo the tuplet scaling to find written values, then scale each back.
                     Fraction ratio = Fraction.of(ev.actualNotes, ev.normalNotes);
-                    Fraction written = LilyPondParser.multiply(segLength, ratio);
+                    Fraction written = segLength.times(ratio);
                     Fraction cursor = start;
-                    for (Fraction[] value : decompose(written)) {
-                        Fraction len = LilyPondParser.multiply(value[0], Fraction.of(ev.normalNotes, ev.actualNotes));
-                        NoteType type = NoteType.values()[(int) value[1].numerator()];
-                        out.add(piece(ev, cursor, len, type, (int) value[2].numerator(), false));
+                    for (WrittenValue value : decompose(written)) {
+                        Fraction len = value.length().times(Fraction.of(ev.normalNotes, ev.actualNotes));
+                        out.add(piece(ev, cursor, len, value.type(), value.dots(), false));
                         cursor = cursor.plus(len);
                     }
                 }
@@ -730,33 +728,30 @@ final class LilyPondScoreAssembler {
         return p;
     }
 
-    /**
-     * Greedy split of a written length into note values with up to two dots:
-     * {length, type ordinal, dots} triples.
-     */
-    private static List<Fraction[]> decompose(Fraction length) {
-        List<Fraction[]> out = new ArrayList<>();
+    /** A notatable written value: a note type with up to two dots. */
+    private record WrittenValue(Fraction length, NoteType type, int dots) {
+    }
+
+    /** Greedy split of a written length into note values with up to two dots. */
+    private static List<WrittenValue> decompose(Fraction length) {
+        List<WrittenValue> out = new ArrayList<>();
         Fraction remaining = length;
         while (remaining.isPositive() && out.size() < 16) {
-            Fraction best = null;
-            int bestType = -1;
-            int bestDots = 0;
+            WrittenValue best = null;
             for (NoteType type : NoteType.values()) {
                 for (int dots = 0; dots <= 2; dots++) {
-                    Fraction len = LilyPondParser.lengthOf(type, dots);
-                    if (len.compareTo(remaining) <= 0 && (best == null || len.compareTo(best) > 0)) {
-                        best = len;
-                        bestType = type.ordinal();
-                        bestDots = dots;
+                    Fraction len = type.quarters(dots);
+                    if (len.compareTo(remaining) <= 0 && (best == null || len.compareTo(best.length()) > 0)) {
+                        best = new WrittenValue(len, type, dots);
                     }
                 }
             }
             if (best == null) {
-                out.add(new Fraction[]{remaining, Fraction.of(NoteType.HUNDRED_TWENTY_EIGHTH.ordinal()), Fraction.ZERO});
+                out.add(new WrittenValue(remaining, NoteType.HUNDRED_TWENTY_EIGHTH, 0));
                 break;
             }
-            out.add(new Fraction[]{best, Fraction.of(bestType), Fraction.of(bestDots)});
-            remaining = remaining.minus(best);
+            out.add(best);
+            remaining = remaining.minus(best.length());
         }
         return out;
     }
@@ -828,7 +823,7 @@ final class LilyPondScoreAssembler {
                     continue;
                 }
                 int line = pitch.diatonicStepNumber();
-                int expected = state.getOrDefault(line, keyAlter(pitch.step(), key));
+                int expected = state.getOrDefault(line, key.alter(pitch.step()));
                 boolean forced = i < ev.forcedAccidental.size() && ev.forcedAccidental.get(i);
                 if (pitch.alter() != expected || forced) {
                     p.accidentals[i] = Accidental.fromAlter(pitch.alter());
@@ -836,18 +831,6 @@ final class LilyPondScoreAssembler {
                 }
             }
         }
-    }
-
-    private static int keyAlter(Step step, KeySignature key) {
-        int fifths = key.fifths();
-        Step[] sharps = {Step.F, Step.C, Step.G, Step.D, Step.A, Step.E, Step.B};
-        Step[] flats = {Step.B, Step.E, Step.A, Step.D, Step.G, Step.C, Step.F};
-        for (int i = 0; i < Math.abs(fifths) && i < 7; i++) {
-            if ((fifths > 0 ? sharps : flats)[i] == step) {
-                return fifths > 0 ? 1 : -1;
-            }
-        }
-        return 0;
     }
 
     private static boolean beamable(Piece p) {

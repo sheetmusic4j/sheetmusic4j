@@ -18,6 +18,7 @@ import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.Chord;
 import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Duration;
+import com.sheetmusic4j.core.model.Fraction;
 import com.sheetmusic4j.core.model.KeySignature;
 import com.sheetmusic4j.core.model.Measure;
 import com.sheetmusic4j.core.model.MeasureTiming;
@@ -254,7 +255,7 @@ public final class AbcWriter implements ScoreWriter {
         if (carry != null) {
             expectedAlter = carry;
         } else {
-            expectedAlter = AbcKey.alterFor(pitch.step(), key);
+            expectedAlter = key.alter(pitch.step());
         }
         boolean writeAccidental = note.displayedAccidental().isPresent()
                 || pitch.alter() != expectedAlter;
@@ -345,14 +346,10 @@ public final class AbcWriter implements ScoreWriter {
         // multiplier = quarters / (4/UNIT_DEN * UNIT_NUM)
         //            = (value / divisions) / (4*UNIT_NUM/UNIT_DEN)
         //            = value * UNIT_DEN / (divisions * 4 * UNIT_NUM)
-        long num = (long) duration.value() * UNIT_DEN;
-        long den = (long) duration.divisions() * 4L * UNIT_NUM;
-        long g = gcd(Math.abs(num), Math.abs(den));
-        if (g == 0) {
-            g = 1;
-        }
-        num /= g;
-        den /= g;
+        Fraction multiplier = Fraction.of((long) duration.value() * UNIT_DEN,
+                (long) duration.divisions() * 4L * UNIT_NUM);
+        long num = multiplier.numerator();
+        long den = multiplier.denominator();
         if (num == 1 && den == 1) {
             return;
         }
@@ -369,15 +366,6 @@ public final class AbcWriter implements ScoreWriter {
             return;
         }
         line.append(num).append('/').append(den);
-    }
-
-    private static long gcd(long a, long b) {
-        while (b != 0) {
-            long t = b;
-            b = a % b;
-            a = t;
-        }
-        return a == 0 ? 1 : a;
     }
 
     /** Render the key signature as an ABC {@code K:} value (e.g. "G", "Bb", "F#"). */

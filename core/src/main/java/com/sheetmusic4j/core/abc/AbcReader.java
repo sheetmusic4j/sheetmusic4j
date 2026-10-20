@@ -25,6 +25,7 @@ import com.sheetmusic4j.core.model.Creator;
 import com.sheetmusic4j.core.model.Direction;
 import com.sheetmusic4j.core.model.DirectionType;
 import com.sheetmusic4j.core.model.Duration;
+import com.sheetmusic4j.core.model.Fraction;
 import com.sheetmusic4j.core.model.Harmony;
 import com.sheetmusic4j.core.model.HarmonyKind;
 import com.sheetmusic4j.core.model.KeySignature;
@@ -342,7 +343,7 @@ public final class AbcReader implements ScoreReader {
         return null;
     }
 
-    private static AbcNoteLength.Fraction parseUnitLength(String value) {
+    private static Fraction parseUnitLength(String value) {
         if (value == null || value.trim().isEmpty()) {
             return null;
         }
@@ -350,7 +351,7 @@ public final class AbcReader implements ScoreReader {
         int slash = v.indexOf('/');
         if (slash < 0) {
             try {
-                return AbcNoteLength.Fraction.of(Integer.parseInt(v), 1);
+                return Fraction.of(Integer.parseInt(v), 1);
             } catch (NumberFormatException e) {
                 return null;
             }
@@ -358,7 +359,7 @@ public final class AbcReader implements ScoreReader {
         try {
             int num = slash == 0 ? 1 : Integer.parseInt(v.substring(0, slash).trim());
             int den = Integer.parseInt(v.substring(slash + 1).trim());
-            return AbcNoteLength.Fraction.of(num, den);
+            return Fraction.of(num, den);
         } catch (NumberFormatException e) {
             return null;
         }
@@ -495,7 +496,7 @@ public final class AbcReader implements ScoreReader {
         String subtitle;
         String composer;
         TimeSignature timeSignature;
-        AbcNoteLength.Fraction unitLength;
+        Fraction unitLength;
         DirectionType.Metronome tempo;
         KeySignature key;
     }
@@ -505,15 +506,15 @@ public final class AbcReader implements ScoreReader {
      * explicitly: {@code 1/16} for compact time signatures (numerator/beat
      * ratio &lt; 0.75), {@code 1/8} otherwise.
      */
-    private static AbcNoteLength.Fraction defaultUnitLength(TimeSignature ts) {
+    private static Fraction defaultUnitLength(TimeSignature ts) {
         if (ts == null) {
-            return new AbcNoteLength.Fraction(1, 8);
+            return Fraction.of(1, 8);
         }
         double ratio = (double) ts.beats() / ts.beatType();
         if (ratio < 0.75) {
-            return new AbcNoteLength.Fraction(1, 16);
+            return Fraction.of(1, 16);
         }
-        return new AbcNoteLength.Fraction(1, 8);
+        return Fraction.of(1, 8);
     }
 
     /**
@@ -523,7 +524,7 @@ public final class AbcReader implements ScoreReader {
     private final class BodyParser {
 
         private final Part.Builder part;
-        private AbcNoteLength.Fraction unitLength;
+        private Fraction unitLength;
         private KeySignature key;
         private TimeSignature timeSignature;
         private DirectionType.Metronome pendingTempo;
@@ -553,7 +554,7 @@ public final class AbcReader implements ScoreReader {
 
         // Pending broken rhythm to apply to the next emitted note (from > or <
         // encountered immediately after a note).
-        private AbcNoteLength.Fraction nextLengthMultiplier;
+        private Fraction nextLengthMultiplier;
 
         // Tie: whether the next emitted note should receive tieStop=true.
         private boolean tieToNext;
@@ -791,7 +792,7 @@ public final class AbcReader implements ScoreReader {
                     }
                 }
                 case 'L' -> {
-                    AbcNoteLength.Fraction f = parseUnitLength(value);
+                    Fraction f = parseUnitLength(value);
                     if (f != null) {
                         this.unitLength = f;
                     }
@@ -1216,8 +1217,8 @@ public final class AbcReader implements ScoreReader {
                     int count = Math.min(j - i, 20);
                     if (lastWasNote) {
                         int pow = 1 << count;
-                        AbcNoteLength.Fraction longer = AbcNoteLength.Fraction.of(2 * pow - 1, pow);
-                        AbcNoteLength.Fraction shorter = AbcNoteLength.Fraction.of(1, pow);
+                        Fraction longer = Fraction.of(2 * pow - 1, pow);
+                        Fraction shorter = Fraction.of(1, pow);
                         if (marker == '>') {
                             applyBrokenRhythmLeft(longer);
                             nextLengthMultiplier = shorter;
@@ -1357,7 +1358,7 @@ public final class AbcReader implements ScoreReader {
             int octave;
             int alter;
             boolean explicitAccidental;
-            AbcNoteLength.Fraction length;
+            Fraction length;
             boolean isRest;
             boolean isInvisibleRest;
             boolean isMeasureRest;
@@ -1432,7 +1433,7 @@ public final class AbcReader implements ScoreReader {
             } else {
                 // Unknown letter — treat as rest to keep parser moving.
                 out.isRest = true;
-                out.length = new AbcNoteLength.Fraction(1, 1);
+                out.length = Fraction.of(1, 1);
                 out.consumed = i;
                 return out;
             }
@@ -1461,7 +1462,7 @@ public final class AbcReader implements ScoreReader {
                 if (carry != null) {
                     alter = carry;
                 } else {
-                    alter = AbcKey.alterFor(step, this.key);
+                    alter = this.key.alter(step);
                 }
             } else {
                 // Remember the explicit accidental for subsequent notes in
@@ -1479,12 +1480,12 @@ public final class AbcReader implements ScoreReader {
             }
 
         private void emitRest(ParsedNote parsed) {
-            AbcNoteLength.Fraction m = parsed.length;
+            Fraction m = parsed.length;
             if (parsed.isMeasureRest) {
-                // Full-measure rest — one measure per unit of m.num (denom
-                // ignored). Emit m.num measures each holding one measure-long
+                // Full-measure rest — one measure per unit of the numerator (denominator
+                // ignored). Emit that many measures, each holding one measure-long
                 // rest, but at minimum one.
-                int measures = Math.max(1, m.num());
+                int measures = (int) Math.max(1, m.numerator());
                 for (int k = 0; k < measures; k++) {
                     Rest rest = Rest.builder()
                             .duration(measureDuration())
@@ -1500,7 +1501,7 @@ public final class AbcReader implements ScoreReader {
                 }
                 return;
             }
-            AbcNoteLength.Fraction effective = m;
+            Fraction effective = m;
             if (nextLengthMultiplier != null) {
                 effective = effective.times(nextLengthMultiplier);
                 nextLengthMultiplier = null;
@@ -1511,7 +1512,7 @@ public final class AbcReader implements ScoreReader {
             // not change how the rest is notated.
             Duration writtenDuration = toDuration(effective);
             if (tupletCountRemaining > 0) {
-                effective = effective.times(tupletNormalNotes, tupletActualNotes);
+                effective = effective.times(Fraction.of(tupletNormalNotes, tupletActualNotes));
             }
             Duration duration = toDuration(effective);
             Rest.Builder rb = Rest.builder().duration(duration).visible(!parsed.isInvisibleRest);
@@ -1521,7 +1522,7 @@ public final class AbcReader implements ScoreReader {
         }
 
         private void emitNote(ParsedNote parsed) {
-            AbcNoteLength.Fraction m = parsed.length;
+            Fraction m = parsed.length;
             if (nextLengthMultiplier != null) {
                 m = m.times(nextLengthMultiplier);
                 nextLengthMultiplier = null;
@@ -1536,7 +1537,7 @@ public final class AbcReader implements ScoreReader {
             TimeModification timeMod = null;
             List<Tuplet> tuplets = new ArrayList<>();
             if (tupletCountRemaining > 0) {
-                m = m.times(tupletNormalNotes, tupletActualNotes);
+                m = m.times(Fraction.of(tupletNormalNotes, tupletActualNotes));
                 timeMod = new TimeModification(tupletActualNotes, tupletNormalNotes);
                 if (tupletStartPending) {
                     tuplets.add(new Tuplet(currentTupletNumber, Tuplet.Type.START, tupletBracket));
@@ -1615,7 +1616,7 @@ public final class AbcReader implements ScoreReader {
             chordNotes.clear();
         }
 
-        private void applyBrokenRhythmLeft(AbcNoteLength.Fraction mul) {
+        private void applyBrokenRhythmLeft(Fraction mul) {
             // Find the last emitted note/rest and rescale its duration.
             for (int i = pendingElements.size() - 1; i >= 0; i--) {
                 MusicElement el = pendingElements.get(i);
@@ -1819,11 +1820,11 @@ public final class AbcReader implements ScoreReader {
             }
         }
 
-        private Duration toDuration(AbcNoteLength.Fraction m) {
-            // quarters = m * 4 * unit.num / unit.den
+        private Duration toDuration(Fraction m) {
+            // quarters = m * 4 * unit
             // value = quarters * DIVISIONS
-            long numerator = (long) m.num() * 4L * unitLength.num() * DIVISIONS;
-            long denominator = (long) m.den() * unitLength.den();
+            long numerator = m.numerator() * 4L * unitLength.numerator() * DIVISIONS;
+            long denominator = m.denominator() * unitLength.denominator();
             long value = numerator / denominator;
             if (value <= 0) {
                 value = 1;
@@ -1836,8 +1837,8 @@ public final class AbcReader implements ScoreReader {
             return new Duration((int) Math.max(1, value), DIVISIONS);
         }
 
-        private static Duration scale(Duration d, AbcNoteLength.Fraction m) {
-            long v = (long) d.value() * m.num() / m.den();
+        private static Duration scale(Duration d, Fraction m) {
+            long v = d.value() * m.numerator() / m.denominator();
             return new Duration((int) Math.max(1, v), d.divisions());
         }
 
