@@ -95,17 +95,29 @@ class LilyPondRealWorldTest {
 
     @Test
     void sestoFullSurvivesBookWrapper() throws Exception {
-        // sesto-full.ly wraps its music in `\book { \score { … } }`, and
-        // all pitches live in an `\include "sesto.ily"` we cannot resolve
-        // (the file is not shipped alongside the example). The parser must
-        // still descend into the \book wrapper to reach the \score body
-        // and produce a non-empty part with the declared attributes,
-        // rather than swallowing the whole score block.
+        // sesto-full.ly wraps its music in `\book { \score { … } }`. Read
+        // from a stream, its `\include "sesto.ily"` cannot be resolved, but
+        // the parser must still descend into the \book wrapper to reach the
+        // \score body rather than swallowing the whole score block.
         Score score = readFixture("sesto-full.ly");
         assertFalse(score.parts().isEmpty(),
                 "parser must reach the \\score body inside \\book { … }");
         assertFalse(score.parts().get(0).measures().isEmpty(),
                 "the score's staff should surface at least one measure of "
                         + "attributes even when notes come from an unavailable include");
+    }
+
+    @Test
+    void sestoPianoReadsItsIncludedMusic() throws Exception {
+        // Read from the file, `\include "sesto.ily"` resolves next to it:
+        // the header, vocal line, lyrics and part-combined violins all come from there.
+        Path file = fixture("sesto-piano.ly");
+        assumeTrue(Files.exists(file.resolveSibling("sesto.ily")), "sesto.ily not available");
+        Score score = new LilyPondReader().read(file);
+        assertTrue(score.workTitle().orElse("").contains("Giulio Cesare"));
+        assertTrue(countNotes(score) >= 100, "expected the included notes, got " + countNotes(score));
+        assertTrue(score.parts().get(0).measures().stream()
+                .flatMap(m -> m.elements().stream())
+                .anyMatch(e -> e instanceof Note n && !n.lyrics().isEmpty()), "expected lyrics on the vocal line");
     }
     }

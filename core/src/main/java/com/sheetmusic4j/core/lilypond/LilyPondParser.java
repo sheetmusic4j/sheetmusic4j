@@ -1666,14 +1666,10 @@ final class LilyPondParser {
             case "partCombine", "partcombine", "partCombineUp", "partCombineDown" -> {
                 LyMusic first = parseMusic(mode);
                 LyMusic second = parseMusic(mode);
-                List<LyMusic> voices = new ArrayList<>();
-                if (first != null) {
-                    voices.add(new LyMusic.Seq(List.of(new LyMusic.VoiceStyle(1), first)));
+                if (first == null || second == null) {
+                    return first != null ? first : second != null ? second : new LyMusic.Empty();
                 }
-                if (second != null) {
-                    voices.add(new LyMusic.Seq(List.of(new LyMusic.VoiceStyle(2), second)));
-                }
-                return new LyMusic.Sim(voices, true);
+                return new LyMusic.PartCombine(first, second);
             }
             case "skip" -> {
                 skipWhitespace();

@@ -651,7 +651,7 @@ final class LilyPondScoreAssembler {
                 for (List<Ev> lane : voiceLanes) {
                     Ev last = lane.get(lane.size() - 1);
                     if (last.start.equals(ev.start) && last.length.equals(ev.length) && last.isNote() && ev.isNote()) {
-                        mergeInto(last, ev);
+                        last.absorb(ev, false);
                         placed = true;
                         break;
                     }
@@ -670,20 +670,6 @@ final class LilyPondScoreAssembler {
             lanes.addAll(voiceLanes);
         }
         return lanes;
-    }
-
-    private static void mergeInto(Ev target, Ev other) {
-        int n = target.pitches.size();
-        target.pitches.addAll(other.pitches);
-        target.forcedAccidental.addAll(other.forcedAccidental);
-        boolean[] tieStart = java.util.Arrays.copyOf(target.tieStart, n + other.pitches.size());
-        boolean[] tieStop = java.util.Arrays.copyOf(target.tieStop, n + other.pitches.size());
-        System.arraycopy(other.tieStart, 0, tieStart, n, other.tieStart.length);
-        System.arraycopy(other.tieStop, 0, tieStop, n, other.tieStop.length);
-        target.tieStart = tieStart;
-        target.tieStop = tieStop;
-        target.articulations.addAll(other.articulations);
-        target.directions.addAll(other.directions);
     }
 
     /** Cut an event at bar lines, and each cut into notatable values. */

@@ -259,6 +259,26 @@ class LilyPondInterpretationTest {
     }
 
     @Test
+    void partCombineMergesUnisonsAndKeepsDifferencesApart() {
+        Part part = read("\\partCombine { c''4 e''4 r2 } { c''4 c''4 r2 }").parts().get(0);
+        List<MusicElement> elements = part.measures().get(0).elements();
+        // c'' in both parts: one note; e'' over c'': one chord; the shared rest: one rest.
+        assertEquals(1, elements.stream().filter(e -> e instanceof Note).count());
+        assertEquals(1, elements.stream().filter(e -> e instanceof Chord).count());
+        assertEquals(1, elements.stream().filter(e -> e instanceof Rest r && r.visible()).count());
+    }
+
+    @Test
+    void tempoHideNoteKeepsOnlyTheText() {
+        Measure m = read("{ \\set Score.tempoHideNote = ##t \\tempo \"Allegro\" 4 = 120 c'1 }")
+                .parts().get(0).measures().get(0);
+        assertTrue(m.elements().stream().anyMatch(e -> e instanceof Direction d
+                && d.type() instanceof DirectionType.Words));
+        assertFalse(m.elements().stream().anyMatch(e -> e instanceof Direction d
+                && d.type() instanceof DirectionType.Metronome));
+    }
+
+    @Test
     void includesFilesNextToTheScore(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("notes.ily"), "melody = { c'4 d' e' f' }\n");
         Path main = dir.resolve("main.ly");

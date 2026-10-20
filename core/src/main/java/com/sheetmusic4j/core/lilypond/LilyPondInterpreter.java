@@ -149,6 +149,46 @@ final class LilyPondInterpreter {
         boolean isNote() {
             return kind == Kind.NOTE;
         }
+
+        /**
+         * Take over another event's pitches (making this a chord) and
+         * markings; with {@code skipDuplicates}, pitches this event already
+         * has are not added twice.
+         */
+        void absorb(Ev other, boolean skipDuplicates) {
+            for (int i = 0; i < other.pitches.size(); i++) {
+                int midi = other.pitches.get(i).toMidiNumber();
+                int existing = -1;
+                for (int j = 0; j < pitches.size(); j++) {
+                    if (pitches.get(j).toMidiNumber() == midi) {
+                        existing = j;
+                    }
+                }
+                boolean otherTieStart = i < other.tieStart.length && other.tieStart[i];
+                boolean otherTieStop = i < other.tieStop.length && other.tieStop[i];
+                if (skipDuplicates && existing >= 0) {
+                    tieStart[existing] |= otherTieStart;
+                    tieStop[existing] |= otherTieStop;
+                    continue;
+                }
+                pitches.add(other.pitches.get(i));
+                forcedAccidental.add(i < other.forcedAccidental.size() && other.forcedAccidental.get(i));
+                tieStart = java.util.Arrays.copyOf(tieStart, pitches.size());
+                tieStop = java.util.Arrays.copyOf(tieStop, pitches.size());
+                tieStart[pitches.size() - 1] = otherTieStart;
+                tieStop[pitches.size() - 1] = otherTieStop;
+            }
+            for (Articulation a : other.articulations) {
+                if (!articulations.contains(a)) {
+                    articulations.add(a);
+                }
+            }
+            for (Direction d : other.directions) {
+                if (!directions.contains(d)) {
+                    directions.add(d);
+                }
+            }
+        }
     }
 
     /** Timeline facts that apply to the whole score. */
@@ -229,6 +269,8 @@ final class LilyPondInterpreter {
     private final List<LyricRequest> lyricRequests = new ArrayList<>();
     private final Deque<Ctx[]> voiceTrackers = new ArrayDeque<>();
     private final Map<LyMusic.Context, Ctx> precreated = new java.util.IdentityHashMap<>();
+    private final List<Ctx[]> partCombines = new ArrayList<>();
+    private boolean tempoHideNote;
     private Ctx lastVoice;
     private int rehearsalCounter;
     private int depth;
@@ -245,6 +287,7 @@ final class LilyPondInterpreter {
                 List.of());
         Fraction end = interpreter.walk(music, Fraction.ZERO, frame);
         interpreter.global.end = Fraction.max(interpreter.global.end, end);
+        interpreter.combineParts();
         interpreter.applyLyrics();
         // \global-style variables repeat tempo and marks in every voice: keep one.
         java.util.Set<Object> seen = new java.util.HashSet<>();
@@ -319,6 +362,24 @@ final class LilyPondInterpreter {
             }
             case LyMusic.Repeat repeat -> {
                 return walkRepeat(repeat, t, f);
+            }
+            case LyMusic.PartCombine combine -> {
+                Ctx staff = staffFor(f, true);
+                Ctx[] voices = new Ctx[2];
+                for (int i = 0; i < 2; i++) {
+                    String name = i == 0 ? "one" : "two";
+                    Ctx voice = findChild(staff, CtxKind.VOICE, name);
+                    if (voice == null) {
+                        voice = newContext(CtxKind.VOICE, "Voice", name, staff);
+                        voice.staff = staff;
+                    }
+                    voice.styleStemUp = i == 0;
+                    voices[i] = voice;
+                }
+                partCombines.add(voices);
+                Fraction first = walk(combine.first(), t, f.withCtx(voices[0]));
+                Fraction second = walk(combine.second(), t, f.withCtx(voices[1]));
+                return Fraction.max(first, second);
             }
             case LyMusic.Grace grace -> {
                 Frame inner = new Frame(f.ctx(), f.scale(), f.retype(), true, f.tuplets(), f.transposeSteps(),
@@ -841,7 +902,8 @@ final class LilyPondInterpreter {
                     global.directions.add(new TimedDirection(t, new Direction(
                             new DirectionType.Words(tempo.text(), false, true), Placement.ABOVE), null));
                 }
-                if (tempo.unit() != null && tempo.perMinute() > 0) {
+                // tempoHideNote: the metronome mark only sets the playback tempo.
+                if (tempo.unit() != null && tempo.perMinute() > 0 && !tempoHideNote) {
                     global.directions.add(new TimedDirection(t, new Direction(
                             new DirectionType.Metronome(tempo.unit(), tempo.dots() > 0, tempo.perMinute()),
                             Placement.ABOVE), null));
@@ -947,6 +1009,7 @@ final class LilyPondInterpreter {
                 }
             }
             case "associatedVoice" -> target.associatedVoice = text;
+            case "tempoHideNote" -> tempoHideNote = "##t".equals(text);
             case "hide.TupletNumber" -> target.hideTupletNumber = true;
             case "hide.TupletBracket" -> target.hideTupletBracket = true;
             case "Stem.direction" -> {
@@ -992,6 +1055,43 @@ final class LilyPondInterpreter {
             fifths += 12;
         }
         return new KeySignature(fifths);
+    }
+
+    // ----- part combining ------------------------------------------------------------------------
+
+    /**
+     * Merge {@code \partCombine}d parts where they move together: notes that
+     * start together with the same length become one chord (unisons once,
+     * stems free), rests in both become one rest. The rest stays apart as
+     * two voices, stems up and down.
+     */
+    private void combineParts() {
+        for (Ctx[] pair : partCombines) {
+            Ctx first = pair[0];
+            Ctx second = pair[1];
+            Map<Fraction, Ev> firstByStart = new java.util.HashMap<>();
+            for (Ev ev : first.events) {
+                firstByStart.putIfAbsent(ev.start, ev);
+            }
+            java.util.Iterator<Ev> it = second.events.iterator();
+            while (it.hasNext()) {
+                Ev ev = it.next();
+                Ev match = firstByStart.get(ev.start);
+                if (match == null || !match.length.equals(ev.length) || match.staff != ev.staff) {
+                    continue;
+                }
+                boolean bothNotes = match.isNote() && ev.isNote();
+                boolean bothRests = !match.isNote() && !ev.isNote() && match.kind != Ev.Kind.HIDDEN
+                        && ev.kind != Ev.Kind.HIDDEN;
+                if (bothNotes) {
+                    match.absorb(ev, true);
+                    match.stemUp = null;
+                    it.remove();
+                } else if (bothRests) {
+                    it.remove();
+                }
+            }
+        }
     }
 
     // ----- lyrics --------------------------------------------------------------------------------

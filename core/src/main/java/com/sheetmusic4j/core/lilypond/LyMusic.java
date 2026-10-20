@@ -65,6 +65,13 @@ sealed interface LyMusic {
     record Grace(LyMusic body) implements LyMusic {
     }
 
+    /**
+     * {@code \partCombine first second}: two parts on one staff, shown as
+     * chords where they move together and as two voices where they differ.
+     */
+    record PartCombine(LyMusic first, LyMusic second) implements LyMusic {
+    }
+
     /** {@code \keepWithTag} / {@code \removeWithTag}. */
     record TagFilter(Set<String> tags, boolean keep, LyMusic body) implements LyMusic {
     }

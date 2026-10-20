@@ -5,6 +5,9 @@ Each `.ly` file in this directory is a hand-authored snippet inspired by
 as an input fixture by the demo app so that the JavaFX viewer has real
 LilyPond source to open and render.
 
+`sesto.ily` is the music shared by the three `sesto-*.ly` scores (they `\include` it), taken unchanged from
+LilyPond's `Documentation/ly-examples/` in the LilyPond source repository.
+
 ## Sibling reference images
 
 The demo app (`SheetDemoApp` / `ImageSibling`) shows a companion image
