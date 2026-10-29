@@ -13,7 +13,8 @@ Sheetmusic4J requires **Java 21** or higher.
 
 | Module      | Description                                                                                                                                                     | JavaFX dependency |
 |-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|
-| `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, ABC, and LilyPond import/export | No                |
+| `core`      | Core music data model (`Score`, `Part`, `Measure`, `Note`, `Chord`, `Rest`, `Clef`, `KeySignature`, `TimeSignature`) plus MusicXML, MIDI, ABC, LilyPond and Guitar Pro import/export (Guitar Pro: import only) | No                |
+| `pdf`       | Reads *engraved* (vector) PDF sheet music exported by Finale or LilyPond into a `Score`, without optical music recognition; scans are not supported (uses Apache PDFBox) | No                |
 | `engraving` | Framework-agnostic layout engine that turns a `Score` into a positioned `LayoutResult` (staves, measures, glyph placements)                                     | No                |
 | `render`    | Toolkit-neutral drawing of a `LayoutResult` with a SMuFL-compliant music font                                                                                  | No                |
 | `render-awt` | Headless rendering to images through AWT (`AwtRenderSurface`, `HeadlessScoreImage`)                                                                           | No                |
@@ -30,9 +31,22 @@ renders, so you can point at something in a screenshot and know exactly which cl
 * Loading and saving of MusicXML 4.0 files, see https://www.musicxml.com/for-developers/
 * Importing and exporting MIDI files (`javax.sound.midi`)
 * Importing and exporting ABC music notation files (see https://abcnotation.com/)
+* Importing and exporting LilyPond files (see https://lilypond.org/)
+* Importing Guitar Pro 8 files
 * `ScoreFile` convenience facade that dispatches to the right reader/writer based on file extension (`.musicxml`,
-  `.xml`, `.mxl`, `.mid`, `.midi`, `.abc`)
+  `.xml`, `.mxl`, `.mid`, `.midi`, `.abc`, `.ly`, `.gp`, and `.pdf` when the `pdf` module is on the class or module path)
 * Testfiles from https://www.musicxml.com/music-in-musicxml/example-set/
+
+### PDF
+
+* Reads engraved PDFs, the kind notation software exports with the music as font glyphs and vector lines (so symbols can
+  be read straight from the page, no optical music recognition needed). Scanned PDFs are rejected with a `PdfException`
+* Supported music fonts: Maestro (Finale) and Emmentaler (LilyPond); other fonts need their own symbol table
+* Reads staves, clefs, key and time signatures, notes, chords, rests, dots, accidentals, stems, flags and beams for the
+  durations, ties, slurs, tuplets, dynamics, hairpins, barlines and system breaks
+* Not read yet: text and tempo marks, articulations, lyrics, and a second voice on a staff unless its stems point the
+  other way. Staves are matched to parts by position, so orchestral scores that drop resting staves can mix parts up
+* Registered as a `ScoreFormat` service, so `ScoreFile.load(path)` handles `.pdf` once the module is on the path
 
 ### Engraving
 
@@ -56,9 +70,11 @@ renders, so you can point at something in a screenshot and know exactly which cl
 
 ### FX Demo
 
-* Opens MusicXML/MIDI/ABC/LilyPond files and displays a debug/inspection pane alongside the rendered score
+* Opens MusicXML/MIDI/ABC/LilyPond/Guitar Pro files and engraved PDFs, and displays a debug/inspection pane alongside
+  the rendered score
 * Shows a companion PDF side-by-side (via [pdfviewfx](https://github.com/dlsc-software-consulting-gmbh/PDFViewFX)) when
-  one exists next to the loaded file with the same base name
+  one exists next to the loaded file with the same base name; a loaded engraved PDF is shown as its own reference, to
+  compare the JavaFX rendering with the original
 * "Report Visual Issue..." button to capture rendering problems, see [CONTRIBUTING.md](CONTRIBUTING.md)
 * `StripDemoApp` and `FlyOverDemoApp` showcase the one-line strip view and the 3D fly-over view, with play/pause,
   tempo, and position controls
@@ -89,5 +105,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for a tour of the demo app and how to rep
 
 ## Status
 
-Module structure, domain model, MusicXML/MIDI/ABC/LilyPond I/O, layout engine, JavaFX rendering, and the demo app are in place;
+Module structure, domain model, MusicXML/MIDI/ABC/LilyPond/Guitar Pro I/O, engraved PDF import, layout engine, JavaFX rendering, and the demo app are in place;
 rendering fidelity and format coverage are still being expanded.

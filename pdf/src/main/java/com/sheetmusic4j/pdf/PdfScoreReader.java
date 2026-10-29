@@ -50,7 +50,7 @@ public final class PdfScoreReader implements ScoreReader {
             recognizer.parts().forEach(score::addPart);
             return score.build();
         } catch (IOException e) {
-            throw new PdfException("Could not read the PDF", e);
+            throw new PdfException("Could not read the PDF: " + e.getMessage(), e);
         }
     }
 }

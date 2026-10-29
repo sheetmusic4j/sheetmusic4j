@@ -20,7 +20,6 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.util.Matrix;
 import org.apache.pdfbox.util.Vector;
 
-import com.sheetmusic4j.pdf.PdfException;
 import com.sheetmusic4j.pdf.extract.PageContent.Box;
 import com.sheetmusic4j.pdf.extract.PageContent.Glyph;
 import com.sheetmusic4j.pdf.extract.PageContent.HLine;
@@ -57,14 +56,14 @@ public final class PageExtractor extends PDFGraphicsStreamEngine {
     /**
      * Extract one page.
      *
-     * @throws PdfException when the content stream cannot be interpreted
+     * @throws IOException when the content stream cannot be interpreted
      */
-    public static PageContent extract(PDPage page, int index) {
+    public static PageContent extract(PDPage page, int index) throws IOException {
         PageExtractor extractor = new PageExtractor(page);
         try {
             extractor.processPage(page);
         } catch (IOException | RuntimeException e) {
-            throw new PdfException("Could not read page " + (index + 1), e);
+            throw new IOException("Could not read page " + (index + 1), e);
         }
         return new PageContent(index, page.getMediaBox().getWidth(), extractor.height, extractor.glyphs,
                 extractor.hlines, extractor.vlines, extractor.diagonals, extractor.beams, extractor.curves);

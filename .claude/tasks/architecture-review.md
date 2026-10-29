@@ -14,7 +14,7 @@ All modules must be green before you start, so later failures are yours.
 ## 2. Module dependencies (Maven + JPMS)
 
 ```shell
-for m in core engraving render render-awt fxviewer fxdemo; do
+for m in core pdf engraving render render-awt fxviewer fxdemo; do
   echo "== $m"
   cat $m/src/main/java/module-info.java 2>/dev/null
   sed -n '/<dependencies>/,/<\/dependencies>/p' $m/pom.xml | grep -E 'artifactId|scope'
@@ -23,16 +23,17 @@ done
 
 Check:
 
-- Every library module (`core`, `engraving`, `render`, `render-awt`, `fxviewer`) has a `module-info.java`.
-- Dependencies only point down the build order: `core` → `engraving` → `render` → `render-awt` / `fxviewer` → `fxdemo`.
+- Every library module (`core`, `pdf`, `engraving`, `render`, `render-awt`, `fxviewer`) has a `module-info.java`.
+- Dependencies only point down the build order: `core` → `pdf` (a read-only format on top of `core`, used by `fxdemo`) and
+  `core` → `engraving` → `render` → `render-awt` / `fxviewer` → `fxdemo`. Nothing but `fxdemo` depends on `pdf`.
 - `requires transitive` is only used for modules whose types appear in the exported API (e.g. `render-awt` exposes
   `BufferedImage`, so it needs `java.desktop` transitively; `render` must not).
-- Only `core` (for `javax.sound.midi`) and `render-awt` require `java.desktop`.
+- Only `core` (for `javax.sound.midi`), `pdf` (for `java.awt.geom` shapes) and `render-awt` require `java.desktop`.
 
 ## 3. Imports that cross layers
 
 ```shell
-for m in core engraving render render-awt fxviewer fxdemo; do
+for m in core pdf engraving render render-awt fxviewer fxdemo; do
   echo "== $m"
   grep -rhoE '^import (static )?(com\.sheetmusic4j\.[a-z]+(\.[a-z]+)?|javafx\.[a-z]+|java\.awt|javax\.[a-z]+)' \
     $m/src/main/java | sed 's/import static /import /' | sort | uniq -c | sort -rn
@@ -41,8 +42,8 @@ done
 
 Check:
 
-- No `javafx.*` in `core`, `engraving`, `render`, `render-awt`.
-- No `java.awt` in `core`, `engraving`, `render` (a `{@code java.awt...}` mention in Javadoc is fine; a `{@link}` is not,
+- No `javafx.*` in `core`, `pdf`, `engraving`, `render`, `render-awt`.
+- No `java.awt` in `core`, `engraving`, `render` (`pdf` may use `java.awt.geom` for outline bounds only; a `{@code java.awt...}` mention in Javadoc is fine; a `{@link}` is not,
   because it needs the module).
 - `fxviewer` only draws through `ScorePainter` / a `RenderSurface`; direct `GraphicsContext` use is limited to canvas
   transforms and JavaFX-only effects. `grep -n 'GraphicsContext' fxviewer/src/main/java -r`
@@ -59,6 +60,11 @@ C=core/src/main/java/com/sheetmusic4j/core
 for p in model io musicxml midi abc guitarpro internal; do
   echo "$p ->" $(grep -rhoE '^import com\.sheetmusic4j\.core\.[a-z]+' $C/$p \
     | sed 's/import com.sheetmusic4j.core.//' | sort -u | grep -v "^$p$" | tr '\n' ' ')
+done
+D=pdf/src/main/java/com/sheetmusic4j/pdf
+for p in extract symbol recognize; do
+  echo "$p ->" $(grep -rhoE '^import com\.sheetmusic4j\.pdf(\.[a-z]+)?' $D/$p \
+    | sed -E 's/import com\.sheetmusic4j\.pdf\.?//' | sort -u | grep -v "^$p$" | tr '\n' ' ')
 done
 ```
 
