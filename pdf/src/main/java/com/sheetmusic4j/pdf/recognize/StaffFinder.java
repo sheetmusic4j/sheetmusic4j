@@ -6,7 +6,6 @@ import java.util.List;
 
 import com.sheetmusic4j.pdf.extract.PageContent;
 import com.sheetmusic4j.pdf.extract.PageContent.HLine;
-import com.sheetmusic4j.pdf.extract.PageContent.VLine;
 
 /**
  * Finds staves as runs of exactly five equally spaced long horizontal lines, and groups them into systems.

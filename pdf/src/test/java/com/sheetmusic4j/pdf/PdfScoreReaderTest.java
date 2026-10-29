@@ -8,6 +8,9 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -172,9 +175,9 @@ class PdfScoreReaderTest {
                 continue;
             }
             if (wedge.type() == DirectionType.WedgeType.STOP) {
-                assertTrue(open.remove(wedge.number()) != null, "a stop without a start for number " + wedge.number());
+                assertNotNull(open.remove(wedge.number()), "a stop without a start for number " + wedge.number());
             } else {
-                assertTrue(open.put(wedge.number(), wedge.type()) == null, "a start replaces an open wedge");
+                assertNull(open.put(wedge.number(), wedge.type()), "a start replaces an open wedge");
             }
         }
         assertTrue(open.isEmpty(), "wedges left open: " + open);
@@ -191,7 +194,7 @@ class PdfScoreReaderTest {
         assertEquals(List.of(DirectionType.WedgeType.CRESCENDO, DirectionType.WedgeType.DIMINUENDO,
                 DirectionType.WedgeType.STOP, DirectionType.WedgeType.STOP),
                 wedges.stream().map(DirectionType.Wedge::type).toList());
-        assertTrue(wedges.get(0).number() != wedges.get(1).number(), "overlapping wedges need different numbers");
+        assertNotEquals(wedges.get(0).number(), wedges.get(1).number(), "overlapping wedges need different numbers");
         assertEquals(wedges.get(0).number(), wedges.get(2).number(), "the first stop closes the crescendo");
         assertEquals(wedges.get(1).number(), wedges.get(3).number(), "the second stop closes the diminuendo");
     }

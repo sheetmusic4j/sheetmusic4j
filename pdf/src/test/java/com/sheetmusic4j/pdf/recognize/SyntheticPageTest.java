@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import com.sheetmusic4j.core.model.Attributes;
 import com.sheetmusic4j.core.model.ClefSign;
 import com.sheetmusic4j.core.model.Measure;
-import com.sheetmusic4j.core.model.MusicElement;
 import com.sheetmusic4j.core.model.Note;
 import com.sheetmusic4j.core.model.NoteType;
 import com.sheetmusic4j.core.model.Part;

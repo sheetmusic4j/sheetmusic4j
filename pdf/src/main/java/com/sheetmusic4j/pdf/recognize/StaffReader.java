@@ -98,21 +98,31 @@ public final class StaffReader {
         List<Bar> bars = barlines(heads);
         List<VLine> stems = stems(bars);
         List<Measure> measures = new ArrayList<>();
-        double start = staff.x0();
-        for (int i = 0; i <= bars.size(); i++) {
-            Bar bar = i < bars.size() ? bars.get(i) : null;
-            double end = bar == null ? staff.x1() + 2 : bar.first;
-            boolean trailingSpace = bar == null && end - start < 3 * space;
-            if (!trailingSpace) {
-                double from = start;
-                List<Mark> inside = marks.stream().filter(m -> m.cx() > from && m.cx() <= end)
-                        .sorted(Comparator.comparingDouble(Mark::cx)).toList();
-                measures.add(readMeasure(firstNumber + measures.size(), inside, stems, i == 0 && systemBreak,
-                        bar == null ? null : bar.style, from, end));
-                start = bar == null ? start : bar.last;
-            }
+        for (Span span : spans(bars)) {
+            List<Mark> inside = marks.stream().filter(m -> m.cx() > span.from && m.cx() <= span.end)
+                    .sorted(Comparator.comparingDouble(Mark::cx)).toList();
+            measures.add(readMeasure(firstNumber + measures.size(), inside, stems, measures.isEmpty() && systemBreak,
+                    span.closing, span.from, span.end));
         }
         return measures;
+    }
+
+    /** The stretch of the staff one measure takes: from the previous bar to the one that closes it. */
+    private record Span(double from, double end, Barline closing) {
+    }
+
+    /** One span per bar, and one for what follows the last bar unless that is only white space. */
+    private List<Span> spans(List<Bar> bars) {
+        List<Span> spans = new ArrayList<>();
+        double start = staff.x0();
+        for (Bar bar : bars) {
+            spans.add(new Span(start, bar.first, bar.style));
+            start = bar.last;
+        }
+        if (staff.x1() + 2 - start >= 3 * space) {
+            spans.add(new Span(start, staff.x1() + 2, null));
+        }
+        return spans;
     }
 
     // ---- barlines -----------------------------------------------------------------------------------------------
@@ -324,7 +334,7 @@ public final class StaffReader {
     }
 
     private Clef clefOf(Mark m) {
-        int line = Math.clamp(staff.stepAt(m.oy()) / 2 + 1, 1, 5);
+        int line = Math.clamp(staff.stepAt(m.oy()) / 2L + 1, 1, 5);
         return switch (m.symbol().value()) {
             case Symbol.F_CLEF -> new Clef(ClefSign.F, line);
             case Symbol.C_CLEF -> new Clef(ClefSign.C, line);
@@ -608,6 +618,157 @@ public final class StaffReader {
                 return builder.build();
             });
         }
+
+        /** Group heads into chords: by shared stem, else by column. */
+        private List<Group> groups(List<Mark> heads, List<VLine> stems) {
+            List<Group> groups = new ArrayList<>();
+            Map<VLine, Group> byStem = new HashMap<>();
+            List<Group> stemless = new ArrayList<>();
+            for (Mark head : heads) {
+                VLine stem = stemFor(head, stems);
+                Group group = stem != null ? byStem.get(stem) : columnGroup(stemless, head);
+                if (group == null) {
+                    group = new Group(new ArrayList<>(), stem, stem != null && isUp(stem, head));
+                    groups.add(group);
+                    if (stem != null) {
+                        byStem.put(stem, group);
+                    } else {
+                        stemless.add(group);
+                    }
+                }
+                group.heads.add(head);
+            }
+            for (Group group : groups) {
+                if (group.stem != null && group.heads.get(0).symbol().value() == Symbol.FILLED) {
+                    group.beams = beamsAt(group.stem, group.up);
+                }
+            }
+            return groups;
+        }
+
+        private VLine stemFor(Mark head, List<VLine> stems) {
+            VLine best = null;
+            double bestDistance = Double.MAX_VALUE;
+            for (VLine v : stems) {
+                double d = Math.min(Math.abs(v.x() - head.left()), Math.abs(v.x() - head.right()));
+                boolean alongStem = head.cy() >= v.y0() - 0.5 * space && head.cy() <= v.y1() + 0.5 * space;
+                if (alongStem && d <= 0.4 * space && d < bestDistance) {
+                    best = v;
+                    bestDistance = d;
+                }
+            }
+            return best;
+        }
+
+        private static boolean isUp(VLine stem, Mark head) {
+            return Math.abs(head.cy() - stem.y1()) < Math.abs(head.cy() - stem.y0());
+        }
+
+        /** Stemless heads (whole notes) stack in a column; a second sits one head width aside. */
+        private Group columnGroup(List<Group> groups, Mark head) {
+            for (Group group : groups) {
+                Mark other = group.heads.get(0);
+                double dx = Math.abs(other.cx() - head.cx());
+                int dStep = Math.abs(staff.stepAt(other.cy()) - staff.stepAt(head.cy()));
+                if (dx < 0.3 * space || (dx < 1.2 * head.width() && dStep <= 1)) {
+                    return group;
+                }
+            }
+            return null;
+        }
+
+        private int flagsFor(VLine stem, boolean up, List<Mark> flags) {
+            if (stem == null) {
+                return 0;
+            }
+            double end = up ? stem.y0() : stem.y1();
+            int count = 0;
+            for (Mark flag : flags) {
+                boolean nearX = Math.abs(flag.left() - stem.x()) < 0.6 * space || Math.abs(flag.glyph().x() - stem.x()) < 0.6 * space;
+                boolean nearY = flag.cy() > end - 2.8 * space && flag.cy() < end + 2.8 * space;
+                if (nearX && nearY) {
+                    count = Math.max(count, flag.symbol().value());
+                }
+            }
+            return count;
+        }
+
+        /**
+         * The beams a stem is attached to, the outermost (widest) first. A beam level is a filled polygon that covers
+         * the stem's x and its tip; partial beams (hooks) are short polygons that only reach the one stem.
+         */
+        private List<Box> beamsAt(VLine stem, boolean up) {
+            double end = up ? stem.y0() : stem.y1();
+            List<Box> found = new ArrayList<>();
+            for (Box beam : page.beams()) {
+                boolean beamShape = beam.width() >= 0.6 * space && beam.height() <= 2.5 * space;
+                boolean holdsStem = stem.x() >= beam.left() - 0.3 && stem.x() <= beam.right() + 0.3 && beamAlongStem(beam, end, up);
+                if (beamShape && holdsStem && found.stream().noneMatch(b -> same(b, beam))) {
+                    found.add(beam);
+                }
+            }
+            found.sort(Comparator.comparingDouble((Box b) -> -Math.round(b.width() * 2) / 2.0)
+                    .thenComparingDouble(b -> Math.abs(b.centerY() - end)));
+            return found;
+        }
+
+        /**
+         * Whether a beam lies along the stem near its tip: not beyond the tip, and no further in than a few beam levels.
+         * Secondary beams sit inside the primary one, so they do not touch the tip itself.
+         */
+        private boolean beamAlongStem(Box beam, double end, boolean up) {
+            return up ? beam.bottom() >= end - 0.4 * space && beam.top() <= end + 2.2 * space
+                    : beam.top() <= end + 0.4 * space && beam.bottom() >= end - 2.2 * space;
+        }
+
+        /** Beam states per group and level: the first stem under a polygon begins it, the last ends it. */
+        private static void assignBeams(List<Group> groups) {
+            for (Group group : groups) {
+                for (int level = 1; level <= group.beams.size(); level++) {
+                    Box box = group.beams.get(level - 1);
+                    List<Group> members = groups.stream()
+                            .filter(o -> o.beams.stream().anyMatch(b -> same(b, box)))
+                            .sorted(Comparator.comparingDouble(Group::x)).toList();
+                    group.beamStates.add(new Beam(level, beamState(group, box, members)));
+                }
+            }
+        }
+
+        private static Beam.State beamState(Group group, Box box, List<Group> members) {
+            if (members.size() < 2) {
+                return box.centerX() > group.stem.x() ? Beam.State.FORWARD_HOOK : Beam.State.BACKWARD_HOOK;
+            }
+            if (members.get(0) == group) {
+                return Beam.State.BEGIN;
+            }
+            return members.get(members.size() - 1) == group ? Beam.State.END : Beam.State.CONTINUE;
+        }
+
+        /** Dots following a head or rest: the first close to it, each further one close to the one before. */
+        private int dotsAfter(double right, int step, int stepTolerance, List<Mark> dots) {
+            int count = 0;
+            double x = right;
+            Mark next = nextDot(x, count, step, stepTolerance, dots);
+            while (next != null) {
+                count++;
+                x = next.cx();
+                next = nextDot(x, count, step, stepTolerance, dots);
+            }
+            return count;
+        }
+
+        private Mark nextDot(double x, int count, int step, int stepTolerance, List<Mark> dots) {
+            Mark next = null;
+            for (Mark dot : dots) {
+                double gap = dot.cx() - x;
+                if (gap > 0.05 * space && gap < (count == 0 ? 2.6 : 1.4) * space
+                        && Math.abs(staff.stepAt(dot.oy()) - step) <= stepTolerance
+                        && (next == null || dot.cx() < next.cx())) {
+                    next = dot;
+                }
+            }
+            return next;
+        }
     }
 
     /** A single note, or a chord when several heads share the stem. */
@@ -641,160 +802,9 @@ public final class StaffReader {
         return base + step - 2 * (clef.line() - 1);
     }
 
-    /** Group heads into chords: by shared stem, else by column. */
-    private List<Group> groups(List<Mark> heads, List<VLine> stems) {
-        List<Group> groups = new ArrayList<>();
-        Map<VLine, Group> byStem = new HashMap<>();
-        List<Group> stemless = new ArrayList<>();
-        for (Mark head : heads) {
-            VLine stem = stemFor(head, stems);
-            Group group = stem != null ? byStem.get(stem) : columnGroup(stemless, head);
-            if (group == null) {
-                group = new Group(new ArrayList<>(), stem, stem != null && isUp(stem, head));
-                groups.add(group);
-                if (stem != null) {
-                    byStem.put(stem, group);
-                } else {
-                    stemless.add(group);
-                }
-            }
-            group.heads.add(head);
-        }
-        for (Group group : groups) {
-            if (group.stem != null && group.heads.get(0).symbol().value() == Symbol.FILLED) {
-                group.beams = beamsAt(group.stem, group.up);
-            }
-        }
-        return groups;
-    }
-
-    private VLine stemFor(Mark head, List<VLine> stems) {
-        VLine best = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (VLine v : stems) {
-            double d = Math.min(Math.abs(v.x() - head.left()), Math.abs(v.x() - head.right()));
-            boolean alongStem = head.cy() >= v.y0() - 0.5 * space && head.cy() <= v.y1() + 0.5 * space;
-            if (alongStem && d <= 0.4 * space && d < bestDistance) {
-                best = v;
-                bestDistance = d;
-            }
-        }
-        return best;
-    }
-
-    private static boolean isUp(VLine stem, Mark head) {
-        return Math.abs(head.cy() - stem.y1()) < Math.abs(head.cy() - stem.y0());
-    }
-
-    /** Stemless heads (whole notes) stack in a column; a second sits one head width aside. */
-    private Group columnGroup(List<Group> groups, Mark head) {
-        for (Group group : groups) {
-            Mark other = group.heads.get(0);
-            double dx = Math.abs(other.cx() - head.cx());
-            int dStep = Math.abs(staff.stepAt(other.cy()) - staff.stepAt(head.cy()));
-            if (dx < 0.3 * space || (dx < 1.2 * head.width() && dStep <= 1)) {
-                return group;
-            }
-        }
-        return null;
-    }
-
-    private int flagsFor(VLine stem, boolean up, List<Mark> flags) {
-        if (stem == null) {
-            return 0;
-        }
-        double end = up ? stem.y0() : stem.y1();
-        int count = 0;
-        for (Mark flag : flags) {
-            boolean nearX = Math.abs(flag.left() - stem.x()) < 0.6 * space || Math.abs(flag.glyph().x() - stem.x()) < 0.6 * space;
-            boolean nearY = flag.cy() > end - 2.8 * space && flag.cy() < end + 2.8 * space;
-            if (nearX && nearY) {
-                count = Math.max(count, flag.symbol().value());
-            }
-        }
-        return count;
-    }
-
-    /**
-     * The beams a stem is attached to, the outermost (widest) first. A beam level is a filled polygon that covers
-     * the stem's x and its tip; partial beams (hooks) are short polygons that only reach the one stem.
-     */
-    private List<Box> beamsAt(VLine stem, boolean up) {
-        double end = up ? stem.y0() : stem.y1();
-        List<Box> found = new ArrayList<>();
-        for (Box beam : page.beams()) {
-            boolean beamShape = beam.width() >= 0.6 * space && beam.height() <= 2.5 * space;
-            boolean holdsStem = stem.x() >= beam.left() - 0.3 && stem.x() <= beam.right() + 0.3 && beamAlongStem(beam, end, up);
-            if (beamShape && holdsStem && found.stream().noneMatch(b -> same(b, beam))) {
-                found.add(beam);
-            }
-        }
-        found.sort(Comparator.comparingDouble((Box b) -> -Math.round(b.width() * 2) / 2.0)
-                .thenComparingDouble(b -> Math.abs(b.centerY() - end)));
-        return found;
-    }
-
-    /**
-     * Whether a beam lies along the stem near its tip: not beyond the tip, and no further in than a few beam levels.
-     * Secondary beams sit inside the primary one, so they do not touch the tip itself.
-     */
-    private boolean beamAlongStem(Box beam, double end, boolean up) {
-        return up ? beam.bottom() >= end - 0.4 * space && beam.top() <= end + 2.2 * space
-                : beam.top() <= end + 0.4 * space && beam.bottom() >= end - 2.2 * space;
-    }
-
-    /** Beam states per group and level: the first stem under a polygon begins it, the last ends it. */
-    private static void assignBeams(List<Group> groups) {
-        for (Group group : groups) {
-            for (int level = 1; level <= group.beams.size(); level++) {
-                Box box = group.beams.get(level - 1);
-                List<Group> members = groups.stream()
-                        .filter(o -> o.beams.stream().anyMatch(b -> same(b, box)))
-                        .sorted(Comparator.comparingDouble(Group::x)).toList();
-                group.beamStates.add(new Beam(level, beamState(group, box, members)));
-            }
-        }
-    }
-
-    private static Beam.State beamState(Group group, Box box, List<Group> members) {
-        if (members.size() < 2) {
-            return box.centerX() > group.stem.x() ? Beam.State.FORWARD_HOOK : Beam.State.BACKWARD_HOOK;
-        }
-        if (members.get(0) == group) {
-            return Beam.State.BEGIN;
-        }
-        return members.get(members.size() - 1) == group ? Beam.State.END : Beam.State.CONTINUE;
-    }
-
     private static boolean same(Box a, Box b) {
         return Math.abs(a.left() - b.left()) < 0.3 && Math.abs(a.right() - b.right()) < 0.3
                 && Math.abs(a.top() - b.top()) < 0.3 && Math.abs(a.bottom() - b.bottom()) < 0.3;
-    }
-
-    /** Dots following a head or rest: the first close to it, each further one close to the one before. */
-    private int dotsAfter(double right, int step, int stepTolerance, List<Mark> dots) {
-        int count = 0;
-        double x = right;
-        Mark next = nextDot(x, count, step, stepTolerance, dots);
-        while (next != null) {
-            count++;
-            x = next.cx();
-            next = nextDot(x, count, step, stepTolerance, dots);
-        }
-        return count;
-    }
-
-    private Mark nextDot(double x, int count, int step, int stepTolerance, List<Mark> dots) {
-        Mark next = null;
-        for (Mark dot : dots) {
-            double gap = dot.cx() - x;
-            if (gap > 0.05 * space && gap < (count == 0 ? 2.6 : 1.4) * space
-                    && Math.abs(staff.stepAt(dot.oy()) - step) <= stepTolerance
-                    && (next == null || dot.cx() < next.cx())) {
-                next = dot;
-            }
-        }
-        return next;
     }
 
     // ---- dynamics and wedges ------------------------------------------------------------------------------------
@@ -1068,7 +1078,11 @@ public final class StaffReader {
             Item item = items.get(start + k);
             item.actual = n;
             item.normal = NORMAL[n];
-            item.edge = k == 0 ? Tuplet.Type.START : k == n - 1 ? Tuplet.Type.STOP : null;
+            if (k == 0) {
+                item.edge = Tuplet.Type.START;
+            } else if (k == n - 1) {
+                item.edge = Tuplet.Type.STOP;
+            }
         }
     }
 

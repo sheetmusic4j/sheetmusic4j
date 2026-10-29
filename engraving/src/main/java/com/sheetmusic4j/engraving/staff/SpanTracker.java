@@ -105,7 +105,7 @@ public final class SpanTracker {
 
     /** Where an incoming half arc starts: the front of the notes, or three gaps before the note if that is closer. */
     private double incomingX(double noteX) {
-        return Math.max(staffStartX, Math.min(contentStartX, noteX - gap * INCOMING_ARC_GAPS));
+        return Math.clamp(noteX - gap * INCOMING_ARC_GAPS, staffStartX, contentStartX);
     }
 
     private static boolean slurCurvesUp(Placement placement, int staffStep) {
