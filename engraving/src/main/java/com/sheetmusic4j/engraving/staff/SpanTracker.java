@@ -25,8 +25,10 @@ import static com.sheetmusic4j.engraving.staff.StaffGeometry.MIDDLE_LINE_STAFF_S
  * brackets. Each kind opens at one element and closes at a later one, so
  * the tracker keeps the open runs and emits a placement when a run closes.
  * Beams and tuplets are matched within their own voice, since MusicXML
- * numbers them per voice. Runs still open at the end of the row are
- * dropped.
+ * numbers them per voice. A tie or slur still open at the end of a row that
+ * continues in the next one is drawn as a half arc to the end of the staff, and
+ * the closing note in that next row gets the other half from the start of the
+ * staff. Other runs still open at the end of the row are dropped.
  */
 public final class SpanTracker {
 
@@ -36,7 +38,18 @@ public final class SpanTracker {
      */
     public static final double TUPLET_ABOVE_GAP = 2.0;
 
+    /**
+     * How far (in staff-line gaps) from the start of a row a closing tie may be and still count as the continuation
+     * of one from the previous row, rather than a stop with no start at all.
+     */
+    private static final double TIE_REACH_GAPS = 12;
+
+    /** The length (in staff-line gaps) an incoming half arc has at least, when its note is close to the clef and key. */
+    private static final double INCOMING_ARC_GAPS = 3;
+
     private final double gap;
+    private double staffStartX = Double.NaN;
+    private double contentStartX = Double.NaN;
 
     private final List<BeamPlacement> beams = new ArrayList<>();
     private final List<TiePlacement> ties = new ArrayList<>();
@@ -50,6 +63,58 @@ public final class SpanTracker {
 
     public SpanTracker(double gap) {
         this.gap = gap;
+    }
+
+    /**
+     * Tell the tracker the row continues the previous one, so a tie or slur that closes without having opened in
+     * this row is drawn as a half arc that comes in from the left.
+     *
+     * @param staffX   x of the start of the staff
+     * @param contentX x where the notes can begin, after the clef and key signature
+     */
+    public void continuesFromPreviousRow(double staffX, double contentX) {
+        this.staffStartX = staffX;
+        this.contentStartX = contentX;
+    }
+
+    /**
+     * Tell the tracker the row is continued by the next one: every tie and slur still open is drawn as a half arc to
+     * {@code endX}, the end of the staff, and the next row draws the rest.
+     */
+    public void continuesInNextRow(double endX) {
+        for (PlacedNote start : tieCandidates.values()) {
+            double y = start.y() + tieShift(start.staffStep());
+            ties.add(new TiePlacement(start.x() + gap * 0.5, y, endX, y, start.staffStep() < MIDDLE_LINE_STAFF_STEP));
+        }
+        tieCandidates.clear();
+        for (SlurStart start : slurCandidates.values()) {
+            boolean curveUp = slurCurvesUp(start.placement, start.staffStep);
+            double y = start.y + (curveUp ? -gap * 0.8 : gap * 0.8);
+            slurs.add(new SlurPlacement(start.x + gap * 0.5, y, endX, y, curveUp, curveUp ? start.minY : start.maxY));
+        }
+        slurCandidates.clear();
+    }
+
+    private double tieShift(int staffStep) {
+        return staffStep < MIDDLE_LINE_STAFF_STEP ? -gap * 0.8 : gap * 0.8;
+    }
+
+    private boolean continuesFromPrevious() {
+        return !Double.isNaN(contentStartX);
+    }
+
+    /** Where an incoming half arc starts: the front of the notes, or three gaps before the note if that is closer. */
+    private double incomingX(double noteX) {
+        return Math.clamp(noteX - gap * INCOMING_ARC_GAPS, staffStartX, contentStartX);
+    }
+
+    private static boolean slurCurvesUp(Placement placement, int staffStep) {
+        return switch (placement) {
+            case ABOVE -> true;
+            case BELOW -> false;
+            // Opposite the stem side (see the tie curveUp in tie()).
+            case DEFAULT -> staffStep < MIDDLE_LINE_STAFF_STEP;
+        };
     }
 
     public List<BeamPlacement> beams() {
@@ -116,10 +181,13 @@ public final class SpanTracker {
                 double startY = start.y() + yShift;
                 double endY = y + yShift;
                 ties.add(new TiePlacement(start.x() + gap * 0.5, startY, noteX - gap * 0.5, endY, curveUp));
+            } else if (continuesFromPrevious() && noteX - contentStartX <= gap * TIE_REACH_GAPS) {
+                double endY = y + tieShift(staffStep);
+                ties.add(new TiePlacement(incomingX(noteX), endY, noteX - gap * 0.5, endY, staffStep < MIDDLE_LINE_STAFF_STEP));
             }
         }
         if (note.tieStart()) {
-            tieCandidates.put(key, new PlacedNote(noteX, y));
+            tieCandidates.put(key, new PlacedNote(noteX, y, staffStep));
         }
     }
 
@@ -147,19 +215,18 @@ public final class SpanTracker {
                     // is wrong for a slur spanning notes of varying pitch -
                     // it can bend the curve back into the very notes it
                     // spans instead of arcing clear of them.
-                    boolean curveUp = switch (start.placement) {
-                        case ABOVE -> true;
-                        case BELOW -> false;
-                        // Opposite the stem side (see the tie curveUp above).
-                        case DEFAULT -> staffStep < MIDDLE_LINE_STAFF_STEP;
-                    };
+                    boolean curveUp = slurCurvesUp(start.placement, staffStep);
                     double yShift = curveUp ? -gap * 0.8 : gap * 0.8;
                     double clearY = curveUp ? start.minY : start.maxY;
                     slurs.add(new SlurPlacement(start.x + gap * 0.5, start.y + yShift,
                             noteX - gap * 0.5, y + yShift, curveUp, clearY));
+                } else if (continuesFromPrevious()) {
+                    boolean curveUp = slurCurvesUp(slur.placement(), staffStep);
+                    double endY = y + (curveUp ? -gap * 0.8 : gap * 0.8);
+                    slurs.add(new SlurPlacement(incomingX(noteX), endY, noteX - gap * 0.5, endY, curveUp, y));
                 }
             } else {
-                slurCandidates.put(slur.number(), new SlurStart(noteX, y, slur.placement()));
+                slurCandidates.put(slur.number(), new SlurStart(noteX, y, staffStep, slur.placement()));
             }
         }
     }
@@ -220,7 +287,7 @@ public final class SpanTracker {
     private record BeamRun(double startX, double startY, boolean stemUp) {
     }
 
-    private record PlacedNote(double x, double y) {
+    private record PlacedNote(double x, double y, int staffStep) {
     }
 
     /**
@@ -232,13 +299,15 @@ public final class SpanTracker {
     private static final class SlurStart {
         final double x;
         final double y;
+        final int staffStep;
         final Placement placement;
         double minY;
         double maxY;
 
-        SlurStart(double x, double y, Placement placement) {
+        SlurStart(double x, double y, int staffStep, Placement placement) {
             this.x = x;
             this.y = y;
+            this.staffStep = staffStep;
             this.placement = placement;
             this.minY = y;
             this.maxY = y;

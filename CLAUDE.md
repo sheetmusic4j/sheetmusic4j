@@ -33,6 +33,17 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    readers fill a voice's gaps with invisible rests (`Rest.visible() == false`). `MeasureTiming` computes exact
    element onsets (`Fraction`, never `double`, so tuplets don't drift) and is shared by MIDI/MusicXML export and
    engraving. **No JavaFX dependency.** JPMS module `com.sheetmusic4j.core`.
+   **Engraved PDF** is read by the separate `pdf` module (JPMS `com.sheetmusic4j.pdf`, depends on PDFBox so it stays out
+   of `core`; registered as a `ScoreFormat` service like the others, load only). Notation programs export the music as
+   font glyphs plus vector lines, so no OMR is needed: `extract` turns a page into glyphs/lines/polygons, `symbol`
+   maps font glyphs to symbols (Maestro = Finale by character, Emmentaler = LilyPond by glyph name; one table per
+   font), `recognize` finds staves/systems and reads each staff into measures (pitch from height on the staff,
+   duration from head + stem + flags/beams + dots, chords by shared stem, barlines split measures). Scans and
+   unsupported fonts throw `PdfException`. Beams (polygons shared by stems), ties/slurs (curves between two heads) and
+   tuplets (a lone digit centred over n items) are read too, as are dynamics (Maestro glyphs; Emmentaler letters that touch)
+   and hairpins (two thin slanted lines meeting in a point, `Hairpin`). Not yet: text, tempo, articulations; a second voice
+   is only found by opposite stem directions; staves are matched to parts by position, so orchestral scores that
+   drop staves can mix parts up.
 2. **`engraving`** — pure layout engine. `Engraver.layout(Score, LayoutOptions)` walks parts/measures and produces a
    `LayoutResult` (`SystemLayout` → `StaffLayout` → `MeasureLayout`/`GlyphPlacement`) as plain doubles + a
    renderer-agnostic `Glyph` enum. No JavaFX, no I/O — this is what makes layout unit-testable headlessly. Vertical note

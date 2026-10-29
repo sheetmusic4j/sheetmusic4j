@@ -47,6 +47,22 @@ class PdfSiblingTest {
     }
 
     @Test
+    void loadedPdfIsItsOwnReference(@TempDir Path dir) throws IOException {
+        Path pdf = dir.resolve("engraved.pdf");
+        assertTrue(PdfSibling.referenceFor(pdf).isEmpty(), "missing file");
+
+        Files.writeString(pdf, "%PDF-1.4");
+        assertEquals(pdf, PdfSibling.referenceFor(pdf).orElseThrow());
+
+        Path score = dir.resolve("piece.musicxml");
+        Files.writeString(score, "<score/>");
+        assertTrue(PdfSibling.referenceFor(score).isEmpty(), "no sibling yet");
+        Path sibling = dir.resolve("piece.pdf");
+        Files.writeString(sibling, "%PDF-1.4");
+        assertEquals(sibling, PdfSibling.referenceFor(score).orElseThrow());
+    }
+
+    @Test
     void nullInputYieldsEmpty() {
         assertFalse(PdfSibling.pathFor(null).isPresent());
     }

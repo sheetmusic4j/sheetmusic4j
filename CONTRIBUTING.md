@@ -34,8 +34,9 @@ Upload this together with the score file into a new GitHub issue.
 
 Other useful menu items:
 
-- **File > Open...** (`Ctrl/Cmd+O`) opens MusicXML (`.musicxml`, `.xml`, `.mxl`), MIDI (`.mid`, `.midi`), ABC (`.abc`)
-  and other supported formats.
+- **File > Open...** (`Ctrl/Cmd+O`) opens MusicXML (`.musicxml`, `.xml`, `.mxl`), MIDI (`.mid`, `.midi`), ABC (`.abc`),
+  LilyPond (`.ly`), Guitar Pro (`.gp`) and engraved PDF (`.pdf`) files. A PDF opened this way is shown in the preview
+  pane too, so you can compare the engraved score with the original.
 - **File > Reload** (`Ctrl/Cmd+R`) re-reads the current file, handy while you edit it.
 - **View > Text** toggles titles, lyrics, dynamics, chord symbols and other markings on and off, to isolate a problem.
 

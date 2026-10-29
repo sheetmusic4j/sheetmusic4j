@@ -116,6 +116,9 @@ public final class StaffRowEngraver {
         boolean firstMeasureInRow = true;
         // Layout x of musical time zero for the time-proportional STRIP path.
         double timeZeroX = x + row.rowHeader() + options.staffLineGap() * 0.5;
+        if (row.start() > 0) {
+            spans.continuesFromPreviousRow(x, x + row.rowHeader());
+        }
 
         for (int idx = row.start(); idx < row.endExclusive(); idx++) {
             if (idx >= partInfo.measures().size()) {
@@ -123,6 +126,10 @@ public final class StaffRowEngraver {
             }
             cursorX += layoutMeasure(idx, cursorX, firstMeasureInRow, timeZeroX);
             firstMeasureInRow = false;
+        }
+
+        if (row.endExclusive() < partInfo.measures().size()) {
+            spans.continuesInNextRow(cursorX);
         }
 
         return new StaffLayout(x, staffY, cursorX - x, options.staffLineGap(),

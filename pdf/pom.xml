@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.sheetmusic4j</groupId>
+        <artifactId>parent</artifactId>
+        <version>0.0.4-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>pdf</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Sheetmusic4J :: PDF</name>
+    <description>Reads engraved (vector) PDF sheet music into a Score: the music symbols are font glyphs and the staff
+        lines, stems and barlines are vector paths, so no optical music recognition is needed. Scanned PDFs are not
+        supported. No JavaFX dependency.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.sheetmusic4j</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Opt in to Maven Central publishing (parent defaults to skip=true). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>false</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

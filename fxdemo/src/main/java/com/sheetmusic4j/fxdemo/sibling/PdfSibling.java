@@ -47,4 +47,19 @@ public final class PdfSibling {
     public static Optional<Path> existingPathFor(Path scoreFile) {
         return pathFor(scoreFile).filter(Files::isRegularFile);
     }
+
+    /**
+     * The PDF to show next to a loaded file for comparison: the file itself when it is an existing PDF (an engraved
+     * PDF is read as a score and is its own reference), otherwise its sibling PDF if there is one.
+     *
+     * @param loadedFile the file that was loaded as a score
+     * @return the reference PDF, if any
+     */
+    public static Optional<Path> referenceFor(Path loadedFile) {
+        if (loadedFile != null && loadedFile.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")
+                && Files.isRegularFile(loadedFile)) {
+            return Optional.of(loadedFile);
+        }
+        return existingPathFor(loadedFile);
+    }
 }

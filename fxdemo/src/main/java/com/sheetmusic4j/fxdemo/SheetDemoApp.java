@@ -156,10 +156,7 @@ public final class SheetDemoApp extends Application {
 
         CheckMenuItem showDebugInfo = new CheckMenuItem("Show debug info");
         showDebugInfo.setSelected(false);
-        showDebugInfo.setOnAction(e -> {
-            debugVisible = showDebugInfo.isSelected();
-            rebuildSplit();
-        });
+        showDebugInfo.setOnAction(e -> setDebugVisible(showDebugInfo.isSelected()));
         viewMenu.getItems().add(showDebugInfo);
 
         CheckMenuItem showBrackets = new CheckMenuItem("Show group brackets");
@@ -239,7 +236,7 @@ public final class SheetDemoApp extends Application {
         scoreScroll.viewportBoundsProperty().addListener((obs, oldV, newV) -> {
             double w = Math.max(200, newV.getWidth() - 4);
             if (Math.abs(w - lastViewportWidth) > 0.5) {
-                lastViewportWidth = w;
+                trackViewportWidth(w);
                 sheetView.setSystemWidth(w);
                 updateDebug();
             }
@@ -361,7 +358,7 @@ public final class SheetDemoApp extends Application {
         currentScore = score;
         sheetView.setScore(score);
         updateScoreViewport();
-        Optional<Path> pdf = PdfSibling.existingPathFor(path);
+        Optional<Path> pdf = PdfSibling.referenceFor(path);
         Optional<Path> image = pdf.isPresent() ? Optional.empty() : ImageSibling.existingPathFor(path);
         if (pdf.isPresent()) {
             showPreview(() -> preview.showPdf(pdf.get()), "PDF " + pdf.get());
@@ -463,8 +460,17 @@ public final class SheetDemoApp extends Application {
         }
     }
 
+    private void setDebugVisible(boolean visible) {
+        debugVisible = visible;
+        rebuildSplit();
+    }
+
+    private void trackViewportWidth(double width) {
+        lastViewportWidth = width;
+    }
+
     private void updateDebug() {
-        Optional<Path> pdf = currentFile != null ? PdfSibling.existingPathFor(currentFile) : Optional.empty();
+        Optional<Path> pdf = PdfSibling.referenceFor(currentFile);
         double width = lastViewportWidth > 0 ? lastViewportWidth : ReferenceDiffPane.DIFF_WIDTH;
         String text = "File: " + (currentFile != null ? currentFile.toAbsolutePath() : "(none)") + '\n'
                 + "PDF : " + pdf.map(p -> p.toAbsolutePath().toString()).orElse("(none)") + '\n'
