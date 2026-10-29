@@ -49,8 +49,9 @@ import com.sheetmusic4j.pdf.symbol.Symbol.Kind;
  * through their height on the staff, stems and flags/beams give the duration, dots and accidentals attach to the
  * nearest head, and heads sharing a stem form a chord.
  *
- * <p>Known limits: no tuplets, ties, slurs, grace notes, ornaments or dynamics; a second voice is only recognised
- * from opposite stem directions when a measure would otherwise be overfull.
+ * <p>Ties, slurs, tuplets, dynamics and hairpins are read as well. Known limits: grace notes are skipped and
+ * ornaments and articulations are not read; a second voice is only recognised from opposite stem directions when a
+ * measure would otherwise be overfull.
  */
 public final class StaffReader {
 

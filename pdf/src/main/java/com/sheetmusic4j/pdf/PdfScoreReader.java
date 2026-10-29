@@ -20,8 +20,9 @@ import com.sheetmusic4j.pdf.recognize.ScoreRecognizer;
  * this reader has no table for.
  *
  * <p>Supported fonts: Maestro (Finale) and Emmentaler (LilyPond). What is read: staves, clefs, key and time
- * signatures, notes, chords, rests, dots, accidentals, stems/flags/beams for the duration, barlines and system
- * breaks. Not yet: tuplets, ties, slurs, articulations, dynamics, lyrics and text.
+ * signatures, notes, chords, rests, dots, accidentals, stems/flags/beams for the duration, ties, slurs, tuplets,
+ * dynamics, hairpins, barlines and system breaks. Not yet: text and tempo marks, articulations, lyrics, and a second
+ * voice on a staff unless its stems point the other way.
  */
 public final class PdfScoreReader implements ScoreReader {
 
