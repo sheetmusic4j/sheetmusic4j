@@ -44,6 +44,7 @@
         <!-- Dependencies -->
         <javafx.version>21.0.12</javafx.version>
         <pdfviewfx.version>3.6.0</pdfviewfx.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
         <slf4j.version>2.0.20</slf4j.version>
         <log4j.version>2.26.1</log4j.version>
 
@@ -63,6 +64,7 @@
 
     <modules>
         <module>core</module>
+        <module>pdf</module>
         <module>engraving</module>
         <module>render</module>
         <module>render-awt</module>
@@ -76,6 +78,11 @@
             <dependency>
                 <groupId>com.sheetmusic4j</groupId>
                 <artifactId>core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sheetmusic4j</groupId>
+                <artifactId>pdf</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -139,6 +146,11 @@
             </dependency>
 
             <!-- Logging: SLF4J API for the library, Log4j2 binding for the demo app -->
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>

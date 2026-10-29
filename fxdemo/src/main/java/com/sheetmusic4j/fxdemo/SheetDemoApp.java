@@ -361,7 +361,7 @@ public final class SheetDemoApp extends Application {
         currentScore = score;
         sheetView.setScore(score);
         updateScoreViewport();
-        Optional<Path> pdf = PdfSibling.existingPathFor(path);
+        Optional<Path> pdf = PdfSibling.referenceFor(path);
         Optional<Path> image = pdf.isPresent() ? Optional.empty() : ImageSibling.existingPathFor(path);
         if (pdf.isPresent()) {
             showPreview(() -> preview.showPdf(pdf.get()), "PDF " + pdf.get());
@@ -464,7 +464,7 @@ public final class SheetDemoApp extends Application {
     }
 
     private void updateDebug() {
-        Optional<Path> pdf = currentFile != null ? PdfSibling.existingPathFor(currentFile) : Optional.empty();
+        Optional<Path> pdf = PdfSibling.referenceFor(currentFile);
         double width = lastViewportWidth > 0 ? lastViewportWidth : ReferenceDiffPane.DIFF_WIDTH;
         String text = "File: " + (currentFile != null ? currentFile.toAbsolutePath() : "(none)") + '\n'
                 + "PDF : " + pdf.map(p -> p.toAbsolutePath().toString()).orElse("(none)") + '\n'
