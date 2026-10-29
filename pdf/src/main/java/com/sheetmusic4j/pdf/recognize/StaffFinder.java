@@ -75,9 +75,9 @@ public final class StaffFinder {
     }
 
     /**
-     * Groups staves into systems. Staves are one system when a vertical line at their left edge spans from one to
-     * the next (the system start line), or when they share the same barline positions (several instrument groups
-     * of one orchestral system).
+     * Groups staves into systems. Staves are one system when a vertical line at their left edge (the system start
+     * line) spans from one to the next. Staves that nothing connects stay separate systems, however alike their
+     * barlines are: rows of a part often have the same bar spacing.
      */
     public static List<List<Staff>> systems(List<Staff> staves, PageContent page) {
         List<List<Staff>> systems = new ArrayList<>();
@@ -96,33 +96,7 @@ public final class StaffFinder {
     private static boolean joined(List<Staff> system, Staff next, PageContent page) {
         Staff prev = system.get(system.size() - 1);
         double tol = prev.space() * 0.3;
-        for (VLine v : page.vlines()) {
-            if (Math.abs(v.x() - prev.x0()) <= 3 + v.thickness() && v.y0() <= prev.top() + tol
-                    && v.y1() >= next.bottom() - tol) {
-                return true;
-            }
-        }
-        List<Double> a = fullHeightX(prev, page);
-        List<Double> b = fullHeightX(next, page);
-        if (a.size() < 2 || a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            if (Math.abs(a.get(i) - b.get(i)) > 0.8) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static List<Double> fullHeightX(Staff staff, PageContent page) {
-        double tol = staff.space() * 0.3;
-        return page.vlines().stream()
-                .filter(v -> v.y0() <= staff.top() + tol && v.y1() >= staff.bottom() - tol
-                        && v.x() > staff.x0() + staff.space())
-                .map(VLine::x)
-                .sorted()
-                .distinct()
-                .toList();
+        return page.vlines().stream().anyMatch(v -> Math.abs(v.x() - prev.x0()) <= 3 + v.thickness()
+                && v.y0() <= prev.top() + tol && v.y1() >= next.bottom() - tol);
     }
 }

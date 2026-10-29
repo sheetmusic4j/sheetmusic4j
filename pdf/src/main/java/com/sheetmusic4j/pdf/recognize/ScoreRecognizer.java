@@ -46,8 +46,9 @@ public final class ScoreRecognizer {
             return;
         }
         Map<Staff, List<Mark>> marks = assign(staves, page);
+        Map<Staff, List<Hairpin>> hairpins = Hairpin.find(page, staves);
         for (List<Staff> system : StaffFinder.systems(staves, page)) {
-            addSystem(system, page, marks);
+            addSystem(system, page, marks, hairpins);
         }
     }
 
@@ -99,7 +100,8 @@ public final class ScoreRecognizer {
         return marks;
     }
 
-    private void addSystem(List<Staff> system, PageContent page, Map<Staff, List<Mark>> marks) {
+    private void addSystem(List<Staff> system, PageContent page, Map<Staff, List<Mark>> marks,
+                           Map<Staff, List<Hairpin>> hairpins) {
         if (systems > 0 && system.size() != parts.size()) {
             varyingStaffCount = true;
         }
@@ -118,7 +120,7 @@ public final class ScoreRecognizer {
             PartAcc acc = parts.get(i);
             List<Mark> staffMarks = marks.getOrDefault(staff, List.of());
             StaffReader reader = new StaffReader(staff, page, acc.state);
-            List<Measure> measures = reader.read(staffMarks, acc.measures.size() + 1, systems > 0);
+            List<Measure> measures = reader.read(staffMarks, hairpins.getOrDefault(staff, List.of()), acc.measures.size() + 1, systems > 0);
             acc.measures.addAll(measures);
             if (acc.name.isBlank()) {
                 acc.name = label(staff, page);

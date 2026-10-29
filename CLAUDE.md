@@ -39,8 +39,11 @@ GroupId `com.sheetmusic4j`, parent artifactId `sheetmusic4j-parent`.
    maps font glyphs to symbols (Maestro = Finale by character, Emmentaler = LilyPond by glyph name; one table per
    font), `recognize` finds staves/systems and reads each staff into measures (pitch from height on the staff,
    duration from head + stem + flags/beams + dots, chords by shared stem, barlines split measures). Scans and
-   unsupported fonts throw `PdfException`. Not yet: tuplets, ties, slurs, dynamics, text, beams in the model; staves
-   are matched to parts by position, so orchestral scores that drop staves can mix parts up.
+   unsupported fonts throw `PdfException`. Beams (polygons shared by stems), ties/slurs (curves between two heads) and
+   tuplets (a lone digit centred over n items) are read too, as are dynamics (Maestro glyphs; Emmentaler letters that touch)
+   and hairpins (two thin slanted lines meeting in a point, `Hairpin`). Not yet: text, tempo, articulations; a second voice
+   is only found by opposite stem directions; staves are matched to parts by position, so orchestral scores that
+   drop staves can mix parts up.
 2. **`engraving`** — pure layout engine. `Engraver.layout(Score, LayoutOptions)` walks parts/measures and produces a
    `LayoutResult` (`SystemLayout` → `StaffLayout` → `MeasureLayout`/`GlyphPlacement`) as plain doubles + a
    renderer-agnostic `Glyph` enum. No JavaFX, no I/O — this is what makes layout unit-testable headlessly. Vertical note

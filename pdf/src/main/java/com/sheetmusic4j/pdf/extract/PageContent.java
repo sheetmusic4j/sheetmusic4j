@@ -10,11 +10,12 @@ import java.util.List;
  * @param glyphs the shown glyphs in drawing order
  * @param hlines horizontal line segments (staff lines, ledger lines)
  * @param vlines vertical line segments (stems, barlines)
+ * @param diagonals slanted line segments, left end first (hairpins, outlines)
  * @param beams  straight filled shapes that are neither thin lines nor curves
  * @param curves bounding boxes of curved shapes
  */
 public record PageContent(int index, double width, double height, List<Glyph> glyphs, List<HLine> hlines,
-                          List<VLine> vlines, List<Box> beams, List<Box> curves) {
+                          List<VLine> vlines, List<Segment> diagonals, List<Box> beams, List<Box> curves) {
 
     /**
      * An axis-aligned rectangle.
@@ -49,5 +50,9 @@ public record PageContent(int index, double width, double height, List<Glyph> gl
     }
 
     public record VLine(double x, double y0, double y1, double thickness) {
+    }
+
+    /** A slanted segment; {@code x0 <= x1}. */
+    public record Segment(double x0, double y0, double x1, double y1, double thickness) {
     }
 }

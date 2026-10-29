@@ -3,6 +3,7 @@ package com.sheetmusic4j.pdf.symbol;
 import java.util.Map;
 import java.util.Optional;
 
+import com.sheetmusic4j.core.model.DynamicMark;
 import com.sheetmusic4j.pdf.extract.PageContent.Glyph;
 
 /**
@@ -38,6 +39,13 @@ public final class MusicFonts {
             Map.entry("k", Symbol.flag(2)),
             Map.entry("L", Symbol.flag(3)),
             Map.entry("l", Symbol.flag(3)),
+            Map.entry("p", Symbol.dynamic(DynamicMark.P)),
+            Map.entry("f", Symbol.dynamic(DynamicMark.F)),
+            Map.entry("\u03C0", Symbol.dynamic(DynamicMark.PP)),
+            Map.entry("P", Symbol.dynamic(DynamicMark.MP)),
+            Map.entry("F", Symbol.dynamic(DynamicMark.MF)),
+            Map.entry("S", Symbol.dynamic(DynamicMark.SF)),
+            Map.entry("\u00CD", Symbol.dynamic(DynamicMark.FF)),
             Map.entry("c", new Symbol(Symbol.Kind.TIME_COMMON, 0)),
             Map.entry("C", new Symbol(Symbol.Kind.TIME_CUT, 0)));
 
@@ -95,6 +103,9 @@ public final class MusicFonts {
     }
 
     private static Symbol restFlagOrDigit(String name) {
+        if (name.length() == 1 && "fpmszr".contains(name)) {
+            return Symbol.dynamicLetter(name.charAt(0));
+        }
         if (name.length() == 7 && name.startsWith("rests.") && Character.isDigit(name.charAt(6))) {
             return Symbol.rest(name.charAt(6) - '0');
         }

@@ -14,7 +14,7 @@ public record Symbol(Kind kind, int value) {
     public static final int FILLED = 2;
 
     public enum Kind {
-        CLEF, ACCIDENTAL, HEAD, REST, DOT, FLAG, TIME_COMMON, TIME_CUT, DIGIT
+        CLEF, ACCIDENTAL, HEAD, REST, DOT, FLAG, TIME_COMMON, TIME_CUT, DIGIT, DYNAMIC, DYNAMIC_LETTER
     }
 
     public static final int G_CLEF = 0;
@@ -49,6 +49,20 @@ public record Symbol(Kind kind, int value) {
 
     public static Symbol flag(int count) {
         return new Symbol(Kind.FLAG, count);
+    }
+
+    /**
+     * A whole dynamic marking such as {@code mf}, drawn as one glyph.
+     */
+    public static Symbol dynamic(com.sheetmusic4j.core.model.DynamicMark mark) {
+        return new Symbol(Kind.DYNAMIC, mark.ordinal());
+    }
+
+    /**
+     * One letter of a dynamic marking that is drawn letter by letter ({@code f}, {@code p}, {@code m}, ...).
+     */
+    public static Symbol dynamicLetter(char letter) {
+        return new Symbol(Kind.DYNAMIC_LETTER, letter);
     }
 
     public static Symbol digit(int digit) {

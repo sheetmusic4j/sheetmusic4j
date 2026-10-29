@@ -6,6 +6,7 @@ import java.awt.geom.Rectangle2D;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +24,7 @@ import com.sheetmusic4j.pdf.PdfException;
 import com.sheetmusic4j.pdf.extract.PageContent.Box;
 import com.sheetmusic4j.pdf.extract.PageContent.Glyph;
 import com.sheetmusic4j.pdf.extract.PageContent.HLine;
+import com.sheetmusic4j.pdf.extract.PageContent.Segment;
 import com.sheetmusic4j.pdf.extract.PageContent.VLine;
 
 /**
@@ -38,9 +40,11 @@ public final class PageExtractor extends PDFGraphicsStreamEngine {
     private final List<Glyph> glyphs = new ArrayList<>();
     private final List<HLine> hlines = new ArrayList<>();
     private final List<VLine> vlines = new ArrayList<>();
+    private final List<Segment> diagonals = new ArrayList<>();
     private final List<Box> beams = new ArrayList<>();
     private final List<Box> curves = new ArrayList<>();
-    private final Map<String, Rectangle2D> outlineBounds = new HashMap<>();
+    /** Outline bounds per font object and character code; subsets of one font reuse codes for different glyphs. */
+    private final Map<PDFont, Map<Integer, Rectangle2D>> outlineBounds = new IdentityHashMap<>();
 
     private final List<Sub> path = new ArrayList<>();
     private Sub current;
@@ -63,7 +67,7 @@ public final class PageExtractor extends PDFGraphicsStreamEngine {
             throw new PdfException("Could not read page " + (index + 1), e);
         }
         return new PageContent(index, page.getMediaBox().getWidth(), extractor.height, extractor.glyphs,
-                extractor.hlines, extractor.vlines, extractor.beams, extractor.curves);
+                extractor.hlines, extractor.vlines, extractor.diagonals, extractor.beams, extractor.curves);
     }
 
     private static final class Sub {
@@ -86,7 +90,7 @@ public final class PageExtractor extends PDFGraphicsStreamEngine {
         }
         AffineTransform at = rendering.createAffineTransform();
         at.concatenate(font.getFontMatrix().createAffineTransform());
-        Rectangle2D bounds = outlineBounds.computeIfAbsent(fontName + "/" + code, k -> outline(font, code));
+        Rectangle2D bounds = outlineBounds.computeIfAbsent(font, f -> new HashMap<>()).computeIfAbsent(code, c -> outline(font, c));
         Rectangle2D device = at.createTransformedShape(bounds).getBounds2D();
         Box box = bounds == null || bounds.isEmpty() ? NO_BOX
                 : new Box(device.getMinX(), height - device.getMaxY(), device.getMaxX(), height - device.getMinY());
@@ -201,22 +205,26 @@ public final class PageExtractor extends PDFGraphicsStreamEngine {
                 ? getGraphicsState().getLineWidth() * getGraphicsState().getCurrentTransformationMatrix().getScalingFactorX()
                 : 0;
         for (Sub sub : path) {
-            if (sub.points.size() < 2) {
-                continue;
-            }
-            Box box = bounds(sub);
-            if (sub.curved) {
-                curves.add(box);
-                continue;
-            }
-            if (stroke) {
-                strokeSegments(sub, lineWidth);
-            }
-            if (fill && sub.points.size() >= 3) {
-                fillShape(box);
-            }
+            paintSub(sub, fill, stroke, lineWidth);
         }
         reset();
+    }
+
+    private void paintSub(Sub sub, boolean fill, boolean stroke, double lineWidth) {
+        if (sub.points.size() < 2) {
+            return;
+        }
+        Box box = bounds(sub);
+        if (sub.curved) {
+            curves.add(box);
+            return;
+        }
+        if (stroke) {
+            strokeSegments(sub, lineWidth);
+        }
+        if (fill && sub.points.size() >= 3) {
+            fillShape(box);
+        }
     }
 
     private void strokeSegments(Sub sub, double lineWidth) {
@@ -229,6 +237,9 @@ public final class PageExtractor extends PDFGraphicsStreamEngine {
                 hlines.add(new HLine(Math.min(a[0], b[0]), Math.max(a[0], b[0]), a[1], lineWidth));
             } else if (Math.abs(dx) < EPS && Math.abs(dy) > EPS) {
                 vlines.add(new VLine(a[0], Math.min(a[1], b[1]), Math.max(a[1], b[1]), lineWidth));
+            } else if (Math.abs(dx) > EPS && Math.abs(dy) > EPS) {
+                diagonals.add(a[0] <= b[0] ? new Segment(a[0], a[1], b[0], b[1], lineWidth)
+                        : new Segment(b[0], b[1], a[0], a[1], lineWidth));
             }
         }
     }
