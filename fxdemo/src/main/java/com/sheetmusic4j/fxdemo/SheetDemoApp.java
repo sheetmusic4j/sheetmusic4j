@@ -156,10 +156,7 @@ public final class SheetDemoApp extends Application {
 
         CheckMenuItem showDebugInfo = new CheckMenuItem("Show debug info");
         showDebugInfo.setSelected(false);
-        showDebugInfo.setOnAction(e -> {
-            debugVisible = showDebugInfo.isSelected();
-            rebuildSplit();
-        });
+        showDebugInfo.setOnAction(e -> setDebugVisible(showDebugInfo.isSelected()));
         viewMenu.getItems().add(showDebugInfo);
 
         CheckMenuItem showBrackets = new CheckMenuItem("Show group brackets");
@@ -239,7 +236,7 @@ public final class SheetDemoApp extends Application {
         scoreScroll.viewportBoundsProperty().addListener((obs, oldV, newV) -> {
             double w = Math.max(200, newV.getWidth() - 4);
             if (Math.abs(w - lastViewportWidth) > 0.5) {
-                lastViewportWidth = w;
+                trackViewportWidth(w);
                 sheetView.setSystemWidth(w);
                 updateDebug();
             }
@@ -461,6 +458,15 @@ public final class SheetDemoApp extends Application {
         } else {
             statusLabel.setText("Current score has no note anchors to highlight.");
         }
+    }
+
+    private void setDebugVisible(boolean visible) {
+        debugVisible = visible;
+        rebuildSplit();
+    }
+
+    private void trackViewportWidth(double width) {
+        lastViewportWidth = width;
     }
 
     private void updateDebug() {
